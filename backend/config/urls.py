@@ -14,5 +14,6 @@ urlpatterns = [
     path('api/document-versions/<int:pk>/download/', v.DownloadView.as_view()),
     path('api/evidence-mappings/', v.MappingsView.as_view()), path('api/submissions/', v.SubmissionsView.as_view()),
     path('api/review-decisions/', v.ReviewsView.as_view()), path('api/compliance/', v.ComplianceView.as_view()),
-    path('api/audit/', v.AuditView.as_view()),
+    path('api/audit/', v.AuditView.as_view()), path('api/search/', v.SearchView.as_view()),
+    path('api/reports/compliance/', v.ComplianceReportView.as_view()),
 ]

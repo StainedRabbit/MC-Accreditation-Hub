@@ -20,6 +20,8 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
+  FileText,
+  Printer,
 } from "lucide-react";
 import { api, post } from "./api";
 import "@fontsource-variable/inter";
@@ -34,6 +36,8 @@ import type {
   Item,
   Audit,
   Certification,
+  SearchResults,
+  ComplianceReport,
 } from "./types";
 import "./styles.css";
 
@@ -241,6 +245,8 @@ const nav = [
   ["documents", "Evidence Repository", Folder],
   ["reviews", "Evidence Verification", ClipboardCheck],
   ["compliance", "Compliance Monitoring", CircleCheck],
+  ["search", "Search", Search],
+  ["reports", "Reports", FileText],
   ["audit", "Audit Trail", History],
 ] as const;
 const subtitles: Record<string, string> = {
@@ -250,6 +256,8 @@ const subtitles: Record<string, string> = {
   documents: "Digital repository of accreditation documents",
   reviews: "Review submitted evidence and record decisions",
   compliance: "Track compliance across all accreditation areas",
+  search: "Find requirements and evidence you are authorized to access",
+  reports: "Printable compliance summaries and CSV export",
   audit: "System activity and change log",
 };
 
@@ -273,6 +281,15 @@ function App() {
     [search, setSearch] = useState(""),
     [areaFilter, setAreaFilter] = useState(""),
     [statusFilter, setStatusFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useState(""),
+    [searchResults, setSearchResults] = useState<SearchResults | null>(null),
+    [searchLoading, setSearchLoading] = useState(false),
+    [searchError, setSearchError] = useState("");
+  const [reportArea, setReportArea] = useState(""),
+    [reportStatus, setReportStatus] = useState(""),
+    [report, setReport] = useState<ComplianceReport | null>(null),
+    [reportLoading, setReportLoading] = useState(false),
+    [reportError, setReportError] = useState("");
   const [detail, setDetail] = useState<Requirement | null>(null),
     [docDetail, setDocDetail] = useState<Document | null>(null);
   const [requirementForm, setRequirementForm] = useState(false),
@@ -309,6 +326,10 @@ function App() {
     setLoading(false);
     setError("");
     setNotice("");
+    setSearchResults(null);
+    setSearchError("");
+    setReport(null);
+    setReportError("");
   }
   useEffect(() => {
     api<User>("auth/me/")
@@ -405,12 +426,56 @@ function App() {
     setStatusFilter("");
     setNotice("");
   }
+  async function runSearch(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSearchLoading(true);
+    setSearchError("");
+    try {
+      setSearchResults(
+        await api<SearchResults>(
+          `search/?cycle=${cycle}&q=${encodeURIComponent(searchTerm)}`,
+        ),
+      );
+    } catch (e) {
+      setSearchError((e as Error).message);
+      setSearchResults(null);
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+  async function loadReport() {
+    if (!cycle) return;
+    setReportLoading(true);
+    setReportError("");
+    try {
+      const params = new URLSearchParams({ cycle });
+      if (reportArea) params.set("area", reportArea);
+      if (reportStatus) params.set("status", reportStatus);
+      setReport(await api<ComplianceReport>(`reports/compliance/?${params}`));
+    } catch (e) {
+      setReportError((e as Error).message);
+    } finally {
+      setReportLoading(false);
+    }
+  }
+  useEffect(() => {
+    if (page === "reports" && cycle) void loadReport();
+  }, [page, cycle, reportArea, reportStatus]);
   async function openRequirement(id: number) {
     try {
       setDetail(await api<Requirement>(`requirements/${id}/`));
       setPage("requirements");
       setDocDetail(null);
       setCertification(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  async function openDocument(id: string) {
+    try {
+      setDocDetail(await api<Document>(`documents/${id}/`));
+      setPage("documents");
+      setDetail(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -1394,6 +1459,112 @@ function App() {
                   </div>
                 )}
               </div>
+            </>
+          )}
+          {page === "search" && (
+            <>
+              <div className="page-heading">
+                <div>
+                  <h1>Search</h1>
+                  <p>Search requirement and document metadata in your authorized areas.</p>
+                </div>
+              </div>
+              <form className="panel report-controls" onSubmit={runSearch}>
+                <label>
+                  Search records
+                  <div className="search-field">
+                    <Search size={19} />
+                    <input
+                      aria-label="Search all authorized records"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Requirement, evidence title, area, office..."
+                      required
+                    />
+                  </div>
+                </label>
+                <button className="primary" disabled={searchLoading}>
+                  {searchLoading ? "Searching…" : "Search"}
+                </button>
+              </form>
+              <ErrorBox error={searchError} />
+              {searchResults && (
+                <div className="search-results">
+                  <section className="panel">
+                    <h2>Requirements</h2>
+                    {searchResults.requirements.length ? searchResults.requirements.map((result) => (
+                      <button className="search-result" key={result.id} onClick={() => openRequirement(result.id)}>
+                        <div><strong>{result.title}</strong><span>{result.code} · {result.area}</span></div>
+                        <Badge status={result.status} />
+                      </button>
+                    )) : <div className="empty">No matching requirements in your authorized scope.</div>}
+                  </section>
+                  <section className="panel">
+                    <h2>Evidence documents</h2>
+                    {searchResults.documents.length ? searchResults.documents.map((result) => (
+                      <button className="search-result" key={result.id} onClick={() => {
+                        const document = documents.find((entry) => entry.id === result.id);
+                        if (document) { setDocDetail(document); setPage("documents"); }
+                      }}>
+                        <div><strong>{result.title}</strong><span>{result.category} · {result.area}</span></div>
+                        <ArrowRight size={18} />
+                      </button>
+                    )) : <div className="empty">No matching documents in your authorized scope.</div>}
+                  </section>
+                </div>
+              )}
+              {!searchResults && !searchLoading && !searchError && (
+                <div className="empty">Enter a term to search only records you can access.</div>
+              )}
+            </>
+          )}
+          {page === "reports" && (
+            <>
+              <div className="page-heading report-heading">
+                <div>
+                  <h1>Compliance Report</h1>
+                  <p>Printable readiness report for {selectedCycle?.title || "your selected cycle"}.</p>
+                </div>
+                <div className="actions no-print">
+                  <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}&download=csv`}>
+                    <Download size={16} /> Export CSV
+                  </a>
+                  <button className="primary" onClick={() => window.print()}><Printer size={16} /> Print report</button>
+                </div>
+              </div>
+              <section className="panel report-controls no-print">
+                <label>Area
+                  <select value={reportArea} onChange={(e) => setReportArea(e.target.value)}>
+                    <option value="">All authorized areas</option>
+                    {areas.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}
+                  </select>
+                </label>
+                <label>Status
+                  <select value={reportStatus} onChange={(e) => setReportStatus(e.target.value)}>
+                    <option value="">All statuses</option>
+                    {["complete", "ready_for_completion_review", "pending", "for_compliance", "missing", "draft", "excluded"].map((status) => <option key={status} value={status}>{labels[status]}</option>)}
+                  </select>
+                </label>
+              </section>
+              <ErrorBox error={reportError} />
+              {reportLoading && <div className="loading-line">Updating report…</div>}
+              {report && <section className="report-print">
+                <div className="report-summary">
+                  <div className="panel"><strong>{percent(report.percentage)}</strong><span>Compliance</span></div>
+                  <div className="panel"><strong>{report.complete}</strong><span>Completed</span></div>
+                  <div className="panel"><strong>{report.total}</strong><span>Applicable requirements</span></div>
+                  <div className="panel"><strong>{report.ready_for_completion_review}</strong><span>Ready for review</span></div>
+                </div>
+                <section className="panel table-wrap">
+                  <div className="report-meta"><span>{report.scope}</span><span>Calculated {dateTime(report.calculated_at)}</span></div>
+                  <table>
+                    <thead><tr><th>Area</th><th>Code</th><th>Requirement</th><th>Responsible</th><th>Evidence</th><th>Status</th><th>Deadline</th></tr></thead>
+                    <tbody>{report.rows.map((row) => <tr key={row.id}><td>{row.area}</td><td>{row.code}</td><td><strong>{row.title}</strong></td><td>{row.responsible}</td><td>{row.approved_items}/{row.required_items}</td><td><Badge status={row.status} /></td><td>{date(row.deadline)}</td></tr>)}</tbody>
+                  </table>
+                  {!report.rows.length && <div className="empty">No requirements match this report filter.</div>}
+                </section>
+                <p className="report-formula">{report.formula}. Internal preparation measure only.</p>
+              </section>}
             </>
           )}
           {page === "audit" && (

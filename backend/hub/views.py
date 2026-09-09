@@ -1,9 +1,10 @@
 from pathlib import Path
+import csv
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.db import transaction
 from django.db.models import Q
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -35,6 +36,13 @@ def query_id(request, name):
     value = request.query_params.get(name)
     if value is not None and (not value.isdigit() or int(value) < 1 or len(value) > 12):
         raise ValidationError({name: 'Use a positive numeric identifier.'})
+    return value
+
+
+def query_text(request, name='q'):
+    value = request.query_params.get(name, '').strip()
+    if len(value) > 120:
+        raise ValidationError({name: 'Use 120 characters or fewer.'})
     return value
 
 
@@ -413,10 +421,110 @@ class ComplianceView(APIView):
         return Response({**summary(qs), 'calculated_at': timezone.now(), 'scope': 'Your authorized areas'})
 
 
+REPORT_STATUSES = {'complete', 'ready_for_completion_review', 'pending', 'for_compliance', 'missing', 'draft', 'excluded'}
+
+
+def report_rows(request):
+    qs = scoped_requirements(request.user)
+    cycle_id = query_id(request, 'cycle')
+    if cycle_id:
+        qs = qs.filter(area__cycle_id=cycle_id)
+    area_id = query_id(request, 'area')
+    if area_id:
+        qs = qs.filter(area_id=area_id)
+    requested_status = request.query_params.get('status', '')
+    if requested_status and requested_status not in REPORT_STATUSES:
+        raise ValidationError({'status': 'Choose a valid requirement status.'})
+    rows = []
+    for requirement in qs.order_by('area__title', 'code'):
+        result = requirement_result(requirement)
+        if requested_status and result['status'] != requested_status:
+            continue
+        rows.append((requirement, result))
+    return rows
+
+
+def report_data(request):
+    rows = report_rows(request)
+    requirements = [requirement for requirement, _ in rows]
+    return {
+        **summary(requirements),
+        'calculated_at': timezone.now(),
+        'scope': 'Your authorized areas',
+        'rows': [{'id': requirement.id, 'code': requirement.code, 'title': requirement.title,
+                  'area': requirement.area.title, 'responsible': requirement.responsible,
+                  'deadline': requirement.deadline, 'status': result['status'],
+                  'approved_items': result['approved_items'], 'required_items': result['required_items']}
+                 for requirement, result in rows],
+    }
+
+
+def csv_cell(value):
+    value = '' if value is None else str(value)
+    return "'" + value if value.startswith(('=', '+', '-', '@', '\t', '\r')) else value
+
+
+class ComplianceReportView(APIView):
+    def get(self, request):
+        data = report_data(request)
+        if request.query_params.get('download') != 'csv':
+            return Response(data)
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="mc-accreditation-compliance.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['MC Accreditation Hub compliance report'])
+        writer.writerow(['Scope', data['scope']])
+        writer.writerow(['Compliance percentage', '' if data['percentage'] is None else data['percentage']])
+        writer.writerow(['Completed requirements', data['complete']])
+        writer.writerow([])
+        writer.writerow(['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status'])
+        for row in data['rows']:
+            writer.writerow([csv_cell(row['area']), csv_cell(row['code']), csv_cell(row['title']),
+                             csv_cell(row['responsible']), row['deadline'] or '',
+                             f"{row['approved_items']}/{row['required_items']}", row['status']])
+        return response
+
+
+class SearchView(APIView):
+    def get(self, request):
+        term = query_text(request)
+        if not term:
+            raise ValidationError({'q': 'Enter a search term.'})
+        cycle_id = query_id(request, 'cycle')
+        requirement_qs = scoped_requirements(request.user)
+        document_qs = documents_for(request.user).select_related('area', 'area__cycle').prefetch_related('versions')
+        if cycle_id:
+            requirement_qs = requirement_qs.filter(area__cycle_id=cycle_id)
+            document_qs = document_qs.filter(area__cycle_id=cycle_id)
+        requirement_qs = requirement_qs.filter(
+            Q(code__icontains=term) | Q(title__icontains=term) | Q(description__icontains=term) |
+            Q(responsible__icontains=term) | Q(area__title__icontains=term)).order_by('area__title', 'code')[:50]
+        document_qs = document_qs.filter(
+            Q(title__icontains=term) | Q(category__icontains=term) | Q(area__title__icontains=term) |
+            Q(custodian__first_name__icontains=term) | Q(custodian__last_name__icontains=term) |
+            Q(versions__original_name__icontains=term)).distinct().order_by('title')[:50]
+        return Response({
+            'requirements': [{'id': req.id, 'code': req.code, 'title': req.title, 'area': req.area.title,
+                              'status': requirement_result(req)['status']} for req in requirement_qs],
+            'documents': [{'id': str(doc.id), 'title': doc.title, 'category': doc.category,
+                           'area': doc.area.title} for doc in document_qs],
+        })
+
+
 class AuditView(APIView):
     def get(self, request):
         qs = AuditEvent.objects.filter(area__in=areas_for(request.user, ['coordinator', 'viewer'])).select_related('actor')
         if query_id(request, 'cycle'):
             qs = qs.filter(area__cycle_id=request.query_params['cycle'])
+        term = query_text(request, 'search')
+        if term:
+            qs = qs.filter(Q(record__icontains=term) | Q(action__icontains=term) |
+                           Q(actor__first_name__icontains=term) | Q(actor__last_name__icontains=term) |
+                           Q(actor__username__icontains=term))
+        action = request.query_params.get('action', '')
+        if action:
+            if len(action) > 80:
+                raise ValidationError({'action': 'Use 80 characters or fewer.'})
+            qs = qs.filter(action=action)
         return Response([{'id': e.id, 'actor': e.actor.get_full_name() or e.actor.username if e.actor else 'System',
             'action': e.action, 'record': e.record, 'detail': e.detail, 'created_at': e.created_at} for e in qs[:200]])

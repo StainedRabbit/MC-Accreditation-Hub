@@ -25,7 +25,9 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpo
 | GET/POST `submissions/` | List scoped submission history (`?cycle=id`) / `{mapping,version}` |
 | GET/POST `review-decisions/` | List scoped decisions / `{submission,outcome,comment}` |
 | GET `compliance/?cycle=id` | `{total,complete,ready_for_completion_review,pending,for_compliance,missing,excluded,percentage,formula,formula_version,calculated_at,scope}` |
-| GET `audit/?cycle=id` | Last 200 events for Coordinator/Viewer scopes |
+| GET `audit/?cycle=id&search=text&action=name` | Last 200 scoped audit events, optionally filtered by record/actor/action |
+| GET `search/?cycle=id&q=text` | Scoped requirement and document metadata search (maximum 50 each) |
+| GET `reports/compliance/?cycle=id&area=id&status=value` | Scoped printable compliance report data; add `download=csv` for a formula-safe CSV export |
 
 Decision outcomes: `approved`, `revision_requested`, `rejected`. Submission display states add `pending` and `expired`. `current` indicates the latest submission for its mapping, and `can_review` describes authorized current UI actions. The server rechecks permissions and state on POST.
 

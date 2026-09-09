@@ -1113,6 +1113,65 @@ dialog::backdrop {
   display: flex;
   margin-top: 15px;
 }
+.report-controls {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+}
+.report-controls label {
+  flex: 1;
+  margin: 0;
+}
+.report-controls .search-field input {
+  width: 100%;
+}
+.search-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+.search-results h2 {
+  margin-bottom: 17px;
+  font-size: 18px;
+}
+.search-result {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  background: transparent;
+  color: #223653;
+  border: 0;
+  border-top: 1px solid #edf0f5;
+  text-align: left;
+}
+.search-result:first-of-type { border-top: 0; }
+.search-result strong,
+.search-result span { display: block; }
+.search-result span { color: #75849a; font-size: 12px; margin-top: 5px; }
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 15px;
+}
+.report-summary .panel { margin: 0 0 22px; padding: 18px; }
+.report-summary strong,
+.report-summary span { display: block; }
+.report-summary strong { color: #265de4; font-size: 27px; }
+.report-summary span { color: #61728a; font-size: 13px; margin-top: 7px; }
+.report-meta { display: flex; justify-content: space-between; gap: 16px; color: #718096; font-size: 12px; padding: 0 22px 14px; }
+.report-formula { color: #718096; font-size: 12px; text-align: center; }
+@media print {
+  .sidebar, .topbar, .content-footer, .no-print, .demo-banner { display: none !important; }
+  .main-shell { margin: 0; }
+  .content { padding: 0; }
+  .panel { box-shadow: none; border-color: #dfe5ec; }
+  .report-print .table-wrap { overflow: visible; }
+  .report-print table { min-width: 0; font-size: 10px; }
+  .report-print th, .report-print td { padding: 8px; }
+}
 @media (min-width: 1650px) {
   :root {
     font-size: 16px;
@@ -1492,6 +1551,9 @@ dialog::backdrop {
     grid-template-columns: 1fr;
     gap: 0;
   }
+  .report-controls, .search-results { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+  .report-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .report-meta { padding: 0 15px 12px; flex-direction: column; gap: 4px; }
   dialog {
     padding: 20px;
   }

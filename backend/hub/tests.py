@@ -135,6 +135,42 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'Unauthorized'}, format='json').status_code, 404)
         self.assertEqual(self.decide(sub, user=self.outsider).status_code, 404)
 
+    def test_scoped_search_compliance_report_csv_and_audit_filters(self):
+        document = self.upload()
+        submission = self.submit(document)
+        self.assertEqual(self.decide(submission).status_code, 201)
+        self.assertEqual(self.certify().status_code, 201)
+        self.client.force_authenticate(self.coordinator)
+        search = self.client.get('/api/search/', {'q': 'Faculty'})
+        self.assertEqual(search.status_code, 200)
+        self.assertEqual(search.data['requirements'][0]['id'], self.requirement.id)
+        self.assertEqual(search.data['documents'][0]['title'], 'Faculty Development Plan')
+        report = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id})
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.data['total'], 1)
+        self.assertEqual(report.data['complete'], 1)
+        self.assertEqual(report.data['percentage'], 100)
+        csv_response = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id, 'download': 'csv'})
+        self.assertEqual(csv_response.status_code, 200)
+        self.assertIn('text/csv', csv_response['Content-Type'])
+        self.assertIn('Faculty Plan', csv_response.content.decode())
+        audit = self.client.get('/api/audit/', {'search': 'Faculty Development'})
+        self.assertEqual(audit.status_code, 200)
+        self.assertTrue(any(event['action'] == 'version_uploaded' for event in audit.data))
+        self.client.force_authenticate(self.outsider)
+        hidden_search = self.client.get('/api/search/', {'q': 'Faculty'})
+        self.assertEqual(hidden_search.status_code, 200)
+        self.assertEqual(hidden_search.data, {'requirements': [], 'documents': []})
+        self.assertEqual(self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id}).data['total'], 0)
+
+    def test_csv_neutralizes_spreadsheet_formula_values(self):
+        self.requirement.title = '=HYPERLINK("https://invalid.example")'
+        self.requirement.save()
+        self.client.force_authenticate(self.coordinator)
+        response = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id, 'download': 'csv'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("'=HYPERLINK", response.content.decode())
+
     def test_admin_has_no_implicit_evidence_access_or_approval(self):
         doc = self.upload()
         sub = self.submit(doc)

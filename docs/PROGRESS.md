@@ -2,7 +2,7 @@
 
 ## Current slice
 
-Frontend completion-certification checkpoint: approved evidence moves a requirement to Ready for Completion Review; an authorized Coordinator separately certifies or reopens completion.
+Search and Reports checkpoint: scoped metadata search, printable compliance reporting, formula-safe CSV export, and enhanced user-facing audit filtering.
 
 ## Completed work
 
@@ -17,6 +17,8 @@ Frontend completion-certification checkpoint: approved evidence moves a requirem
 - The React requirement detail now clearly shows Ready for Completion Review, immutable certification history, and Coordinator-only Complete/Reopen controls. Both actions require a rationale and use the existing API.
 - Dashboard and compliance data refresh after a certification action. The dashboard now distinguishes Coordinator-certified requirements from items awaiting completion review.
 - The Playwright workflow now covers approved evidence becoming ready, Coordinator completion, dashboard count change, reopening, and the reversed count change. It also confirms a Reviewer cannot see certification controls.
+- Scoped Search returns only authorized requirement and document metadata. Compliance Reports reuse the same scoped status calculation as the dashboard, support area/status filters, print cleanly, and export formula-safe CSV.
+- Audit Trail remains user-facing and now supports server-side scoped text/action filters for future pagination and UI controls.
 
 ## Verified behavior
 
@@ -24,17 +26,19 @@ Frontend completion-certification checkpoint: approved evidence moves a requirem
 - `python backend/manage.py check` and `python backend/manage.py makemigrations --check --dry-run`: passed on 2026-09-09.
 - `npm.cmd run build --prefix frontend`: passed on 2026-09-09.
 - `npm.cmd run test:e2e --prefix frontend` with the local Playwright Chromium executable: 2 tests passed on 2026-09-09. The PostgreSQL-backed browser flow created a fictional requirement, uploaded/revised/reapproved evidence, reached Ready for Completion Review, marked it complete with a rationale, verified dashboard counts, reopened it with a rationale, and verified the counts reverted.
+- Focused PostgreSQL tests for Search/Reports passed on 2026-09-09: scoped search, report totals, CSV export, audit filtering, and spreadsheet-formula neutralization.
+- `npm.cmd run test:e2e --prefix frontend` with the local Playwright Chromium executable: 3 tests passed on 2026-09-09, including scoped Search and the printable Compliance Report/export controls.
 - Tests cover CSRF/session handling, scoped lists and downloads, self-review prevention, stale/competing review decisions, invalid uploads, expiry, exclusions, closed cycles, historical immutability, Coordinator-only certification, reopening, rationale validation, and the revised compliance calculation.
 
 ## Known incomplete or broken work
 
 - The app permits controlled cross-area mapping, while the older plan defers cross-area sharing. That policy remains unresolved and is outside the current certification change.
-- Search/report exports, pagination, password recovery, two-factor authentication, notifications, full cycle administration UI, deployment/backup restoration, and malware scanning remain outside this checkpoint.
+- Pagination, password recovery, two-factor authentication, notifications, full cycle administration UI, deployment/backup restoration, and malware scanning remain outside this checkpoint.
 - The actual Figma site was not available for inspection; login and supplied screenshots guided the current visual design.
 
 ## Next exact task
 
-Wait for the next scoped feature instruction; this frontend certification checkpoint is complete. Do not begin search, reports, or another feature from this checkpoint.
+Wait for the next scoped feature instruction; this Search and Reports checkpoint is complete. Do not begin cycle lifecycle/recovery, deployment, or another feature from this checkpoint.
 
 ## Important decisions
 
@@ -44,5 +48,6 @@ Wait for the next scoped feature instruction; this frontend certification checkp
 - Approval alone never completes a requirement. Compliance counts only the latest effective Coordinator `complete` certification; a later `reopened` certification removes it from the numerator while preserving history.
 - A recorded completion remains effective until a Coordinator reopens it; later uploads, submissions, or evidence expiry do not silently alter the certification.
 - React renders certification controls only when the backend returns `can_complete` or `can_reopen`; the backend remains the source of authorization. API validation, forbidden, and failed-request responses are shown in the action dialog without discarding the entered screen state.
+- CSV exports use `download=csv` rather than DRF's reserved `format` query parameter. Cells starting with `=`, `+`, `-`, `@`, tab, or carriage return receive a leading apostrophe to prevent spreadsheet formula execution.
 - The existing local PostgreSQL development cluster uses port 55432 and is isolated under ignored `.local/` data.
 - Demo data is explicitly labeled fictional and uses generated local-only credentials.

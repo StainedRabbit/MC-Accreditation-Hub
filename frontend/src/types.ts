@@ -137,3 +137,22 @@ export type Audit = {
   record: string;
   created_at: string;
 };
+export type SearchResults = {
+  requirements: Array<{ id: number; code: string; title: string; area: string; status: string }>;
+  documents: Array<{ id: string; title: string; category: string; area: string }>;
+};
+export type ComplianceReport = Summary & {
+  calculated_at: string;
+  scope: string;
+  rows: Array<{
+    id: number;
+    code: string;
+    title: string;
+    area: string;
+    responsible: string;
+    deadline: string | null;
+    status: string;
+    approved_items: number;
+    required_items: number;
+  }>;
+};

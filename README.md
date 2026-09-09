@@ -123,6 +123,8 @@ Serve `frontend/dist` at `/` through a reverse proxy, and route `/api/` to Djang
 
 Back up PostgreSQL and private files together, protect the backups, and verify restoration on a separate instance. Deployment sizing, hardened service configuration, malware scanning, monitoring, and backup scheduling require the school-server phase. Database administrators can alter database rows; the application audit trail is append-only through the application, not a cryptographic tamper-proof log.
 
-Notifications, advanced reports, password recovery, two-factor authentication, and a separate readiness score are not included in this increment. Their nonfunctional navigation/controls are intentionally absent.
+Search checks only scoped requirement and document metadata. Compliance Reports provide scoped filters, printable output, and a CSV download. CSV fields that begin with spreadsheet formula characters are neutralized before export.
+
+Notifications, advanced analytics, password recovery, two-factor authentication, and a separate readiness score are not included in this increment. Their nonfunctional navigation/controls are intentionally absent.
 
 See [API contract](docs/API.md) and [validation record](docs/VALIDATION.md).

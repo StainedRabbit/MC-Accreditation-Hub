@@ -44,6 +44,26 @@ test("Figma login and mobile layout", async ({ page }) => {
   ).toBeTruthy();
 });
 
+test("scoped search and printable compliance report", async ({ page }) => {
+  await login(page, "coordinator");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByLabel("Search all authorized records")
+    .fill("Faculty");
+  await page.getByRole("button", { name: "Search", exact: true }).last().click();
+  await expect(page.getByRole("heading", { name: "Requirements" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Evidence documents" })).toBeVisible();
+  await page.getByRole("button", { name: "Reports", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Compliance Report" })).toBeVisible();
+  await expect(
+    page.getByText("Applicable requirements", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /Export CSV/ })).toHaveAttribute(
+    "href",
+    /download=csv/,
+  );
+});
+
 test("create, upload, request revisions, replace and approve", async ({
   page,
   browser,
