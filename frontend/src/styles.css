@@ -512,7 +512,7 @@ button.secondary {
 }
 .stats {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 15px;
 }
 .stat {
@@ -786,6 +786,11 @@ td:first-child {
   background: #e0ecff;
   border-color: #bfd9ff;
 }
+.badge.ready_for_completion_review {
+  color: #6336b8;
+  background: #f1e9ff;
+  border-color: #dac6ff;
+}
 .badge.for_compliance,
 .badge.revision_requested,
 .badge.expired {
@@ -909,6 +914,56 @@ td:first-child {
 .requirement-summary > p {
   margin-top: 20px;
   color: #576981;
+}
+.completion-review {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-left: 4px solid #6b3bc4;
+}
+.completion-review h2,
+.certification-history h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.completion-review p,
+.certification-history p {
+  color: #5f7087;
+  line-height: 1.55;
+  margin: 8px 0 0;
+}
+.certification-list {
+  display: grid;
+  gap: 14px;
+}
+.certification-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #e9eef5;
+  border-radius: 9px;
+  background: #fafbfc;
+}
+.certification-entry > div {
+  display: grid;
+  gap: 4px;
+}
+.certification-entry strong {
+  color: #23354f;
+  font-size: 14px;
+}
+.certification-entry span:not(.badge) {
+  color: #718096;
+  font-size: 12px;
+}
+.certification-entry p {
+  margin-top: 4px;
+  font-size: 13px;
+}
+.certification-empty {
+  padding: 28px 15px 4px;
 }
 .evidence-item .section-heading h3 small {
   font-size: 11px;

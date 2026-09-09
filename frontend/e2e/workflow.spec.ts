@@ -124,6 +124,20 @@ test("create, upload, request revisions, replace and approve", async ({
     .getByRole("button", { name: "Record Decision", exact: true })
     .click();
   await expect(reviewer.getByRole("dialog")).toHaveCount(0);
+  await reviewer
+    .getByRole("button", { name: "Requirements", exact: true })
+    .click();
+  await reviewer
+    .getByRole("row")
+    .filter({ hasText: title })
+    .getByRole("button", { name: "View", exact: true })
+    .click();
+  await expect(
+    reviewer.getByRole("button", { name: "Mark Complete", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    reviewer.getByRole("button", { name: "Reopen Requirement", exact: true }),
+  ).toHaveCount(0);
   await page.reload();
   await page.getByRole("button", { name: "Requirements", exact: true }).click();
   await page
@@ -156,10 +170,94 @@ test("create, upload, request revisions, replace and approve", async ({
   await page.reload();
   await page.getByRole("button", { name: "Requirements", exact: true }).click();
   const row = page.getByRole("row").filter({ hasText: title });
-  await expect(row.getByText("Complete", { exact: true })).toBeVisible();
+  await expect(
+    row.getByText("Ready for Completion Review", { exact: true }),
+  ).toBeVisible();
   await row.getByRole("button", { name: "View", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Ready for Completion Review" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No Coordinator certification has been recorded yet."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mark Complete", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Version 1", { exact: true })).toBeVisible();
   await expect(page.getByText("Version 2", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  const readyBefore = Number(
+    await page
+      .locator(".stat")
+      .filter({ hasText: "Ready for Completion Review" })
+      .locator("strong")
+      .textContent(),
+  );
+  const completeBefore = Number(
+    await page
+      .locator(".stat")
+      .filter({ hasText: "Completed" })
+      .locator("strong")
+      .textContent(),
+  );
+  await page.getByRole("button", { name: "Requirements", exact: true }).click();
+  await page
+    .getByRole("row")
+    .filter({ hasText: title })
+    .getByRole("button", { name: "View", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Mark Complete", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Rationale" })).toHaveAttribute(
+    "required",
+    "",
+  );
+  await page
+    .getByRole("textbox", { name: "Rationale" })
+    .fill("All mandatory evidence has been reviewed and is current.");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Mark Complete", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Marked complete", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await expect(
+    page
+      .locator(".stat")
+      .filter({ hasText: "Ready for Completion Review" })
+      .locator("strong"),
+  ).toHaveText(String(readyBefore - 1));
+  await expect(
+    page.locator(".stat").filter({ hasText: "Completed" }).locator("strong"),
+  ).toHaveText(String(completeBefore + 1));
+  await page.getByRole("button", { name: "Requirements", exact: true }).click();
+  await page
+    .getByRole("row")
+    .filter({ hasText: title })
+    .getByRole("button", { name: "View", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Reopen Requirement", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Rationale" })
+    .fill("Follow-up review is needed before final submission.");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Reopen Requirement", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Reopened requirement", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await expect(
+    page
+      .locator(".stat")
+      .filter({ hasText: "Ready for Completion Review" })
+      .locator("strong"),
+  ).toHaveText(String(readyBefore));
+  await expect(
+    page.locator(".stat").filter({ hasText: "Completed" }).locator("strong"),
+  ).toHaveText(String(completeBefore));
   await page
     .getByRole("button", { name: "Evidence Repository", exact: true })
     .click();
