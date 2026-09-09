@@ -33,11 +33,14 @@ import type {
   Submission,
   Item,
   Audit,
+  Certification,
 } from "./types";
 import "./styles.css";
 
 const labels: Record<string, string> = {
   complete: "Complete",
+  ready_for_completion_review: "Ready for Completion Review",
+  reopened: "Reopened",
   approved: "Approved",
   pending: "For Verification",
   for_compliance: "For Compliance",
@@ -58,6 +61,14 @@ const date = (value: string | null) =>
         year: "numeric",
       })
     : "No deadline";
+const dateTime = (value: string) =>
+  new Date(value).toLocaleString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 const percent = (value: number | null) =>
   value === null ? "N/A" : `${value}%`;
 const initials = (name: string) =>
@@ -272,7 +283,11 @@ function App() {
       area?: number;
     } | null>(null),
     [mappingItem, setMappingItem] = useState<Item | null>(null),
-    [review, setReview] = useState<Submission | null>(null);
+    [review, setReview] = useState<Submission | null>(null),
+    [certification, setCertification] = useState<{
+      requirement: Requirement;
+      outcome: "complete" | "reopened";
+    } | null>(null);
   const requestGeneration = useRef(0);
   function clearWorkspace() {
     requestGeneration.current += 1;
@@ -288,6 +303,7 @@ function App() {
     setDocDetail(null);
     setUpload(null);
     setReview(null);
+    setCertification(null);
     setMappingItem(null);
     setRequirementForm(false);
     setLoading(false);
@@ -383,6 +399,7 @@ function App() {
     setMobile(false);
     setDetail(null);
     setDocDetail(null);
+    setCertification(null);
     setSearch("");
     setAreaFilter("");
     setStatusFilter("");
@@ -393,6 +410,7 @@ function App() {
       setDetail(await api<Requirement>(`requirements/${id}/`));
       setPage("requirements");
       setDocDetail(null);
+      setCertification(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -468,6 +486,7 @@ function App() {
           <option value="">All Statuses</option>
           {[
             "complete",
+            "ready_for_completion_review",
             "pending",
             "for_compliance",
             "missing",
@@ -660,8 +679,15 @@ function App() {
                     "✅",
                     summary?.complete ?? 0,
                     "Completed",
-                    "Verified & approved",
+                    "Certified by Coordinator",
                     "green",
+                  ],
+                  [
+                    "📋",
+                    summary?.ready_for_completion_review ?? 0,
+                    "Ready for Completion Review",
+                    "Awaiting Coordinator certification",
+                    "purple",
                   ],
                   [
                     "🔎",
@@ -714,7 +740,7 @@ function App() {
                       <small>
                         {summary?.percentage === null
                           ? "NOT AVAILABLE"
-                          : "COMPLETE"}
+                          : "CERTIFIED"}
                       </small>
                     </div>
                   </div>
@@ -722,7 +748,7 @@ function App() {
                     {summary?.complete || 0} of {summary?.total || 0} applicable
                     requirements complete
                   </p>
-                  <small>Calculated from approved, valid evidence.</small>
+                  <small>Calculated from Coordinator-certified requirements.</small>
                 </section>
                 <section className="panel area-progress">
                   <div className="section-heading">
@@ -759,8 +785,9 @@ function App() {
                 <p>{summary?.formula}</p>
                 <small>
                   Every mandatory evidence item must have an approved, unexpired
-                  submission. Draft and non-applicable requirements are
-                  excluded. This is an internal preparation measure.
+                  submission. An assigned Coordinator must then certify the
+                  requirement. Draft and non-applicable requirements are
+                  excluded.
                 </small>
               </div>
             </>
@@ -943,6 +970,85 @@ function App() {
                   <p>Exclusion reason: {detail.exclusion_reason}</p>
                 )}
               </div>
+              {detail.status === "ready_for_completion_review" && (
+                <section className="panel completion-review" aria-live="polite">
+                  <div>
+                    <h2>Ready for Completion Review</h2>
+                    <p>
+                      All mandatory evidence is approved and current. An assigned
+                      Coordinator must certify this requirement before it counts
+                      toward compliance.
+                    </p>
+                  </div>
+                  {detail.can_complete && (
+                    <button
+                      className="primary"
+                      onClick={() =>
+                        setCertification({
+                          requirement: detail,
+                          outcome: "complete",
+                        })
+                      }
+                    >
+                      Mark Complete
+                    </button>
+                  )}
+                </section>
+              )}
+              {detail.status === "complete" && detail.can_reopen && (
+                <section className="panel completion-review">
+                  <div>
+                    <h2>Coordinator certification recorded</h2>
+                    <p>
+                      This requirement counts toward compliance until an assigned
+                      Coordinator reopens it with a rationale.
+                    </p>
+                  </div>
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      setCertification({
+                        requirement: detail,
+                        outcome: "reopened",
+                      })
+                    }
+                  >
+                    Reopen Requirement
+                  </button>
+                </section>
+              )}
+              <section className="panel certification-history">
+                <div className="section-heading">
+                  <div>
+                    <h2>Completion certification history</h2>
+                    <p>Coordinator decisions are permanent audit records.</p>
+                  </div>
+                </div>
+                {detail.certifications?.length ? (
+                  <div className="certification-list">
+                    {detail.certifications.map((entry: Certification) => (
+                      <article className="certification-entry" key={entry.id}>
+                        <Badge status={entry.outcome} />
+                        <div>
+                          <strong>
+                            {entry.outcome === "complete"
+                              ? "Marked complete"
+                              : "Reopened requirement"}
+                          </strong>
+                          <span>
+                            {entry.coordinator} · {dateTime(entry.created_at)}
+                          </span>
+                          <p>{entry.rationale}</p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty certification-empty">
+                    No Coordinator certification has been recorded yet.
+                  </div>
+                )}
+              </section>
               <div className="section-heading">
                 <h2>Evidence checklist</h2>
                 <span className="muted">
@@ -1378,6 +1484,21 @@ function App() {
           saved={async () => {
             setReview(null);
             await changed("Review recorded. Compliance has been recalculated.");
+          }}
+        />
+      )}
+      {certification && (
+        <CertificationForm
+          requirement={certification.requirement}
+          outcome={certification.outcome}
+          close={() => setCertification(null)}
+          saved={async () => {
+            setCertification(null);
+            await changed(
+              certification.outcome === "complete"
+                ? "Requirement marked complete. Compliance has been recalculated."
+                : "Requirement reopened. Compliance has been recalculated.",
+            );
           }}
         />
       )}
@@ -1906,6 +2027,87 @@ function ReviewForm({
           </button>
           <button className="primary" disabled={busy}>
             {busy ? "Recording…" : "Record Decision"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CertificationForm({
+  requirement,
+  outcome,
+  close,
+  saved,
+}: {
+  requirement: Requirement;
+  outcome: "complete" | "reopened";
+  close: () => void;
+  saved: () => Promise<void>;
+}) {
+  const [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const completing = outcome === "complete";
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const f = new FormData(e.currentTarget);
+    try {
+      await post(`requirements/${requirement.id}/certifications/`, {
+        outcome,
+        rationale: f.get("rationale"),
+      });
+      await saved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal
+      title={completing ? "Mark Requirement Complete" : "Reopen Requirement"}
+      close={close}
+    >
+      <form onSubmit={submit}>
+        <ErrorBox error={error} />
+        <div className="review-context">
+          <h3>{requirement.title}</h3>
+          <p>
+            {completing
+              ? "This will count the requirement toward compliance."
+              : "This will remove the requirement from completed compliance."}
+          </p>
+        </div>
+        <label>
+          Rationale
+          <textarea
+            name="rationale"
+            required
+            minLength={1}
+            rows={4}
+            placeholder={
+              completing
+                ? "State why this requirement is ready to be completed."
+                : "State why this requirement must be reopened."
+            }
+          />
+        </label>
+        <p className="muted">
+          Your decision, rationale, and date will be retained in the
+          certification and audit history.
+        </p>
+        <div className="form-actions">
+          <button type="button" className="secondary" onClick={close}>
+            Cancel
+          </button>
+          <button className="primary" disabled={busy}>
+            {busy
+              ? "Saving…"
+              : completing
+                ? "Mark Complete"
+                : "Reopen Requirement"}
           </button>
         </div>
       </form>

@@ -20,6 +20,7 @@ export type Cycle = {
 export type Summary = {
   total: number;
   complete: number;
+  ready_for_completion_review: number;
   pending: number;
   for_compliance: number;
   missing: number;
@@ -93,7 +94,17 @@ export type Requirement = {
   required_items: number;
   can_manage: boolean;
   can_upload: boolean;
+  can_complete?: boolean;
+  can_reopen?: boolean;
+  certifications?: Certification[];
   items?: Item[];
+};
+export type Certification = {
+  id: number;
+  outcome: "complete" | "reopened";
+  coordinator: string;
+  rationale: string;
+  created_at: string;
 };
 export type Version = {
   id: number;
