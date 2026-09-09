@@ -2,6 +2,11 @@ from pathlib import Path
 import csv
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.forms import PasswordResetForm
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
@@ -88,6 +93,56 @@ class LogoutView(APIView):
         return Response({'detail': 'Signed out.'})
 
 
+class PasswordChangeView(APIView):
+    def post(self, request):
+        data = payload(PasswordChangeInput, request, context={'request': request}).validated_data
+        if not request.user.check_password(data['current_password']):
+            raise ValidationError({'current_password': 'Your current password is incorrect.'})
+        request.user.set_password(data['new_password'])
+        request.user.save(update_fields=['password'])
+        update_session_auth_hash(request, request.user)
+        audit(request.user, None, 'password_changed', request.user.username)
+        return Response({'detail': 'Password changed.'})
+
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        data = payload(PasswordResetRequestInput, request).validated_data
+        if not settings.PASSWORD_RESET_ENABLED or not settings.DEFAULT_FROM_EMAIL or not settings.EMAIL_HOST:
+            return Response({'detail': 'Password recovery email is not configured. Contact an administrator for recovery.'})
+        form = PasswordResetForm({'email': data['email']})
+        form.is_valid()
+        form.save(
+            request=request, use_https=request.is_secure(),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            email_template_name='hub/password_reset_email.txt',
+            subject_template_name='hub/password_reset_subject.txt',
+            extra_email_context={'reset_url': settings.PASSWORD_RESET_FRONTEND_URL.rstrip('/') + '/?reset=1'},
+        )
+        return Response({'detail': 'If an active account uses that email address, a password recovery link has been sent.'})
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if not settings.PASSWORD_RESET_ENABLED:
+            raise ValidationError('Password recovery email is not configured. Contact an administrator for recovery.')
+        data = payload(PasswordResetConfirmInput, request).validated_data
+        try:
+            user = User.objects.get(pk=force_str(urlsafe_base64_decode(data['uid'])))
+        except (User.DoesNotExist, ValueError, TypeError, OverflowError):
+            raise ValidationError('This password recovery link is invalid or has expired.')
+        if not user.is_active or not default_token_generator.check_token(user, data['token']):
+            raise ValidationError('This password recovery link is invalid or has expired.')
+        user.set_password(data['new_password'])
+        user.save(update_fields=['password'])
+        audit(user, None, 'password_reset', user.username)
+        return Response({'detail': 'Password reset. You can now sign in.'})
+
+
 class MeView(APIView):
     def get(self, request):
         return Response(user_data(request.user))
@@ -164,7 +219,46 @@ def doc_data(doc, user):
 
 class CyclesView(APIView):
     def get(self, request):
-        return Response(list(Cycle.objects.filter(areas__in=areas_for(request.user)).distinct().order_by('-id').values()))
+        records = Cycle.objects.filter(areas__in=areas_for(request.user)).distinct().order_by('-id')
+        return Response([{**{'id': cycle.id, 'title': cycle.title, 'program': cycle.program,
+                            'instrument': cycle.instrument, 'status': cycle.status, 'is_demo': cycle.is_demo,
+                            'closed_at': cycle.closed_at},
+                          'can_close': cycle.status == 'active' and areas_for(request.user, ['coordinator']).filter(cycle_id=cycle.id).exists(),
+                          'can_reopen': cycle.status == 'closed' and areas_for(request.user, ['coordinator']).filter(cycle_id=cycle.id).exists()}
+                         for cycle in records])
+
+
+class CycleTransitionView(APIView):
+    action = ''
+
+    @transaction.atomic
+    def post(self, request, pk):
+        cycle = get_object_or_404(Cycle.objects.select_for_update(), pk=pk)
+        if not areas_for(request.user, ['coordinator']).filter(cycle_id=cycle.id).exists():
+            raise PermissionDenied('You do not have permission to manage this accreditation cycle.')
+        data = payload(CycleTransitionInput, request).validated_data
+        if self.action == 'close':
+            if cycle.status != 'active':
+                raise ValidationError('Only an active cycle can be closed.')
+            cycle.status, cycle.closed_at = 'closed', timezone.now()
+            action, detail = 'cycle_closed', 'Cycle closed. Records are now read-only.'
+        else:
+            if cycle.status != 'closed':
+                raise ValidationError('Only a closed cycle can be reopened.')
+            cycle.status, cycle.closed_at = 'active', None
+            action, detail = 'cycle_reopened', 'Cycle reopened. Authorized work can resume.'
+        cycle.save(update_fields=['status', 'closed_at'])
+        for area in cycle.areas.all():
+            audit(request.user, area, action, cycle.title, rationale=data['rationale'])
+        return Response({'detail': detail, 'cycle': {'id': cycle.id, 'status': cycle.status, 'closed_at': cycle.closed_at}})
+
+
+class CloseCycleView(CycleTransitionView):
+    action = 'close'
+
+
+class ReopenCycleView(CycleTransitionView):
+    action = 'reopen'
 
 
 class AreasView(APIView):

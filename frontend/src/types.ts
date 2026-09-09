@@ -16,6 +16,9 @@ export type Cycle = {
   program: string;
   status: string;
   is_demo: boolean;
+  closed_at: string | null;
+  can_close: boolean;
+  can_reopen: boolean;
 };
 export type Summary = {
   total: number;

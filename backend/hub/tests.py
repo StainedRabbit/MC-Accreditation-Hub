@@ -7,6 +7,10 @@ from django.db import close_old_connections
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core import mail
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.contrib.auth.tokens import default_token_generator
 from rest_framework.test import APIClient
 from pypdf import PdfWriter
 from .models import *
@@ -332,6 +336,49 @@ class WorkflowTests(WorkflowFixture, TestCase):
         token = client.get('/api/auth/csrf/').data['csrfToken']
         self.assertEqual(client.post('/api/auth/logout/', {}, format='json', HTTP_X_CSRFTOKEN=token).status_code, 200)
         self.assertEqual(client.get('/api/auth/me/').status_code, 403)
+
+    def test_password_change_requires_current_password_and_keeps_session(self):
+        self.client.force_authenticate(self.custodian)
+        bad = self.client.post('/api/auth/password-change/', {'current_password': 'wrong', 'new_password': 'Changed-password-1234'}, format='json')
+        self.assertEqual(bad.status_code, 400)
+        response = self.client.post('/api/auth/password-change/', {'current_password': 'Test-password-1234', 'new_password': 'Changed-password-1234'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.client.get('/api/auth/me/').status_code, 200)
+        self.assertTrue(User.objects.get(pk=self.custodian.pk).check_password('Changed-password-1234'))
+        self.assertTrue(AuditEvent.objects.filter(action='password_changed', actor=self.custodian).exists())
+
+    def test_password_recovery_reports_when_delivery_is_not_configured(self):
+        disabled = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
+        self.assertEqual(disabled.status_code, 200)
+        self.assertIn('not configured', disabled.data['detail'])
+
+    @override_settings(PASSWORD_RESET_ENABLED=True, EMAIL_HOST='smtp.example.invalid', DEFAULT_FROM_EMAIL='noreply@example.invalid', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_password_recovery_is_one_time_when_delivery_is_configured(self):
+        # The endpoint remains non-enumerating once institutional delivery is enabled.
+        response = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(mail.outbox), 1)
+        uid = urlsafe_base64_encode(force_bytes(self.custodian.pk))
+        token = default_token_generator.make_token(self.custodian)
+        confirmed = self.client.post('/api/auth/password-reset-confirm/', {'uid': uid, 'token': token, 'new_password': 'Recovered-password-1234'}, format='json')
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        self.assertTrue(User.objects.get(pk=self.custodian.pk).check_password('Recovered-password-1234'))
+        self.assertTrue(AuditEvent.objects.filter(action='password_reset', actor=self.custodian).exists())
+
+    def test_cycle_close_reopen_is_scoped_logged_and_restores_authorized_writes(self):
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/close/', {'rationale': 'Not authorized'}, format='json').status_code, 403)
+        self.client.force_authenticate(self.coordinator)
+        closed = self.client.post(f'/api/cycles/{self.cycle.id}/close/', {'rationale': 'Evidence review is complete.'}, format='json')
+        self.assertEqual(closed.status_code, 200, closed.data)
+        self.cycle.refresh_from_db()
+        self.assertEqual(self.cycle.status, 'closed')
+        self.assertTrue(AuditEvent.objects.filter(action='cycle_closed', detail__rationale='Evidence review is complete.').exists())
+        self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'Blocked'}, format='json').status_code, 400)
+        reopened = self.client.post(f'/api/cycles/{self.cycle.id}/reopen/', {'rationale': 'A correction is required.'}, format='json')
+        self.assertEqual(reopened.status_code, 200, reopened.data)
+        self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'Allowed'}, format='json').status_code, 200)
+        self.assertTrue(AuditEvent.objects.filter(action='cycle_reopened', detail__rationale='A correction is required.').exists())
 
     def test_historical_records_cannot_be_overwritten(self):
         doc = self.upload()

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
 from .models import Requirement, EvidenceItem
 
 
@@ -83,4 +84,36 @@ class CertificationInput(serializers.Serializer):
     def validate_rationale(self, value):
         if not value:
             raise serializers.ValidationError('A rationale is required.')
+        return value
+
+
+class CycleTransitionInput(serializers.Serializer):
+    rationale = serializers.CharField(trim_whitespace=True, max_length=4000)
+
+    def validate_rationale(self, value):
+        if not value:
+            raise serializers.ValidationError('A reason is required.')
+        return value
+
+
+class PasswordChangeInput(serializers.Serializer):
+    current_password = serializers.CharField(trim_whitespace=False)
+    new_password = serializers.CharField(trim_whitespace=False)
+
+    def validate_new_password(self, value):
+        validate_password(value, self.context['request'].user)
+        return value
+
+
+class PasswordResetRequestInput(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class PasswordResetConfirmInput(serializers.Serializer):
+    uid = serializers.CharField(max_length=128)
+    token = serializers.CharField(max_length=256)
+    new_password = serializers.CharField(trim_whitespace=False)
+
+    def validate_new_password(self, value):
+        validate_password(value)
         return value

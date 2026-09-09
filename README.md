@@ -93,7 +93,22 @@ python backend/manage.py create_cycle path/to/cycle.json
 python backend/manage.py close_cycle 1
 ```
 
-Only run `close_cycle` for the intended cycle ID. Closure is irreversible through the app, logs final summaries, and blocks further requirement, mapping, submission, review, and version changes to that cycle. Create new cycle records for subsequent assessments. Source versions can be explicitly reused in new-cycle mappings by authorized coordinators through the API; old decisions never transfer.
+Only run `close_cycle` for the intended cycle ID when operating directly from the server. In the application, an assigned Coordinator can close or reopen a cycle from the Dashboard, but both actions require a recorded reason. A closed cycle blocks further requirement, mapping, submission, review, and version changes; downloads remain available. Reopening is exceptional and fully audited. Create new cycle records for subsequent assessments. Source versions can be explicitly reused in new-cycle mappings by authorized coordinators through the API; old decisions never transfer.
+
+## Account recovery
+
+Signed-in users can change their own password from Account security in the sidebar. Password recovery email is disabled by default, so the login screen tells pilot users to contact an administrator instead of falsely claiming a message was sent. Before enabling it in a school environment, configure SMTP and these environment values:
+
+```text
+PASSWORD_RESET_ENABLED=1
+DEFAULT_FROM_EMAIL=accreditation@example.edu
+EMAIL_HOST=smtp.example.edu
+EMAIL_HOST_USER=...
+EMAIL_HOST_PASSWORD=...
+PASSWORD_RESET_FRONTEND_URL=https://accreditation.example.edu/
+```
+
+Use the production HTTPS URL for `PASSWORD_RESET_FRONTEND_URL`. The server sends a one-time link; it does not disclose whether an email address belongs to an active account.
 
 ## Verification
 
@@ -125,6 +140,6 @@ Back up PostgreSQL and private files together, protect the backups, and verify r
 
 Search checks only scoped requirement and document metadata. Compliance Reports provide scoped filters, printable output, and a CSV download. CSV fields that begin with spreadsheet formula characters are neutralized before export.
 
-Notifications, advanced analytics, password recovery, two-factor authentication, and a separate readiness score are not included in this increment. Their nonfunctional navigation/controls are intentionally absent.
+Notifications, advanced analytics, two-factor authentication, and a separate readiness score are not included in this increment. Their nonfunctional navigation/controls are intentionally absent.
 
 See [API contract](docs/API.md) and [validation record](docs/VALIDATION.md).

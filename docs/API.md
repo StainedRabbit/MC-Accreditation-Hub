@@ -8,7 +8,12 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpo
 | POST `auth/login/` | `{username, password, remember?: boolean}`; accepts username or email, returns current user and assignments |
 | GET `auth/me/` | `{id, name, username, is_staff, assignments:[{role,cycle_id,area_id}]}` |
 | POST `auth/logout/` | Ends session |
+| POST `auth/password-change/` | Authenticated `{current_password,new_password}`; keeps the current session valid and records an audit event |
+| POST `auth/password-reset/` | `{email}`; sends a non-enumerating recovery email only when institutional delivery is configured, otherwise returns the administrator-recovery instruction |
+| POST `auth/password-reset-confirm/` | `{uid,token,new_password}`; consumes a valid one-time recovery token |
 | GET `cycles/` | Accessible cycles only |
+| POST `cycles/{id}/close/` | Scoped Coordinator only `{rationale}`; changes an active cycle to closed and logs each authorized area |
+| POST `cycles/{id}/reopen/` | Scoped Coordinator only `{rationale}`; restores a closed cycle to active and logs each authorized area |
 | GET `areas/?cycle=id` | Scoped areas, permission flags, and compliance totals |
 | GET `requirements/?cycle=id&area=id&search=text&status=complete` | Scoped requirement summaries; filters optional |
 | POST `requirements/` | `{area,code,title,description?,responsible,deadline?,active,applicable?,exclusion_reason?,items:[{label,criteria?,mandatory?}]}` |
@@ -38,3 +43,5 @@ A later evidence upload, submission, or expiry does not silently remove a record
 Repeated submission of the same mapping/version is rejected. Replacements must use a higher document version number. Competing decisions are serialized using cycle and mapping locks; only one decision can be recorded per submission. Replacing pending evidence makes the older submission historical and prevents reviewing it.
 
 Errors use 400 for validation/invalid transitions, 403 for missing sessions or denied actions, 404 for inaccessible records, and 429 for login throttling. Hidden records are never returned by list endpoints. Unknown HTTP operations return 405. This first increment returns unpaginated scoped collections; add pagination before scaling to large institutional datasets.
+
+Password recovery remains disabled unless `PASSWORD_RESET_ENABLED=1`, `DEFAULT_FROM_EMAIL`, and `EMAIL_HOST` are configured. The recovery link is built from `PASSWORD_RESET_FRONTEND_URL`; configure it with the production HTTPS application URL before enabling delivery.

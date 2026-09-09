@@ -2,7 +2,7 @@
 
 ## Current slice
 
-Search and Reports checkpoint: scoped metadata search, printable compliance reporting, formula-safe CSV export, and enhanced user-facing audit filtering.
+Cycle Lifecycle and Recovery checkpoint: scoped close/reopen controls, account password workflows, and lifecycle audit history.
 
 ## Completed work
 
@@ -19,6 +19,8 @@ Search and Reports checkpoint: scoped metadata search, printable compliance repo
 - The Playwright workflow now covers approved evidence becoming ready, Coordinator completion, dashboard count change, reopening, and the reversed count change. It also confirms a Reviewer cannot see certification controls.
 - Scoped Search returns only authorized requirement and document metadata. Compliance Reports reuse the same scoped status calculation as the dashboard, support area/status filters, print cleanly, and export formula-safe CSV.
 - Audit Trail remains user-facing and now supports server-side scoped text/action filters for future pagination and UI controls.
+- Scoped Coordinators can close an active cycle or reopen a closed cycle from the Dashboard. Both transitions require a rationale, are audited per area, and all normal write endpoints continue to enforce active-cycle locking.
+- Signed-in users can change their password from Account security without losing their current session. Recovery email is deliberately disabled until SMTP, sender, and public application URL settings are supplied; the login flow directs users to administrator-assisted recovery when it is unavailable.
 
 ## Verified behavior
 
@@ -29,16 +31,18 @@ Search and Reports checkpoint: scoped metadata search, printable compliance repo
 - Focused PostgreSQL tests for Search/Reports passed on 2026-09-09: scoped search, report totals, CSV export, audit filtering, and spreadsheet-formula neutralization.
 - `npm.cmd run test:e2e --prefix frontend` with the local Playwright Chromium executable: 3 tests passed on 2026-09-09, including scoped Search and the printable Compliance Report/export controls.
 - Tests cover CSRF/session handling, scoped lists and downloads, self-review prevention, stale/competing review decisions, invalid uploads, expiry, exclusions, closed cycles, historical immutability, Coordinator-only certification, reopening, rationale validation, and the revised compliance calculation.
+- Focused Slice 9 PostgreSQL tests passed on 2026-09-09: scoped close/reopen transitions and audit reasons, blocked writes while closed, password-change validation/session continuity, disabled recovery messaging, and configured one-time password recovery.
+- `python backend/manage.py check`, `python backend/manage.py makemigrations --check --dry-run`, and `npm.cmd run build --prefix frontend` passed on 2026-09-09.
 
 ## Known incomplete or broken work
 
 - The app permits controlled cross-area mapping, while the older plan defers cross-area sharing. That policy remains unresolved and is outside the current certification change.
-- Pagination, password recovery, two-factor authentication, notifications, full cycle administration UI, deployment/backup restoration, and malware scanning remain outside this checkpoint.
+- Pagination, two-factor authentication, notifications, full cycle administration UI, deployment/backup restoration, and malware scanning remain outside this checkpoint.
 - The actual Figma site was not available for inspection; login and supplied screenshots guided the current visual design.
 
 ## Next exact task
 
-Wait for the next scoped feature instruction; this Search and Reports checkpoint is complete. Do not begin cycle lifecycle/recovery, deployment, or another feature from this checkpoint.
+Implement Slice 10 only: deployment configuration, backup/restore procedure, release verification, and thesis evaluation materials. Do not begin deferred features.
 
 ## Important decisions
 

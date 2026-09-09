@@ -328,6 +328,7 @@ button.secondary {
 .login-card .primary {
   margin-top: 4px;
 }
+.recovery-link { display: block; margin: 14px auto 0; font-size: 13px; }
 .login-card > small {
   display: block;
   margin-top: 27px;
@@ -445,6 +446,10 @@ button.secondary {
 .sidebar-user > .icon-button {
   margin-left: auto;
 }
+.sidebar-user > .icon-button + .icon-button { margin-left: 0; }
+.cycle-lifecycle { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 22px; }
+.cycle-lifecycle h3 { margin: 0 0 6px; }
+.cycle-lifecycle p { margin: 0; color: var(--muted); }
 .main-shell {
   margin-left: 270px;
 }
@@ -1574,6 +1579,7 @@ dialog::backdrop {
   .content-footer {
     font-size: 10px;
   }
+  .cycle-lifecycle { align-items: flex-start; flex-direction: column; }
 }
 
 @media (min-width: 1500px) {

@@ -22,6 +22,8 @@ import {
   EyeOff,
   FileText,
   Printer,
+  KeyRound,
+  LockKeyhole,
 } from "lucide-react";
 import { api, post } from "./api";
 import "@fontsource-variable/inter";
@@ -138,7 +140,9 @@ function Login({
 }) {
   const [error, setError] = useState(message),
     [busy, setBusy] = useState(false),
-    [show, setShow] = useState(false);
+    [show, setShow] = useState(false),
+    [recovery, setRecovery] = useState(false);
+  const resetParams = new URLSearchParams(window.location.search);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -231,8 +235,10 @@ function Login({
           <button className="primary full" disabled={busy}>
             {busy ? "Signing in…" : "Sign In"}
           </button>
+          <button type="button" className="link recovery-link" onClick={() => setRecovery(true)}>Forgot your password?</button>
         </form>
         <small>Institution-Owned System · Mabini Colleges, Inc.</small>
+        {(recovery || resetParams.get("reset")) && <PasswordRecovery close={() => { setRecovery(false); window.history.replaceState({}, "", window.location.pathname); }} uid={resetParams.get("uid")} token={resetParams.get("token")} />}
       </section>
     </main>
   );
@@ -294,6 +300,8 @@ function App() {
     [docDetail, setDocDetail] = useState<Document | null>(null);
   const [requirementForm, setRequirementForm] = useState(false),
     [editing, setEditing] = useState<Requirement | null>(null);
+  const [security, setSecurity] = useState(false),
+    [cycleTransition, setCycleTransition] = useState<"close" | "reopen" | null>(null);
   const [upload, setUpload] = useState<{
       doc?: Document;
       item?: Item;
@@ -323,6 +331,8 @@ function App() {
     setCertification(null);
     setMappingItem(null);
     setRequirementForm(false);
+    setSecurity(false);
+    setCycleTransition(null);
     setLoading(false);
     setError("");
     setNotice("");
@@ -484,6 +494,13 @@ function App() {
     setNotice(message);
     await refresh();
   }
+  async function transitionCycle(action: "close" | "reopen", rationale: string) {
+    if (!selectedCycle) return;
+    const result = await post<{ detail: string }>(`cycles/${selectedCycle.id}/${action}/`, { rationale });
+    setCycles(await api<Cycle[]>("cycles/"));
+    setCycleTransition(null);
+    await changed(result.detail);
+  }
   if (initializing)
     return <div className="loading-page">Loading MC Accreditation Hub…</div>;
   if (!user)
@@ -613,6 +630,9 @@ function App() {
             <strong>{user.name}</strong>
             <small>{user.assignments[0]?.role || "Administrator"}</small>
           </div>
+          <button className="icon-button" title="Account security" aria-label="Account security" onClick={() => setSecurity(true)}>
+            <KeyRound size={18} />
+          </button>
           <button
             className="icon-button"
             title="Sign out"
@@ -855,8 +875,21 @@ function App() {
                   excluded.
                 </small>
               </div>
+              {page === "dashboard" && (selectedCycle?.can_close || selectedCycle?.can_reopen) && (
+                <section className="panel cycle-lifecycle">
+                  <div>
+                    <h3>Cycle lifecycle</h3>
+                    <p>{selectedCycle.status === "active" ? "Closing makes all ordinary records read-only." : "Reopening allows authorized staff to resume work."}</p>
+                  </div>
+                  <button className={selectedCycle.status === "active" ? "danger" : "secondary"} onClick={() => setCycleTransition(selectedCycle.status === "active" ? "close" : "reopen")}>
+                    <LockKeyhole size={16} /> {selectedCycle.status === "active" ? "Close cycle" : "Reopen cycle"}
+                  </button>
+                </section>
+              )}
             </>
           )}
+          {security && <PasswordChangeModal close={() => setSecurity(false)} changed={changed} />}
+          {cycleTransition && selectedCycle && <CycleTransitionModal cycle={selectedCycle} action={cycleTransition} close={() => setCycleTransition(null)} submit={transitionCycle} />}
           {page === "areas" && (
             <>
               <div className="page-heading">
@@ -2284,6 +2317,73 @@ function CertificationForm({
       </form>
     </Modal>
   );
+}
+
+function PasswordChangeModal({ close, changed }: { close: () => void; changed: (message: string) => Promise<void> }) {
+  const [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    if (form.get("new_password") !== form.get("confirm_password")) {
+      setError("The new passwords do not match.");
+      return;
+    }
+    setBusy(true); setError("");
+    try {
+      const result = await post<{ detail: string }>("auth/password-change/", {
+        current_password: form.get("current_password"), new_password: form.get("new_password"),
+      });
+      close(); await changed(result.detail);
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title="Change password" close={close}>
+    <form onSubmit={submit}>
+      <ErrorBox error={error} />
+      <label>Current password<input name="current_password" type="password" autoComplete="current-password" required /></label>
+      <label>New password<input name="new_password" type="password" autoComplete="new-password" minLength={12} required /></label>
+      <label>Confirm new password<input name="confirm_password" type="password" autoComplete="new-password" minLength={12} required /></label>
+      <p className="muted">Use at least 12 characters and avoid common or personal passwords.</p>
+      <div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy}>{busy ? "Changing…" : "Change password"}</button></div>
+    </form>
+  </Modal>;
+}
+
+function PasswordRecovery({ close, uid, token }: { close: () => void; uid: string | null; token: string | null }) {
+  const confirming = Boolean(uid && token);
+  const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const form = new FormData(e.currentTarget); setError("");
+    if (confirming && form.get("new_password") !== form.get("confirm_password")) { setError("The new passwords do not match."); return; }
+    setBusy(true);
+    try {
+      const result = await post<{ detail: string }>(confirming ? "auth/password-reset-confirm/" : "auth/password-reset/", confirming ? { uid, token, new_password: form.get("new_password") } : { email: form.get("email") });
+      setNotice(result.detail);
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={confirming ? "Choose a new password" : "Password recovery"} close={close}>
+    <form onSubmit={submit}><ErrorBox error={error} />{notice && <div className="notice" role="status">{notice}</div>}
+      {confirming ? <><label>New password<input name="new_password" type="password" autoComplete="new-password" minLength={12} required /></label><label>Confirm new password<input name="confirm_password" type="password" autoComplete="new-password" minLength={12} required /></label></> : <><p className="muted">Enter your institutional email. If recovery email is not configured, contact an administrator.</p><label>Email address<input name="email" type="email" autoComplete="email" required /></label></>}
+      <div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy || Boolean(notice)}>{busy ? "Sending…" : confirming ? "Reset password" : "Send recovery link"}</button></div>
+    </form>
+  </Modal>;
+}
+
+function CycleTransitionModal({ cycle, action, close, submit }: { cycle: Cycle; action: "close" | "reopen"; close: () => void; submit: (action: "close" | "reopen", rationale: string) => Promise<void> }) {
+  const [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const closing = action === "close";
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true); setError("");
+    try { await submit(action, String(new FormData(e.currentTarget).get("rationale") || "")); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={closing ? "Close accreditation cycle" : "Reopen accreditation cycle"} close={close}>
+    <form onSubmit={save}>
+      <ErrorBox error={error} />
+      <div className="review-context"><h3>{cycle.title}</h3><p>{closing ? "Closing prevents requirement, evidence, submission, review, and certification changes. Downloads remain available." : "Reopening restores authorized work. This action is recorded in the audit trail."}</p></div>
+      <label>Reason for {closing ? "closing" : "reopening"}<textarea name="rationale" rows={4} required placeholder={closing ? "State why this cycle is ready to close." : "State why work must resume in this cycle."} /></label>
+      <div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className={closing ? "danger" : "primary"} disabled={busy}>{busy ? "Saving…" : closing ? "Close cycle" : "Reopen cycle"}</button></div>
+    </form>
+  </Modal>;
 }
 
 createRoot(document.getElementById("root")!).render(

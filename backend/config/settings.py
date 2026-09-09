@@ -53,3 +53,12 @@ REST_FRAMEWORK = {
  'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
  'DEFAULT_THROTTLE_RATES': {'login': '10/min'},
 }
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', '')
+EMAIL_BACKEND = os.getenv('DJANGO_EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', '')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', '1') == '1'
+PASSWORD_RESET_ENABLED = os.getenv('PASSWORD_RESET_ENABLED', '0') == '1'
+PASSWORD_RESET_FRONTEND_URL = os.getenv('PASSWORD_RESET_FRONTEND_URL', 'http://127.0.0.1:5173/')
