@@ -1,0 +1,10 @@
+.local/
+.env
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+private-media/
+test-results/
+playwright-report/
