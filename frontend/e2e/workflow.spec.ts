@@ -124,6 +124,20 @@ test("create, upload, request revisions, replace and approve", async ({
     .getByRole("button", { name: "Record Decision", exact: true })
     .click();
   await expect(reviewer.getByRole("dialog")).toHaveCount(0);
+  await reviewer
+    .getByRole("button", { name: "Requirements", exact: true })
+    .click();
+  await reviewer
+    .getByRole("row")
+    .filter({ hasText: title })
+    .getByRole("button", { name: "View", exact: true })
+    .click();
+  await expect(
+    reviewer.getByRole("button", { name: "Mark Complete", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    reviewer.getByRole("button", { name: "Reopen Requirement", exact: true }),
+  ).toHaveCount(0);
   await page.reload();
   await page.getByRole("button", { name: "Requirements", exact: true }).click();
   await page
