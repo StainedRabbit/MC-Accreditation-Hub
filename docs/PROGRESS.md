@@ -2,7 +2,7 @@
 
 ## Current slice
 
-Cycle Lifecycle and Recovery checkpoint: scoped close/reopen controls, account password workflows, and lifecycle audit history.
+Deployment and thesis evaluation checkpoint: target-ready Linux deployment artifacts, guarded backup/restore tooling, release verification, and an honest evaluation packet.
 
 ## Completed work
 
@@ -21,6 +21,9 @@ Cycle Lifecycle and Recovery checkpoint: scoped close/reopen controls, account p
 - Audit Trail remains user-facing and now supports server-side scoped text/action filters for future pagination and UI controls.
 - Scoped Coordinators can close an active cycle or reopen a closed cycle from the Dashboard. Both transitions require a rationale, are audited per area, and all normal write endpoints continue to enforce active-cycle locking.
 - Signed-in users can change their password from Account security without losing their current session. Recovery email is deliberately disabled until SMTP, sender, and public application URL settings are supplied; the login flow directs users to administrator-assisted recovery when it is unavailable.
+- Target-ready Nginx and systemd/Gunicorn reference configuration, production environment template, release checker, and database-aware `/api/health/` probe are available under `deploy/`.
+- Backup tooling creates a protected bundle of PostgreSQL data, evidence bytes, deployment environment, manifest, and checksums. Restore tooling verifies archive integrity without touching a database; the runbook requires an isolated database/evidence restoration rehearsal before production acceptance.
+- Deployment, recovery, release-checklist, and thesis evaluation documents provide school-IT handoff and structured evidence collection without fabricating participant or restore results.
 
 ## Verified behavior
 
@@ -33,16 +36,17 @@ Cycle Lifecycle and Recovery checkpoint: scoped close/reopen controls, account p
 - Tests cover CSRF/session handling, scoped lists and downloads, self-review prevention, stale/competing review decisions, invalid uploads, expiry, exclusions, closed cycles, historical immutability, Coordinator-only certification, reopening, rationale validation, and the revised compliance calculation.
 - Focused Slice 9 PostgreSQL tests passed on 2026-09-09: scoped close/reopen transitions and audit reasons, blocked writes while closed, password-change validation/session continuity, disabled recovery messaging, and configured one-time password recovery.
 - `python backend/manage.py check`, `python backend/manage.py makemigrations --check --dry-run`, and `npm.cmd run build --prefix frontend` passed on 2026-09-09.
+- Focused Slice 10 health-probe PostgreSQL test passed on 2026-09-09. `check`, migration drift check, and the production frontend build passed. `check --deploy` was run with production-like HTTPS settings and reports only Django's HSTS-preload advisory, intentionally retained because hostname/subdomain preload approval is not available.
 
 ## Known incomplete or broken work
 
 - The app permits controlled cross-area mapping, while the older plan defers cross-area sharing. That policy remains unresolved and is outside the current certification change.
-- Pagination, two-factor authentication, notifications, full cycle administration UI, deployment/backup restoration, and malware scanning remain outside this checkpoint.
+- Pagination, two-factor authentication, notifications, full cycle administration UI, malware scanning, and an actual school-server deployment/restore rehearsal remain outside this local checkpoint.
 - The actual Figma site was not available for inspection; login and supplied screenshots guided the current visual design.
 
 ## Next exact task
 
-Implement Slice 10 only: deployment configuration, backup/restore procedure, release verification, and thesis evaluation materials. Do not begin deferred features.
+All planned slices are implemented as repository artifacts. Before production acceptance, school IT must complete the release checklist and isolated recovery rehearsal; do not begin deferred features without an explicit scope extension.
 
 ## Important decisions
 

@@ -4,6 +4,7 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpo
 
 | Method/path | Contract |
 |---|---|
+| GET `health/` | Unauthenticated readiness probe; returns only `{status:"ok"}` after a database query, otherwise HTTP 503 |
 | GET `auth/csrf/` | Sets CSRF cookie and returns `{csrfToken}` |
 | POST `auth/login/` | `{username, password, remember?: boolean}`; accepts username or email, returns current user and assignments |
 | GET `auth/me/` | `{id, name, username, is_staff, assignments:[{role,cycle_id,area_id}]}` |

@@ -132,14 +132,14 @@ npm run test:e2e
 
 If using an existing compatible Chromium installation, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path. Tests add clearly named fictional demonstration requirements and evidence to the demo cycle. They retain the history so it can be inspected. Screenshots are saved in `.local/screenshots/`.
 
-## School-server preparation
+## School-server deployment and recovery
 
-Serve `frontend/dist` at `/` through a reverse proxy, and route `/api/` to Django. Serve Django's collected `/static/` files separately; never expose `private-media`. Use HTTPS, `DJANGO_DEBUG=0`, real host/origin settings, a dedicated database login, and a private storage path. Development servers and the local cluster are not production services.
+The repository now includes a school-owned Linux reference deployment using Nginx, systemd, Gunicorn, PostgreSQL, and protected evidence storage. Follow [the deployment reference](docs/DEPLOYMENT.md), [release checklist](docs/RELEASE_CHECKLIST.md), and [backup/restore procedure](docs/RESTORE.md). The reference uses the production frontend build, never Vite, and has no public route to `private-media`.
 
-Back up PostgreSQL and private files together, protect the backups, and verify restoration on a separate instance. Deployment sizing, hardened service configuration, malware scanning, monitoring, and backup scheduling require the school-server phase. Database administrators can alter database rows; the application audit trail is append-only through the application, not a cryptographic tamper-proof log.
+Back up PostgreSQL and private files as one protected set, replicate it to a separately approved failure domain, and prove an isolated restoration before accepting real evidence. The deployment and restoration artifacts are ready for school IT; no school-server deployment or recovery rehearsal has been claimed from this local workspace. Database administrators can alter database rows; the application audit trail is append-only through the application, not a cryptographic tamper-proof log.
 
 Search checks only scoped requirement and document metadata. Compliance Reports provide scoped filters, printable output, and a CSV download. CSV fields that begin with spreadsheet formula characters are neutralized before export.
 
 Notifications, advanced analytics, two-factor authentication, and a separate readiness score are not included in this increment. Their nonfunctional navigation/controls are intentionally absent.
 
-See [API contract](docs/API.md) and [validation record](docs/VALIDATION.md).
+See [API contract](docs/API.md), [deployment guidance](docs/DEPLOYMENT.md), and [thesis evaluation packet](docs/THESIS_EVALUATION.md).

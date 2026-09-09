@@ -1,0 +1,24 @@
+[Unit]
+Description=MC Accreditation Hub Django application
+After=network.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mc-hub
+Group=mc-hub
+WorkingDirectory=/srv/mc-accreditation/app/backend
+EnvironmentFile=/etc/mc-accreditation-hub.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/srv/mc-accreditation/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8001 --workers 3 --timeout 60 --access-logfile - --error-logfile -
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/mc-accreditation/private-media /srv/mc-accreditation/app/backend/staticfiles
+
+[Install]
+WantedBy=multi-user.target

@@ -4,7 +4,7 @@ from hub import views as v
 
 urlpatterns = [
     path('api/admin/', admin.site.urls),
-    path('api/auth/csrf/', v.CsrfView.as_view()), path('api/auth/login/', v.LoginView.as_view()),
+    path('api/health/', v.HealthView.as_view()), path('api/auth/csrf/', v.CsrfView.as_view()), path('api/auth/login/', v.LoginView.as_view()),
     path('api/auth/logout/', v.LogoutView.as_view()), path('api/auth/me/', v.MeView.as_view()),
     path('api/auth/password-change/', v.PasswordChangeView.as_view()), path('api/auth/password-reset/', v.PasswordResetRequestView.as_view()), path('api/auth/password-reset-confirm/', v.PasswordResetConfirmView.as_view()),
     path('api/cycles/', v.CyclesView.as_view()), path('api/cycles/<int:pk>/close/', v.CloseCycleView.as_view()), path('api/cycles/<int:pk>/reopen/', v.ReopenCycleView.as_view()), path('api/areas/', v.AreasView.as_view()),

@@ -88,6 +88,12 @@ class WorkflowFixture:
 
 
 class WorkflowTests(WorkflowFixture, TestCase):
+    def test_health_probe_is_public_and_checks_database(self):
+        client = APIClient()
+        response = client.get('/api/health/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {'status': 'ok'})
+
     def test_approved_evidence_becomes_ready_then_coordinator_certifies_completion(self):
         self.assertEqual(self.compliance()['percentage'], 0)
         document = self.upload()

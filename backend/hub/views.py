@@ -7,7 +7,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.forms import PasswordResetForm
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
-from django.db import transaction
+from django.db import transaction, connection, DatabaseError
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
@@ -61,6 +61,19 @@ class CsrfView(APIView):
 
     def get(self, request):
         return Response({'csrfToken': get_token(request)})
+
+
+class HealthView(APIView):
+    """Minimal unauthenticated readiness probe; it discloses no application data."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT 1')
+        except DatabaseError:
+            return Response({'status': 'unavailable'}, status=503)
+        return Response({'status': 'ok'})
 
 
 class LoginThrottle(AnonRateThrottle):
