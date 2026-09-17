@@ -48,6 +48,8 @@ Deployment and thesis evaluation checkpoint: target-ready Linux deployment artif
 
 All planned slices are implemented as repository artifacts. Before production acceptance, school IT must complete the release checklist and isolated recovery rehearsal; do not begin deferred features without an explicit scope extension.
 
+See the [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) for pending owner and school IT decisions.
+
 ## Important decisions
 
 - Django owns permission checks, workflow transitions, compliance calculations, and protected download authorization.
