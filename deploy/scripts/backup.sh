@@ -21,8 +21,8 @@ pg_dump --format=custom --no-owner --no-acl --file="$work_dir/database.dump" "$P
 tar -C "$PRIVATE_MEDIA_ROOT" -czf "$work_dir/evidence.tar.gz" .
 cp "$MC_ENV_FILE" "$work_dir/environment.env"
 chmod 600 "$work_dir/environment.env"
-sha256sum "$work_dir/database.dump" "$work_dir/evidence.tar.gz" "$work_dir/environment.env" > "$work_dir/SHA256SUMS"
+(cd "$work_dir" && sha256sum database.dump evidence.tar.gz environment.env > SHA256SUMS)
 printf 'created_utc=%s\nsource_database=%s\n' "$(date -u +%FT%TZ)" "$PGDATABASE" > "$work_dir/manifest.txt"
 tar -C "$BACKUP_ROOT" -czf "$bundle" ".${run_id}.working"
-sha256sum "$bundle" > "${bundle}.sha256"
+(cd "$BACKUP_ROOT" && sha256sum "${run_id}.tar.gz" > "${run_id}.tar.gz.sha256")
 echo "Backup written: $bundle"

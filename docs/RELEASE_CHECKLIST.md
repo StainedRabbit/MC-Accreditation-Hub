@@ -6,11 +6,12 @@ Record the date, release commit, environment, operator, and result for every ite
 - [ ] `DJANGO_DEBUG=0`; secret and database password are outside Git; allowed hosts and CSRF origins are the final HTTPS hostname.
 - [ ] `python backend/manage.py check --deploy` reports no deployment warnings that remain unaddressed.
 - [ ] Migrations and `collectstatic` completed; `npm ci` and `npm run build` produced the release frontend assets.
+- [ ] A fresh Linux checkout passed `python3 -B -m unittest discover -s deploy/tests -v`; executable script modes, LF, and installed operator access match the documented commands. Local Windows/Git Bash results do not complete this target check.
 - [ ] Nginx validates and serves HTTPS; HTTP redirects to HTTPS; `/api/health/` returns `{"status":"ok"}`.
 - [ ] Login, refresh, logout, a scoped list, and a denied cross-scope URL behave as expected.
 - [ ] An authorized protected evidence download succeeds as an attachment; a guessed unauthorized download URL fails; Nginx has no `private-media` alias.
 - [ ] A closed cycle rejects ordinary writes; authorized reopen and its audit event are recorded.
-- [ ] A backup archive completed, checksums passed, and its off-host replication was confirmed.
+- [ ] A backup archive completed; payload-relative checksums passed against the copied/extracted bytes (not source-host paths), and protected off-host replication was confirmed.
 - [ ] A separate-environment restoration rehearsal proved an approved evidence download and its history. Attach the recorded evidence; do not mark this complete from archive verification alone.
 - [ ] Recovery email is either tested with school SMTP or remains disabled with administrator-assisted recovery documented.
 - [ ] Known limitations and the evaluation protocol were given to pilot participants.

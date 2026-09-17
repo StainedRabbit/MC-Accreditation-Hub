@@ -2,7 +2,7 @@
 
 ## Current slice
 
-Deployment and thesis evaluation checkpoint: target-ready Linux deployment artifacts, guarded backup/restore tooling, release verification, and an honest evaluation packet.
+Policy-independent P0 F10/F12 checkpoint: portable backup checksums, contained extracted-payload verification, executable Linux script packaging, and isolated synthetic tooling regressions. No decision-dependent workflow changes.
 
 ## Completed work
 
@@ -24,6 +24,8 @@ Deployment and thesis evaluation checkpoint: target-ready Linux deployment artif
 - Target-ready Nginx and systemd/Gunicorn reference configuration, production environment template, release checker, and database-aware `/api/health/` probe are available under `deploy/`.
 - Backup tooling creates a protected bundle of PostgreSQL data, evidence bytes, deployment environment, manifest, and checksums. Restore tooling verifies archive integrity without touching a database; the runbook requires an isolated database/evidence restoration rehearsal before production acceptance.
 - Deployment, recovery, release-checklist, and thesis evaluation documents provide school-IT handoff and structured evidence collection without fabricating participant or restore results.
+- F10: payload checksums use only the three expected relative filenames; archive sidecar uses its basename. The restore verifier validates layout/checksum entries before contained extraction, rejects unsafe paths/links/duplicates/missing files and legacy absolute manifests, hashes extracted bytes, and never sources the bundled environment. Pre-existing destinations are preserved; failed verification removes only the new destination.
+- F12: all three deployment shell scripts have executable Git mode `100755`; `.gitattributes` pins their LF endings. Existing direct-invocation commands remain unchanged.
 
 ## Verified behavior
 
@@ -37,16 +39,19 @@ Deployment and thesis evaluation checkpoint: target-ready Linux deployment artif
 - Focused Slice 9 PostgreSQL tests passed on 2026-09-09: scoped close/reopen transitions and audit reasons, blocked writes while closed, password-change validation/session continuity, disabled recovery messaging, and configured one-time password recovery.
 - `python backend/manage.py check`, `python backend/manage.py makemigrations --check --dry-run`, and `npm.cmd run build --prefix frontend` passed on 2026-09-09.
 - Focused Slice 10 health-probe PostgreSQL test passed on 2026-09-09. `check`, migration drift check, and the production frontend build passed. `check --deploy` was run with production-like HTTPS settings and reports only Django's HSTS-preload advisory, intentionally retained because hostname/subdomain preload approval is not available.
+- F10/F12 on 2026-09-17: `$env:BACKUP_TEST_BASH='C:\Program Files\Git\bin\bash.exe'; python -B -m unittest discover -s deploy/tests -v` passed **13 tests** on Windows/Python 3.13/Git Bash 5.2.37. Tests covered copied bundle/sidecar after removal of source backup paths, exact relative manifest names, tampered extracted files despite intact synthetic source files, unsafe/duplicate/missing/malformed/oversized checksums, missing/corrupt/unsafe archive payloads and links, destination preservation/failure cleanup, LF/Bash syntax, direct fixture invocation of all three scripts, and executable Git index modes. PostgreSQL, deployment Python, npm, and HTTP calls were stubbed. No real database restore, production data/services, real secrets, or infrastructure was used. This is not a Linux-host or recovery rehearsal result; Linux permission assertions were not exercised.
+- F10/F12 documentation checks on 2026-09-17: balanced Markdown code fences and existing relative file-link targets passed for `RESTORE.md`, `DEPLOYMENT.md`, `RELEASE_CHECKLIST.md`, and this progress record; `git diff --check` and `git diff --cached --check` passed. No application build/backend/browser suite was needed or run for this tooling-only checkpoint.
 
 ## Known incomplete or broken work
 
 - The app permits controlled cross-area mapping, while the older plan defers cross-area sharing. That policy remains unresolved and is outside the current certification change.
 - Pagination, two-factor authentication, notifications, full cycle administration UI, malware scanning, and an actual school-server deployment/restore rehearsal remain outside this local checkpoint.
 - The actual Figma site was not available for inspection; login and supplied screenshots guided the current visual design.
+- F10/F12 code and packaging are fixed locally; fresh Linux checkout/operator permissions and real PostgreSQL format probes remain unverified. The actual isolated database/evidence restoration, approved-version download/review/certification history, measured RPO/RTO, off-host protection, and school IT acceptance remain outstanding (F11/F20/F28). The decision register's policy choices remain Pending Decision.
 
 ## Next exact task
 
-All planned slices are implemented as repository artifacts. Before production acceptance, school IT must complete the release checklist and isolated recovery rehearsal; do not begin deferred features without an explicit scope extension.
+For F10/F12, school IT must run the synthetic tooling suite from a fresh Linux checkout, confirm installed operator access, and complete the controlled isolated recovery rehearsal and release checklist. This checkpoint closes only the local technical defects, not target acceptance. Other review findings and the requirements-baseline decisions remain unresolved; do not start decision-dependent workflow changes or deferred features without explicit scope/approval.
 
 See the [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) for pending owner and school IT decisions.
 

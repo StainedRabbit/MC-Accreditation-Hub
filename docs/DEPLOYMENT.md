@@ -36,6 +36,10 @@ Do not put a real `.env` in Git, and do not serve `private-media` with Nginx. Co
 
 The environment enables HTTPS redirect and one-day HSTS only after a working HTTPS deployment is confirmed. Do not enable a longer HSTS duration or preload until the hostname and subdomain policy have formal approval.
 
+The three `deploy/scripts/*.sh` entry points are tracked with executable Git mode `100755` and pinned LF line endings. Their documented direct invocations need no manual `chmod` after a normal Linux checkout. Keep `verify-backup-payload.py` alongside `restore-verify.sh`; the verifier invokes it through `python3` (Python 3.13+), not as an executable.
+
+Before installing a fresh Linux checkout, run `python3 -B -m unittest discover -s deploy/tests -v` from its root. This runs synthetic/stubbed tooling tests only, not a backup of the deployment or the real release checker against services. The 2026-09-17 local run passed 13 tests under Windows/Git Bash and confirmed executable Git metadata, LF, syntax, and direct invocation with fixtures; no Linux target host was available. Linux filesystem permissions, installed operator access, PostgreSQL probes, Nginx/systemd, and the full release/recovery checklist still require school IT verification. See [the exact recovery test scope](RESTORE.md#isolated-tooling-regression-verification).
+
 ## Operations
 
 - Nginx serves the built React application and collected static files; it proxies only `/api/` to Gunicorn at `127.0.0.1:8001`.
