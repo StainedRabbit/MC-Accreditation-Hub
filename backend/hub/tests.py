@@ -56,9 +56,9 @@ class WorkflowFixture:
         RoleAssignment.objects.create(user=user, role=role, cycle=self.cycle, area=area)
         return user
 
-    def upload(self, doc=None, user=None, valid_until=None):
+    def upload(self, doc=None, user=None, valid_until=None, filename='evidence.pdf'):
         self.client.force_authenticate(user or self.custodian)
-        data = {'file': pdf_file(), 'title': 'Faculty Development Plan', 'area': self.area.id}
+        data = {'file': pdf_file(filename), 'title': 'Faculty Development Plan', 'area': self.area.id}
         if valid_until:
             data['valid_until'] = str(valid_until)
         response = self.client.post(f'/api/documents/{doc}/versions/' if doc else '/api/documents/', data, format='multipart')
@@ -199,17 +199,92 @@ class WorkflowTests(WorkflowFixture, TestCase):
         response = self.client.post('/api/evidence-mappings/', {'item': self.item.id, 'document': doc['id']}, format='json')
         self.assertEqual(response.status_code, 404)
 
-    def test_shared_document_exposes_only_submitted_versions(self):
+    def test_legacy_cross_scope_history_preserves_only_approved_version_access(self):
         doc = self.upload()
         req = Requirement.objects.create(area=self.other_area, code='R2', title='Shared', responsible='Office', active=True, created_by=self.coordinator)
         item = EvidenceItem.objects.create(requirement=req, label='Shared plan')
-        self.submit(doc, item=item, user=self.coordinator)
-        updated = self.upload(doc['id'])
+        version = DocumentVersion.objects.get(pk=doc['versions'][0]['id'])
+        mapping = EvidenceMapping.objects.create(item=item, document_id=doc['id'], created_by=self.coordinator)
+        submission = Submission.objects.create(mapping=mapping, version=version, submitted_by=self.coordinator)
+        ReviewDecision.objects.create(submission=submission, reviewer=self.reviewer, outcome='approved')
+        updated = self.upload(doc['id'], filename='future-private-version.pdf')
         self.client.force_authenticate(self.outsider)
         visible = self.client.get(f'/api/documents/{doc["id"]}/').data
         self.assertEqual(len(visible['versions']), 1)
         self.assertEqual(visible['versions'][0]['number'], 1)
         self.assertEqual(self.client.get(f'/api/document-versions/{updated["versions"][0]["id"]}/download/').status_code, 404)
+        self.assertEqual(self.client.get('/api/search/', {'q': 'future-private-version'}).data['documents'], [])
+
+    def test_role_state_visibility_is_consistent_for_lists_history_search_and_downloads(self):
+        document = self.upload(filename='draft-only.pdf')
+        v1 = document['versions'][0]['id']
+
+        for user in [self.reviewer, self.viewer]:
+            with self.subTest(role=user.username, state='draft'):
+                self.client.force_authenticate(user)
+                self.assertEqual(self.client.get('/api/documents/').data, [])
+                self.assertEqual(self.client.get(f'/api/documents/{document["id"]}/').status_code, 404)
+                self.assertEqual(self.client.get(f'/api/document-versions/{v1}/download/').status_code, 404)
+                self.assertEqual(self.client.get('/api/search/', {'q': 'draft-only'}).data['documents'], [])
+
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.client.get(f'/api/documents/{document["id"]}/').data['versions'][0]['id'], v1)
+        self.client.force_authenticate(self.coordinator)
+        self.assertEqual(self.client.get(f'/api/documents/{document["id"]}/').data['versions'][0]['id'], v1)
+
+        submission = self.submit(document)
+        self.client.force_authenticate(self.reviewer)
+        reviewer_detail = self.client.get(f'/api/documents/{document["id"]}/').data
+        self.assertEqual([version['id'] for version in reviewer_detail['versions']], [v1])
+        self.assertEqual([record['id'] for record in self.client.get('/api/submissions/').data], [submission['id']])
+        self.client.force_authenticate(self.viewer)
+        self.assertEqual(self.client.get('/api/documents/').data, [])
+        self.assertEqual(self.client.get(f'/api/document-versions/{v1}/download/').status_code, 404)
+
+        self.assertEqual(self.decide(submission).status_code, 201)
+        updated = self.upload(document['id'], filename='hidden-newer-filename.pdf')
+        v2 = updated['versions'][0]['id']
+        for user in [self.reviewer, self.viewer]:
+            with self.subTest(role=user.username, state='approved_v1_draft_v2'):
+                self.client.force_authenticate(user)
+                detail = self.client.get(f'/api/documents/{document["id"]}/').data
+                self.assertEqual([version['id'] for version in detail['versions']], [v1])
+                self.assertEqual(self.client.get(f'/api/document-versions/{v2}/download/').status_code, 404)
+                self.assertEqual(self.client.get('/api/search/', {'q': 'hidden-newer-filename'}).data['documents'], [])
+
+        self.client.force_authenticate(self.viewer)
+        approved_download = self.client.get(f'/api/document-versions/{v1}/download/')
+        self.assertEqual(approved_download.status_code, 200)
+        b''.join(approved_download.streaming_content)
+        self.assertEqual(self.client.get('/api/submissions/').data, [])
+        self.assertEqual(self.client.get('/api/review-decisions/').data, [])
+        self.assertEqual(self.client.get(f'/api/requirements/{self.requirement.id}/').data['items'][0]['mappings'], [])
+        self.client.force_authenticate(self.coordinator)
+        self.assertEqual({version['id'] for version in self.client.get(f'/api/documents/{document["id"]}/').data['versions']}, {v1, v2})
+        coordinator_download = self.client.get(f'/api/document-versions/{v2}/download/')
+        self.assertEqual(coordinator_download.status_code, 200)
+        b''.join(coordinator_download.streaming_content)
+
+    def test_new_cross_area_or_cross_cycle_mapping_and_submission_are_denied(self):
+        document = self.upload()
+        version = document['versions'][0]['id']
+        self.client.force_authenticate(self.coordinator)
+        same_cycle = self.client.post('/api/evidence-mappings/', {'item': EvidenceItem.objects.create(
+            requirement=Requirement.objects.create(area=self.other_area, code='R2', title='Other area', responsible='Office', active=True, created_by=self.coordinator),
+            label='Other area item').id, 'document': document['id']}, format='json')
+        self.assertEqual(same_cycle.status_code, 400, same_cycle.data)
+
+        other_cycle = Cycle.objects.create(title='Another cycle', status='active')
+        other_area = Area.objects.create(cycle=other_cycle, code='B1', title='Other cycle')
+        other_item = EvidenceItem.objects.create(requirement=Requirement.objects.create(
+            area=other_area, code='R3', title='Other cycle', responsible='Office', active=True, created_by=self.coordinator), label='Other cycle item')
+        RoleAssignment.objects.create(user=self.coordinator, cycle=other_cycle, role='coordinator')
+        cross_cycle = self.client.post('/api/evidence-mappings/', {'item': other_item.id, 'document': document['id']}, format='json')
+        self.assertEqual(cross_cycle.status_code, 400, cross_cycle.data)
+
+        legacy = EvidenceMapping.objects.create(item=other_item, document_id=document['id'], created_by=self.coordinator)
+        denied_submission = self.client.post('/api/submissions/', {'mapping': legacy.id, 'version': version}, format='json')
+        self.assertEqual(denied_submission.status_code, 400, denied_submission.data)
 
     def test_all_mandatory_evidence_is_required_before_completion_certification(self):
         doc = self.upload()
@@ -372,6 +447,12 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertTrue(AuditEvent.objects.filter(action='password_reset', actor=self.custodian).exists())
 
     def test_cycle_close_reopen_is_scoped_logged_and_restores_authorized_writes(self):
+        area_coordinator = self.user('coordinator', self.area, 'area-coordinator')
+        self.client.force_authenticate(area_coordinator)
+        flags = self.client.get('/api/cycles/').data[0]
+        self.assertFalse(flags['can_close'])
+        self.assertFalse(flags['can_reopen'])
+        self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/close/', {'rationale': 'Area grants cannot close a cycle.'}, format='json').status_code, 403)
         self.client.force_authenticate(self.outsider)
         self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/close/', {'rationale': 'Not authorized'}, format='json').status_code, 403)
         self.client.force_authenticate(self.coordinator)
@@ -381,6 +462,9 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertEqual(self.cycle.status, 'closed')
         self.assertTrue(AuditEvent.objects.filter(action='cycle_closed', detail__rationale='Evidence review is complete.').exists())
         self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'Blocked'}, format='json').status_code, 400)
+        self.client.force_authenticate(area_coordinator)
+        self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/reopen/', {'rationale': 'Area grants cannot reopen a cycle.'}, format='json').status_code, 403)
+        self.client.force_authenticate(self.coordinator)
         reopened = self.client.post(f'/api/cycles/{self.cycle.id}/reopen/', {'rationale': 'A correction is required.'}, format='json')
         self.assertEqual(reopened.status_code, 200, reopened.data)
         self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'Allowed'}, format='json').status_code, 200)

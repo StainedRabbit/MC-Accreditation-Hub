@@ -65,12 +65,12 @@ Use Existing Document maps a chosen version to an additional evidence item. Ever
 | Role | Access |
 |---|---|
 | Administrator | Django account administration; explicit extra assignments required for accreditation access |
-| Coordinator | Manage requirements, upload/map/submit and review in assigned cycle/areas |
-| Reviewer | Read/download and review in assigned areas |
-| Custodian | Read/download and upload/map/submit in assigned areas |
-| Viewer | Read/download and monitor assigned cycle/areas |
+| Coordinator | All evidence/history in explicit scope; only a cycle-wide Coordinator grant may close/reopen a cycle |
+| Reviewer | Submitted evidence and its review context in assigned areas; drafts remain hidden |
+| Custodian | Current Contributor implementation: own document/upload/submission plus approved shared evidence; area write behavior awaits D04 |
+| Viewer | Approved evidence only; drafts, submissions, and review history remain hidden |
 
-No user can review their own upload or submission. Django scopes list, detail, search, review, and download operations. Shared documents expose only versions submitted into the recipient's areas, not future drafts. Sharing requires write authority in both the source and destination area. No public media route exists.
+No user can review their own upload or submission. Django scopes list, detail, search, review, and download operations through one default-deny visibility policy; see the [provisional decision matrix](docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md#provisional-d01d03-access-control-matrix). New evidence mappings/submissions must remain in the document's owning area and cycle. Existing immutable cross-scope history is retained, but no new sharing is allowed. No public media route exists. D01–D03 remain provisional pending Academic Owner and Security/Records Owner sign-off.
 
 **Compliance:** `100 × complete active applicable requirements / total active applicable requirements`. Every mandatory item needs at least one approved, unexpired current submission across its mappings before a requirement becomes Ready for Completion Review. Only an assigned Coordinator's rationale-backed completion certification marks it Complete. Optional items do not affect completion. Non-applicable and draft requirements are excluded. An empty denominator returns `null`, displayed as N/A. Partial approved-item counts are shown separately. Status counts form mutually exclusive groups.
 

@@ -1535,10 +1535,7 @@ function App() {
                   <section className="panel">
                     <h2>Evidence documents</h2>
                     {searchResults.documents.length ? searchResults.documents.map((result) => (
-                      <button className="search-result" key={result.id} onClick={() => {
-                        const document = documents.find((entry) => entry.id === result.id);
-                        if (document) { setDocDetail(document); setPage("documents"); }
-                      }}>
+                      <button className="search-result" key={result.id} onClick={() => void openDocument(result.id)}>
                         <div><strong>{result.title}</strong><span>{result.category} · {result.area}</span></div>
                         <ArrowRight size={18} />
                       </button>

@@ -2,7 +2,7 @@
 
 ## Current slice
 
-Policy-independent P0 F10/F12 checkpoint: portable backup checksums, contained extracted-payload verification, executable Linux script packaging, and isolated synthetic tooling regressions. No decision-dependent workflow changes.
+P0 F01–F03 access-control foundation: provisional Project Owner D01–D03 choices enforce cycle-wide lifecycle authority, role/state/ownership evidence visibility, hidden-version-safe search, and same-area/same-cycle new reuse. Formal Academic Owner and Security/Records Owner approval remains pending.
 
 ## Completed work
 
@@ -26,6 +26,8 @@ Policy-independent P0 F10/F12 checkpoint: portable backup checksums, contained e
 - Deployment, recovery, release-checklist, and thesis evaluation documents provide school-IT handoff and structured evidence collection without fabricating participant or restore results.
 - F10: payload checksums use only the three expected relative filenames; archive sidecar uses its basename. The restore verifier validates layout/checksum entries before contained extraction, rejects unsafe paths/links/duplicates/missing files and legacy absolute manifests, hashes extracted bytes, and never sources the bundled environment. Pre-existing destinations are preserved; failed verification removes only the new destination.
 - F12: all three deployment shell scripts have executable Git mode `100755`; `.gitattributes` pins their LF endings. Existing direct-invocation commands remain unchanged.
+- F01: cycle close/reopen now requires an explicit cycle-wide Coordinator grant (`area=null`); an area-only Coordinator retains area management but cannot change the whole cycle or receive lifecycle controls.
+- F02/F03: one default-deny policy now governs document/version lists and detail, mapping/submission/review history, filename search, downloads, and frontend data displays. Coordinators see scoped evidence; Reviewers see submitted evidence; Custodians (the current Contributor implementation) see their own work plus approved shared evidence; Viewers see approved evidence only. New mappings/submissions must use the document's owning area and cycle. Existing immutable cross-scope history remains preserved under its applicable historical submitted/approved visibility rule.
 
 ## Verified behavior
 
@@ -41,6 +43,8 @@ Policy-independent P0 F10/F12 checkpoint: portable backup checksums, contained e
 - Focused Slice 10 health-probe PostgreSQL test passed on 2026-09-09. `check`, migration drift check, and the production frontend build passed. `check --deploy` was run with production-like HTTPS settings and reports only Django's HSTS-preload advisory, intentionally retained because hostname/subdomain preload approval is not available.
 - F10/F12 on 2026-09-17: `$env:BACKUP_TEST_BASH='C:\Program Files\Git\bin\bash.exe'; python -B -m unittest discover -s deploy/tests -v` passed **13 tests** on Windows/Python 3.13/Git Bash 5.2.37. Tests covered copied bundle/sidecar after removal of source backup paths, exact relative manifest names, tampered extracted files despite intact synthetic source files, unsafe/duplicate/missing/malformed/oversized checksums, missing/corrupt/unsafe archive payloads and links, destination preservation/failure cleanup, LF/Bash syntax, direct fixture invocation of all three scripts, and executable Git index modes. PostgreSQL, deployment Python, npm, and HTTP calls were stubbed. No real database restore, production data/services, real secrets, or infrastructure was used. This is not a Linux-host or recovery rehearsal result; Linux permission assertions were not exercised.
 - F10/F12 documentation checks on 2026-09-17: balanced Markdown code fences and existing relative file-link targets passed for `RESTORE.md`, `DEPLOYMENT.md`, `RELEASE_CHECKLIST.md`, and this progress record; `git diff --check` and `git diff --cached --check` passed. No application build/backend/browser suite was needed or run for this tooling-only checkpoint.
+- F01–F03 on 2026-09-17: `$env:PGPORT='55432'; python -B backend/manage.py test hub --noinput` passed **33 PostgreSQL-backed tests** in 129.428 seconds on the repository's isolated `.local` cluster. Coverage includes area-only Coordinator close/reopen denial and flags, cycle-wide Coordinator allow, Contributor/Custodian, Reviewer, Viewer, and Coordinator draft/submitted/approved visibility across lists/detail/history/search/downloads, guessed-ID/download denial, hidden newer filenames, preserved legacy cross-scope history, and denied new cross-area/cross-cycle mapping/submission. `npm.cmd run test:e2e --prefix frontend` with local Chrome passed **4 Playwright tests** in 49.2 seconds, including the new Custodian draft → Reviewer submitted → Viewer approved-evidence scenario. Tests used fictional demo accounts, a sample local PDF, and isolated local storage/database only; no school data or service was used and no secret value was exposed.
+- F01–F03 static/documentation checks on 2026-09-17: `python -B -m py_compile backend/hub/access.py backend/hub/views.py backend/hub/tests.py`, `node frontend/node_modules/typescript/bin/tsc --project frontend/tsconfig.json --noEmit --incremental false`, `git diff --check`, and balanced Markdown fence/local-link checks for `README.md`, `API.md`, the decision register, and this record passed. No model change was made; migration drift is checked separately below.
 
 ## Known incomplete or broken work
 
@@ -48,10 +52,11 @@ Policy-independent P0 F10/F12 checkpoint: portable backup checksums, contained e
 - Pagination, two-factor authentication, notifications, full cycle administration UI, malware scanning, and an actual school-server deployment/restore rehearsal remain outside this local checkpoint.
 - The actual Figma site was not available for inspection; login and supplied screenshots guided the current visual design.
 - F10/F12 code and packaging are fixed locally; fresh Linux checkout/operator permissions and real PostgreSQL format probes remain unverified. The actual isolated database/evidence restoration, approved-version download/review/certification history, measured RPO/RTO, off-host protection, and school IT acceptance remain outstanding (F11/F20/F28). The decision register's policy choices remain Pending Decision.
+- D01–D03 are implemented as **Provisional Project Owner Decisions** only. Academic Owner and Security/Records Owner sign-off is still required before treating cycle authority, evidence visibility, legacy cross-scope read treatment, or real-evidence use as approved. D04 ownership/assignment, F05–F09, and all other decision-dependent work remain out of this checkpoint.
 
 ## Next exact task
 
-For F10/F12, school IT must run the synthetic tooling suite from a fresh Linux checkout, confirm installed operator access, and complete the controlled isolated recovery rehearsal and release checklist. This checkpoint closes only the local technical defects, not target acceptance. Other review findings and the requirements-baseline decisions remain unresolved; do not start decision-dependent workflow changes or deferred features without explicit scope/approval.
+Obtain formal Academic Owner and Security/Records Owner sign-off for the D01–D03 matrix, then test it in the school-approved target environment before real evidence. School IT must also run the F10/F12 synthetic tooling suite from a fresh Linux checkout, confirm installed operator access, and complete the controlled isolated recovery rehearsal and release checklist. This checkpoint closes only the local F01–F03 implementation defects, not target acceptance; D04 and later workflow, records, operations, and policy blockers remain unresolved.
 
 See the [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) for pending owner and school IT decisions.
 

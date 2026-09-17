@@ -177,7 +177,9 @@ def req_data(req, user, detail=False):
         'can_upload': req.area.cycle.status == 'active' and areas_for(user, WRITE_ROLES).filter(pk=req.area_id).exists()}
     if detail:
         result['items'] = [{'id': i.id, 'label': i.label, 'criteria': i.criteria, 'mandatory': i.mandatory,
-                            'status': item_state(i), 'mappings': [mapping_data(m, user) for m in i.mappings.all()]} for i in req.items.all()]
+                            'status': item_state(i),
+                            'mappings': [mapping_data(m, user) for m in visible_mappings_for(user, i.mappings.all())]}
+                           for i in req.items.all()]
         result['certifications'] = [certification_data(c) for c in req.certifications.all()]
         result['can_complete'] = can_certify and result['status'] == 'ready_for_completion_review'
         result['can_reopen'] = can_certify and result['status'] == 'complete'
@@ -209,7 +211,8 @@ def submission_data(sub, user):
 
 def mapping_data(mapping, user):
     return {'id': mapping.id, 'document': str(mapping.document_id), 'document_title': mapping.document.title,
-            'item': mapping.item_id, 'submissions': [submission_data(s, user) for s in mapping.submissions.all()]}
+            'item': mapping.item_id,
+            'submissions': [submission_data(s, user) for s in visible_submissions_for(user, mapping.submissions.all())]}
 
 
 def version_data(version):
@@ -222,7 +225,7 @@ def version_data(version):
 
 def doc_data(doc, user):
     versions = [version_data(v) for v in doc.versions.all() if can_version(user, v)]
-    mappings = doc.mappings.filter(item__requirement__area__in=areas_for(user))
+    mappings = visible_mappings_for(user, doc.mappings.all())
     return {'id': str(doc.id), 'title': doc.title, 'category': doc.category, 'area': doc.area_id,
         'area_title': doc.area.title, 'cycle': doc.area.cycle_id, 'versions': versions,
         'custodian': doc.custodian.get_full_name() or doc.custodian.username,
@@ -236,8 +239,8 @@ class CyclesView(APIView):
         return Response([{**{'id': cycle.id, 'title': cycle.title, 'program': cycle.program,
                             'instrument': cycle.instrument, 'status': cycle.status, 'is_demo': cycle.is_demo,
                             'closed_at': cycle.closed_at},
-                          'can_close': cycle.status == 'active' and areas_for(request.user, ['coordinator']).filter(cycle_id=cycle.id).exists(),
-                          'can_reopen': cycle.status == 'closed' and areas_for(request.user, ['coordinator']).filter(cycle_id=cycle.id).exists()}
+                          'can_close': cycle.status == 'active' and has_cyclewide_coordinator(request.user, cycle),
+                          'can_reopen': cycle.status == 'closed' and has_cyclewide_coordinator(request.user, cycle)}
                          for cycle in records])
 
 
@@ -247,7 +250,7 @@ class CycleTransitionView(APIView):
     @transaction.atomic
     def post(self, request, pk):
         cycle = get_object_or_404(Cycle.objects.select_for_update(), pk=pk)
-        if not areas_for(request.user, ['coordinator']).filter(cycle_id=cycle.id).exists():
+        if not has_cyclewide_coordinator(request.user, cycle):
             raise PermissionDenied('You do not have permission to manage this accreditation cycle.')
         data = payload(CycleTransitionInput, request).validated_data
         if self.action == 'close':
@@ -345,13 +348,18 @@ class DocumentsView(APIView):
             return Response(doc_data(get_object_or_404(qs, pk=pk), request.user))
         if query_id(request, 'cycle'):
             cycle_id = request.query_params['cycle']
-            qs = qs.filter(Q(area__cycle_id=cycle_id) | Q(mappings__item__requirement__area__cycle_id=cycle_id,
-                mappings__item__requirement__area__in=areas_for(request.user))).distinct()
+            qs = qs.filter(
+                Q(area__cycle_id=cycle_id) |
+                Q(versions__in=visible_versions_for(request.user).filter(
+                    submissions__mapping__item__requirement__area__cycle_id=cycle_id))
+            ).distinct()
         q = request.query_params.get('search', '')
-        # Search only source metadata and mappings visible to the requester.
+        visible_mapping_matches = visible_mappings_for(request.user).filter(
+            item__requirement__title__icontains=q
+        )
+        # Search only document metadata and mappings visible to the requester.
         qs = qs.filter(Q(title__icontains=q) | Q(category__icontains=q) | Q(custodian__first_name__icontains=q) |
-                       Q(custodian__last_name__icontains=q) | Q(mappings__item__requirement__title__icontains=q,
-                       mappings__item__requirement__area__in=areas_for(request.user))).distinct()
+                       Q(custodian__last_name__icontains=q) | Q(mappings__in=visible_mapping_matches)).distinct()
         return Response([doc_data(d, request.user) for d in qs.order_by('-created_at')])
 
     def post(self, request, pk=None):
@@ -367,7 +375,9 @@ def upload_document(request, document_id=None):
     try:
         with transaction.atomic():
             if document_id:
-                doc = get_object_or_404(documents_for(request.user), pk=document_id)
+                # Existing area writers retain their current write capability;
+                # the response below is still filtered through the read policy.
+                doc = get_object_or_404(Document.objects.filter(area__in=areas_for(request.user, WRITE_ROLES)), pk=document_id)
                 require_area(request.user, doc.area, WRITE_ROLES)
                 lock_active_cycles(doc.area.cycle_id)
                 doc = Document.objects.select_for_update().get(pk=doc.pk)
@@ -420,7 +430,7 @@ class DownloadView(APIView):
 
 class MappingsView(APIView):
     def get(self, request):
-        qs = EvidenceMapping.objects.filter(item__requirement__area__in=areas_for(request.user))
+        qs = visible_mappings_for(request.user)
         return Response([mapping_data(m, request.user) for m in qs])
 
     @transaction.atomic
@@ -429,6 +439,8 @@ class MappingsView(APIView):
         item = get_object_or_404(EvidenceItem.objects.filter(requirement__area__in=areas_for(request.user, WRITE_ROLES)), pk=data['item'])
         doc = get_object_or_404(documents_for(request.user), pk=data['document'])
         require_area(request.user, doc.area, WRITE_ROLES)
+        if doc.area_id != item.requirement.area_id or doc.area.cycle_id != item.requirement.area.cycle_id:
+            raise ValidationError('Evidence can be mapped only within its owning area and cycle.')
         lock_active_cycles(item.requirement.area.cycle_id)
         mapping, created = EvidenceMapping.objects.get_or_create(item=item, document=doc, defaults={'created_by': request.user})
         if created:
@@ -438,7 +450,7 @@ class MappingsView(APIView):
 
 class SubmissionsView(APIView):
     def get(self, request):
-        qs = Submission.objects.filter(mapping__item__requirement__area__in=areas_for(request.user)).select_related(
+        qs = visible_submissions_for(request.user).select_related(
             'mapping__item__requirement__area__cycle', 'mapping__document', 'version', 'submitted_by', 'decision__reviewer')
         if query_id(request, 'cycle'):
             qs = qs.filter(mapping__item__requirement__area__cycle_id=request.query_params['cycle'])
@@ -449,6 +461,8 @@ class SubmissionsView(APIView):
         data = payload(SubmitInput, request).validated_data
         mapping = get_object_or_404(EvidenceMapping.objects.filter(item__requirement__area__in=areas_for(request.user, WRITE_ROLES)), pk=data['mapping'])
         require_area(request.user, mapping.document.area, WRITE_ROLES)
+        if mapping.document.area_id != mapping.item.requirement.area_id or mapping.document.area.cycle_id != mapping.item.requirement.area.cycle_id:
+            raise ValidationError('Evidence can be submitted only within its owning area and cycle.')
         lock_active_cycles(mapping.item.requirement.area.cycle_id)
         mapping = EvidenceMapping.objects.select_for_update().get(pk=mapping.pk)
         version = get_object_or_404(DocumentVersion, pk=data['version'], document=mapping.document)
@@ -468,7 +482,7 @@ class SubmissionsView(APIView):
 
 class ReviewsView(APIView):
     def get(self, request):
-        qs = ReviewDecision.objects.filter(submission__mapping__item__requirement__area__in=areas_for(request.user))
+        qs = ReviewDecision.objects.filter(submission__in=visible_submissions_for(request.user))
         return Response(list(qs.values('id', 'submission_id', 'outcome', 'comment', 'created_at')))
 
     @transaction.atomic
@@ -602,14 +616,19 @@ class SearchView(APIView):
         document_qs = documents_for(request.user).select_related('area', 'area__cycle').prefetch_related('versions')
         if cycle_id:
             requirement_qs = requirement_qs.filter(area__cycle_id=cycle_id)
-            document_qs = document_qs.filter(area__cycle_id=cycle_id)
+            document_qs = document_qs.filter(
+                Q(area__cycle_id=cycle_id) |
+                Q(versions__in=visible_versions_for(request.user).filter(
+                    submissions__mapping__item__requirement__area__cycle_id=cycle_id))
+            ).distinct()
         requirement_qs = requirement_qs.filter(
             Q(code__icontains=term) | Q(title__icontains=term) | Q(description__icontains=term) |
             Q(responsible__icontains=term) | Q(area__title__icontains=term)).order_by('area__title', 'code')[:50]
+        visible_filename_versions = visible_versions_for(request.user).filter(original_name__icontains=term)
         document_qs = document_qs.filter(
             Q(title__icontains=term) | Q(category__icontains=term) | Q(area__title__icontains=term) |
             Q(custodian__first_name__icontains=term) | Q(custodian__last_name__icontains=term) |
-            Q(versions__original_name__icontains=term)).distinct().order_by('title')[:50]
+            Q(versions__in=visible_filename_versions)).distinct().order_by('title')[:50]
         return Response({
             'requirements': [{'id': req.id, 'code': req.code, 'title': req.title, 'area': req.area.title,
                               'status': requirement_result(req)['status']} for req in requirement_qs],

@@ -2,9 +2,9 @@
 
 Prepared: 2026-09-17
 
-Status of every decision: **Pending Decision**
+Status: **D01–D03 are Provisional Project Owner Decision — formal approval pending. All other decisions remain Pending Decision.**
 
-Selected options, approver names, approval dates and sign-off evidence: **Not recorded**
+Formal approver names, approval dates and sign-off evidence: **Not recorded**. D01–D03's selected options are recorded below as provisional Project Owner direction only.
 
 ## Purpose and authority
 
@@ -18,9 +18,9 @@ An approved option resolves a choice, not the underlying implementation or accep
 
 | Decision | Question | Review findings | Status |
 |---|---|---|---|
-| D01 | Who can close/reopen the entire cycle? | F01 | Pending Decision |
-| D02 | Who can read drafts, submitted work and approved evidence? | F02, F04 | Pending Decision |
-| D03 | May evidence cross area/cycle boundaries, and which versions may be searched? | F03, F02, F27 | Pending Decision |
+| D01 | Who can close/reopen the entire cycle? | F01 | Provisional Project Owner Decision — formal approval pending |
+| D02 | Who can read drafts, submitted work and approved evidence? | F02, F04 | Provisional Project Owner Decision — formal approval pending |
+| D03 | May evidence cross area/cycle boundaries, and which versions may be searched? | F03, F02, F27 | Provisional Project Owner Decision — formal approval pending |
 | D04 | Are submissions assigned to specific people or an area team? | F04 | Pending Decision |
 | D05 | What evidence and criteria must a certification preserve? | F05, F22 | Pending Decision |
 | D06 | What requires reopening or a new criteria/applicability decision? | F06, F05 | Pending Decision |
@@ -47,7 +47,7 @@ F10/F12 are policy-independent technical fixes listed separately below. F22's de
 
 ### D01 — Cycle-wide lifecycle authority
 
-**Status:** Pending Decision. **Finding:** F01. **Decision to make:** Who may change the state of the entire cycle, including areas outside their own grant?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected provisional option:** A. **Finding:** F01. **Decision to make:** Who may change the state of the entire cycle, including areas outside their own grant?
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -59,7 +59,7 @@ F10/F12 are policy-independent technical fixes listed separately below. F22's de
 
 ### D02 — Evidence visibility by role, state and ownership
 
-**Status:** Pending Decision. **Finding:** F02, with F04. **Decision to make:** Which drafts/history/files may each role see within its authorized scope?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected provisional option:** A. **Finding:** F02, with F04. **Decision to make:** Which drafts/history/files may each role see within its authorized scope?
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -71,7 +71,7 @@ F10/F12 are policy-independent technical fixes listed separately below. F22's de
 
 ### D03 — Sharing boundaries and search visibility
 
-**Status:** Pending Decision. **Findings:** F03, F02, F27. **Decision to make:** May selected evidence be reused outside its owning area/cycle?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected provisional option:** A. **Findings:** F03, F02, F27. **Decision to make:** May selected evidence be reused outside its owning area/cycle?
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -80,6 +80,20 @@ F10/F12 are policy-independent technical fixes listed separately below. F22's de
 | C. Cross-area and cross-cycle reuse of explicitly selected versions | Retains the broadest current reuse capability, but new-cycle review/certification remains independent; old decisions never transfer. | Yes: search filtering/consistency and fully tested sharing rules, even if current mapping checks are retained. |
 
 **Recommended option:** A until sharing is expressly needed and approved. **Required approver:** Security/Records Owner; Academic Owner. **Production-acceptance impact:** Sharing policy is unresolved. F03's hidden-filename leak must be fixed for every option; its correctness requirement needs no permission to expose hidden metadata. Metadata, search matches and downloads must have the same selected-version boundary.
+
+### Provisional D01–D03 access-control matrix
+
+This is the single implementation matrix for the current F01–F03 checkpoint. It is a Project Owner direction, **not** formal Academic Owner or Security/Records Owner sign-off. Grants are additive; multiple grants provide the union of the applicable rows. An Administrator has no implicit academic evidence access.
+
+| Role within its explicit grant scope | Draft / unsubmitted version | Submitted version | Approved version | Submission/review history | Lifecycle and new reuse |
+|---|---|---|---|---|---|
+| Cycle-wide Coordinator | Read, download, and manage | Read, download, and review | Read and download | Read in scope | Only a grant with `area=null` may close/reopen the cycle; new mappings/submissions stay in the same area/cycle. |
+| Area Coordinator | Read, download, and manage in the area | Read, download, and review in the area | Read and download in the area | Read in area | Cannot close/reopen the whole cycle; new mappings/submissions stay in the same area/cycle. |
+| Reviewer | Hidden | Read/download only once submitted to the reviewer’s area | Read/download | Read submitted-review context in area | Cannot create mappings/submissions or change lifecycle. |
+| Custodian (current Contributor role) | Own document, upload, or own submission only | Own document/submission | Own work plus approved shared evidence | Own document/submission only | Existing area-write behavior remains pending D04; new mappings/submissions must be same-area/same-cycle. |
+| Viewer | Hidden | Hidden | Read/download approved evidence only | Hidden | Read-only; cannot create mappings/submissions or change lifecycle. |
+
+Existing cross-area/cross-cycle mappings and immutable submissions are preserved. A recipient may retain access only through the corresponding historical submitted/approved visibility rule above; no new mapping or submission may extend that legacy relationship. All document lists, document detail/version history, mapping/submission/review lists, search filename matching, download authorization, and frontend displays use this matrix. Requirement/dashboard/report scope remains area-grant based; it does not expose hidden filenames or evidence-version history.
 
 ### D04 — Requirement assignments and document stewardship
 

@@ -35,6 +35,19 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpo
 | GET `search/?cycle=id&q=text` | Scoped requirement and document metadata search (maximum 50 each) |
 | GET `reports/compliance/?cycle=id&area=id&status=value` | Scoped printable compliance report data; add `download=csv` for a formula-safe CSV export |
 
+## Provisional F01–F03 access policy
+
+The Project Owner has provisionally selected D01–D03 Option A; formal Academic Owner and Security/Records Owner approval remains required before production acceptance. The backend applies one default-deny visibility policy to document lists/detail/version history, mappings, submissions, reviews, search, downloads, and the frontend data returned by those endpoints. Multiple explicit grants are additive. The product Administrator role does not imply academic evidence access.
+
+| Explicit role grant | Evidence visibility in that scope | History / authority |
+|---|---|---|
+| Coordinator | All versions in scope | Submission/review history in scope; only a cycle-wide Coordinator grant (`area=null`) can close/reopen the entire cycle. |
+| Reviewer | Submitted versions only | Submitted/review history in scope; no drafts or lifecycle authority. |
+| Custodian (Contributor implementation) | Own document/upload/submission plus approved shared evidence | Own submission history only. Requirement assignments and final ownership rules remain D04 work. |
+| Viewer | Approved versions only | No submission/review history or write authority. |
+
+New `POST evidence-mappings/` and `POST submissions/` requests require the document and requirement to have the same owning area and cycle. Existing immutable cross-area/cross-cycle records are retained and may be read only through a historical submitted/approved relationship allowed by the table. Search can match an original filename only when that exact version is visible to the requester; a hidden newer filename cannot produce a document result.
+
 Decision outcomes: `approved`, `revision_requested`, `rejected`. Submission display states add `pending` and `expired`. `current` indicates the latest submission for its mapping, and `can_review` describes authorized current UI actions. The server rechecks permissions and state on POST.
 
 Requirement statuses: `draft`, `excluded`, `complete`, `ready_for_completion_review`, `missing`, `for_compliance`, `pending`. Approval does not complete a requirement. When all mandatory evidence items have approved, unexpired current submissions, the requirement is `ready_for_completion_review`. An assigned Coordinator must create an append-only `complete` certification with a rationale before the requirement counts as `complete`. A Coordinator can later add a rationale-backed `reopened` certification; evidence, versions, reviews, and prior certifications remain historical. For incomplete requirements, all missing means missing; any missing, expired, revision-requested or rejected mandatory item means for compliance; otherwise it is pending verification.

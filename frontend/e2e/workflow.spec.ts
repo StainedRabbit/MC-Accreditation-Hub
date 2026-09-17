@@ -64,6 +64,81 @@ test("scoped search and printable compliance report", async ({ page }) => {
   );
 });
 
+test("evidence visibility follows draft, submitted, and approved states", async ({
+  browser,
+}) => {
+  const title = `Visibility policy ${Date.now()}`;
+  const documentTitle = `${title} evidence`;
+  const coordinatorContext = await browser.newContext();
+  const coordinator = await coordinatorContext.newPage();
+  await login(coordinator, "coordinator");
+  await coordinator
+    .getByRole("button", { name: "Requirements", exact: true })
+    .click();
+  await coordinator
+    .getByRole("button", { name: "Add Requirement", exact: true })
+    .click();
+  const requirementModal = coordinator.getByRole("dialog");
+  await requirementModal
+    .getByRole("combobox", { name: "Accreditation area", exact: true })
+    .selectOption({ label: "Faculty" });
+  await requirementModal.getByLabel("Requirement code").fill(`VIS-${Date.now()}`);
+  await requirementModal.getByLabel("Requirement title").fill(title);
+  await requirementModal.getByLabel("Responsible office / person").fill("Graduate School");
+  await requirementModal.getByLabel("Evidence item 1").fill("Visibility evidence");
+  await requirementModal.getByRole("button", { name: "Save Requirement" }).click();
+
+  const custodianContext = await browser.newContext();
+  const custodian = await custodianContext.newPage();
+  await login(custodian, "custodian");
+  await custodian
+    .getByRole("button", { name: "Evidence Repository", exact: true })
+    .click();
+  await custodian.getByRole("button", { name: "Upload Document", exact: true }).click();
+  const upload = custodian.getByRole("dialog");
+  await upload.getByLabel("Document title").fill(documentTitle);
+  await upload.getByRole("combobox", { name: "Owning area" }).selectOption({ label: "Faculty" });
+  await upload.locator("input[type=file]").setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
+  await upload.getByRole("button", { name: "Upload Draft", exact: true }).click();
+  await expect(upload).toHaveCount(0);
+
+  const reviewerContext = await browser.newContext();
+  const reviewer = await reviewerContext.newPage();
+  const viewerContext = await browser.newContext();
+  const viewer = await viewerContext.newPage();
+  await login(reviewer, "reviewer");
+  await login(viewer, "viewer");
+  for (const page of [reviewer, viewer]) {
+    await page.getByRole("button", { name: "Evidence Repository", exact: true }).click();
+    await expect(page.getByText(documentTitle, { exact: true })).toHaveCount(0);
+  }
+
+  await custodian.getByRole("button", { name: "Requirements", exact: true }).click();
+  await custodian.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View", exact: true }).click();
+  await custodian.getByRole("button", { name: "Use existing document", exact: true }).click();
+  const mapping = custodian.getByRole("dialog");
+  await mapping.getByRole("combobox", { name: "Document" }).selectOption({ label: documentTitle });
+  await mapping.getByRole("button", { name: "Submit for Verification" }).click();
+  await expect(custodian.getByText("Evidence submitted for verification.", { exact: true })).toBeVisible();
+
+  await reviewer.reload();
+  await reviewer.getByRole("button", { name: "Evidence Repository", exact: true }).click();
+  await expect(reviewer.getByText(documentTitle, { exact: true })).toBeVisible();
+  await viewer.reload();
+  await viewer.getByRole("button", { name: "Evidence Repository", exact: true }).click();
+  await expect(viewer.getByText(documentTitle, { exact: true })).toHaveCount(0);
+
+  await reviewer.getByRole("button", { name: "Evidence Verification", exact: true }).click();
+  await reviewer.getByRole("row").filter({ hasText: documentTitle }).getByRole("button", { name: "Review", exact: true }).click();
+  await reviewer.getByRole("button", { name: "Record Decision", exact: true }).click();
+  await expect(reviewer.getByRole("dialog")).toHaveCount(0);
+  await viewer.reload();
+  await viewer.getByRole("button", { name: "Evidence Repository", exact: true }).click();
+  await expect(viewer.getByText(documentTitle, { exact: true })).toBeVisible();
+
+  await Promise.all([coordinatorContext.close(), custodianContext.close(), reviewerContext.close(), viewerContext.close()]);
+});
+
 test("create, upload, request revisions, replace and approve", async ({
   page,
   browser,
