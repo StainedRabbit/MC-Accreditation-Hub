@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, RoleAssignment, Cycle, Area, Requirement, EvidenceItem, Document, DocumentVersion, EvidenceMapping, Submission, ReviewDecision, RequirementCertification, AuditEvent
+from .models import User, RoleAssignment, RequirementAssignment, Cycle, Area, Requirement, EvidenceItem, Document, DocumentVersion, EvidenceMapping, Submission, ReviewDecision, RequirementCertification, AuditEvent
 
 
 class AssignmentInline(admin.TabularInline):
@@ -30,6 +30,6 @@ class ReadOnlyAdmin(admin.ModelAdmin):
 
 
 # Workflow records cannot bypass API invariants through Django administration.
-for model in [Cycle, Area, Requirement, EvidenceItem, Document, DocumentVersion, EvidenceMapping, Submission, ReviewDecision, RequirementCertification, AuditEvent]:
+for model in [Cycle, Area, Requirement, RequirementAssignment, EvidenceItem, Document, DocumentVersion, EvidenceMapping, Submission, ReviewDecision, RequirementCertification, AuditEvent]:
     admin.site.register(model, ReadOnlyAdmin)
 admin.site.site_header = 'MC Accreditation Hub Administration'

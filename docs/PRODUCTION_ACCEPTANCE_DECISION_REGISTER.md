@@ -97,7 +97,7 @@ Existing cross-area/cross-cycle mappings and immutable submissions are preserved
 
 ### D04 — Requirement assignments and document stewardship
 
-**Status:** Pending Decision. **Finding:** F04. **Decision to make:** Who may submit work and replace another contributor's current evidence?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected provisional option:** A. **Finding:** F04. **Decision to make:** Who may submit work and replace another contributor's current evidence?
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -105,7 +105,7 @@ Existing cross-area/cross-cycle mappings and immutable submissions are preserved
 | B. Treat all authorized area writers as the responsible team | Keeps area-wide writing/submission; free-text responsible label becomes a team label rather than an individual assignment. Define whether all team members can replace any team document. | No assignment model required; D02 checks, stewardship rules, audit and scope-documentation changes may still require code. |
 | C. Assign users for accountability but retain shared team submission authority | Adds named responsibility without using it as the submission permission boundary; UI must label that distinction clearly. | Yes: assignment records/UI, while area write authority remains. |
 
-**Recommended option:** A. Multiple assignees allow collaboration without unrecorded area-wide replacement powers. **Required approver:** Academic Owner; Project Owner. **Production-acceptance impact:** The planned assigned-contributor checkpoint is unsatisfied until A is implemented or B/C is approved as a requirements amendment. Decide deactivation, transfer of stewardship and Coordinator override rules before implementation.
+**Selected provisional option:** A. Each requirement may have one or more active, exact-area/cycle-authorized Custodian assignees. New documents require a requirement context and record their steward; legacy documents remain honestly unassigned until a scoped Coordinator delegates stewardship. Assignees may upload, map, and submit their own stewarded work. A scoped Coordinator may explicitly assign/reassign or delegate stewardship with a required reason and audit event, and may make a one-action override only with a required reason and audit event. Area membership alone does not permit replacing another person's work. **Required approver:** Academic Owner; Project Owner. **Production-acceptance impact:** This is implemented as a provisional Project Owner direction only. Formal Academic Owner approval, target-environment testing, and confirmation of the Custodian/Contributor role mapping remain required before real evidence use.
 
 ### D05 — Certification support and historical evidence
 

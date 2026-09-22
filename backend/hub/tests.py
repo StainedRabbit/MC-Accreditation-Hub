@@ -50,6 +50,7 @@ class WorkflowFixture:
         self.assertEqual(response.status_code, 201, response.data)
         self.requirement = Requirement.objects.get(pk=response.data['id'])
         self.item = self.requirement.items.get()
+        RequirementAssignment.objects.create(requirement=self.requirement, user=self.custodian, assigned_by=self.coordinator)
 
     def user(self, role, area, name=None):
         user = User.objects.create_user(username=name or role, email=f'{name or role}@test.invalid', password='Test-password-1234')
@@ -57,8 +58,13 @@ class WorkflowFixture:
         return user
 
     def upload(self, doc=None, user=None, valid_until=None, filename='evidence.pdf'):
-        self.client.force_authenticate(user or self.custodian)
-        data = {'file': pdf_file(filename), 'title': 'Faculty Development Plan', 'area': self.area.id}
+        actor = user or self.custodian
+        self.client.force_authenticate(actor)
+        data = {'file': pdf_file(filename), 'title': 'Faculty Development Plan', 'area': self.area.id, 'requirement': self.requirement.id}
+        if doc and actor == self.coordinator:
+            data['override_reason'] = 'Focused test Coordinator replacement override.'
+        if not doc and actor == self.coordinator:
+            data['override_reason'] = 'Focused test Coordinator upload override.'
         if valid_until:
             data['valid_until'] = str(valid_until)
         response = self.client.post(f'/api/documents/{doc}/versions/' if doc else '/api/documents/', data, format='multipart')
@@ -66,10 +72,12 @@ class WorkflowFixture:
         return response.data
 
     def submit(self, document, item=None, user=None, version=None):
-        self.client.force_authenticate(user or self.custodian)
-        mapping = self.client.post('/api/evidence-mappings/', {'item': (item or self.item).id, 'document': document['id']}, format='json')
+        actor = user or self.custodian
+        self.client.force_authenticate(actor)
+        override = {'override_reason': 'Focused test Coordinator mapping and submission override.'} if actor == self.coordinator else {}
+        mapping = self.client.post('/api/evidence-mappings/', {'item': (item or self.item).id, 'document': document['id'], **override}, format='json')
         self.assertIn(mapping.status_code, [200, 201], mapping.data)
-        sub = self.client.post('/api/submissions/', {'mapping': mapping.data['id'], 'version': version or document['versions'][0]['id']}, format='json')
+        sub = self.client.post('/api/submissions/', {'mapping': mapping.data['id'], 'version': version or document['versions'][0]['id'], **override}, format='json')
         self.assertEqual(sub.status_code, 201, sub.data)
         return sub.data
 
@@ -198,6 +206,70 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.client.force_authenticate(self.outsider)
         response = self.client.post('/api/evidence-mappings/', {'item': self.item.id, 'document': doc['id']}, format='json')
         self.assertEqual(response.status_code, 404)
+
+    def test_f04_assignments_stewardship_overrides_and_legacy_history(self):
+        self.client.force_authenticate(self.coordinator)
+        unassigned = self.client.post('/api/requirements/', {
+            'area': self.area.id, 'code': 'UNASSIGNED', 'title': 'Unassigned requirement',
+            'responsible': 'Graduate School', 'active': True, 'items': [{'label': 'Evidence'}],
+        }, format='json').data
+        self.client.force_authenticate(self.custodian)
+        denied_upload = self.client.post('/api/documents/', {
+            'file': pdf_file(), 'title': 'Blocked unassigned evidence', 'area': self.area.id,
+            'requirement': unassigned['id'],
+        }, format='multipart')
+        self.assertEqual(denied_upload.status_code, 403)
+
+        self.client.force_authenticate(self.coordinator)
+        inactive = self.user('custodian', self.area, 'inactive')
+        inactive.is_active = False
+        inactive.save(update_fields=['is_active'])
+        unrelated = self.user('custodian', self.other_area, 'unrelated')
+        other_cycle = Cycle.objects.create(title='Other cycle', status='active')
+        cross_cycle = User.objects.create_user(username='cross-cycle', email='cross-cycle@test.invalid', password='Test-password-1234')
+        RoleAssignment.objects.create(user=cross_cycle, role='custodian', cycle=other_cycle,
+                                      area=Area.objects.create(cycle=other_cycle, code='O1', title='Other'))
+        for candidate in [inactive, unrelated, cross_cycle]:
+            response = self.client.post(f'/api/requirements/{unassigned["id"]}/assignments/',
+                                        {'user': candidate.id, 'reason': 'Must be rejected.'}, format='json')
+            self.assertIn(response.status_code, [400, 404])
+        assigned = self.client.post(f'/api/requirements/{unassigned["id"]}/assignments/', {
+            'user': self.custodian.id, 'reason': 'Custodian owns this requirement.', 'replace': True,
+        }, format='json')
+        self.assertEqual(assigned.status_code, 201, assigned.data)
+        self.assertTrue(AuditEvent.objects.filter(action='requirement_reassigned', detail__reason='Custodian owns this requirement.').exists())
+
+        first = self.upload(user=self.custodian)
+        colleague = self.user('custodian', self.area, 'colleague')
+        RequirementAssignment.objects.create(requirement=self.requirement, user=colleague, assigned_by=self.coordinator)
+        self.client.force_authenticate(colleague)
+        self.assertEqual(self.client.post(f'/api/documents/{first["id"]}/versions/', {'file': pdf_file()}, format='multipart').status_code, 403)
+
+        self.client.force_authenticate(self.coordinator)
+        mapped = self.client.post('/api/evidence-mappings/', {
+            'item': self.item.id, 'document': first['id'], 'override_reason': 'Coordinator covers an urgent handoff.',
+        }, format='json')
+        self.assertEqual(mapped.status_code, 201, mapped.data)
+        submitted = self.client.post('/api/submissions/', {
+            'mapping': mapped.data['id'], 'version': first['versions'][0]['id'],
+            'override_reason': 'Coordinator covers an urgent handoff.',
+        }, format='json')
+        self.assertEqual(submitted.status_code, 201, submitted.data)
+        self.assertTrue(AuditEvent.objects.filter(action='evidence_submitted', detail__override=True,
+                                                   detail__override_reason='Coordinator covers an urgent handoff.').exists())
+
+        legacy = Document.objects.create(title='Legacy history', category='Supporting Document', area=self.area, custodian=self.custodian)
+        legacy_version = DocumentVersion.objects.create(document=legacy, number=1, original_name='legacy.pdf',
+                                                        content_type='application/pdf', size=1, checksum='0' * 64,
+                                                        uploaded_by=self.custodian)
+        legacy_mapping = EvidenceMapping.objects.create(item=self.item, document=legacy, created_by=self.custodian)
+        Submission.objects.create(mapping=legacy_mapping, version=legacy_version, submitted_by=self.custodian)
+        self.assertIsNone(legacy.steward)
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.client.post(f'/api/documents/{legacy.id}/versions/', {'file': pdf_file()}, format='multipart').status_code, 400)
+        self.client.force_authenticate(self.coordinator)
+        self.assertEqual(self.client.get(f'/api/documents/{legacy.id}/').status_code, 200)
+        self.assertEqual(self.client.get('/api/submissions/').status_code, 200)
 
     def test_legacy_cross_scope_history_preserves_only_approved_version_access(self):
         doc = self.upload()
@@ -403,7 +475,8 @@ class WorkflowTests(WorkflowFixture, TestCase):
 
     def test_viewer_cannot_upload_or_modify(self):
         self.client.force_authenticate(self.viewer)
-        self.assertEqual(self.client.post('/api/documents/', {'file': pdf_file(), 'title': 'No', 'area': self.area.id}, format='multipart').status_code, 404)
+        self.assertEqual(self.client.post('/api/documents/', {'file': pdf_file(), 'title': 'No', 'area': self.area.id,
+                                                              'requirement': self.requirement.id}, format='multipart').status_code, 404)
         self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'No'}, format='json').status_code, 403)
 
     def test_login_csrf_and_session(self):

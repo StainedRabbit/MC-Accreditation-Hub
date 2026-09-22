@@ -8,7 +8,7 @@ academic/evidence access still requires an explicit academic grant.
 from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from .models import Area, Cycle, Document, DocumentVersion, EvidenceMapping, Submission
+from .models import Area, Cycle, Document, DocumentVersion, EvidenceMapping, Submission, RequirementAssignment
 
 
 READ_ROLES = ['coordinator', 'reviewer', 'custodian', 'viewer']
@@ -32,6 +32,39 @@ def has_cyclewide_coordinator(user, cycle):
 def require_area(user, area, roles=None):
     if not areas_for(user, roles).filter(pk=area.pk).exists():
         raise PermissionDenied('You do not have permission in this accreditation area.')
+
+
+def is_active_assignee(user, requirement):
+    return user.is_active and RequirementAssignment.objects.filter(
+        requirement=requirement, user=user, active=True,
+    ).exists()
+
+
+def is_scoped_coordinator(user, area):
+    return areas_for(user, ['coordinator']).filter(pk=area.pk).exists()
+
+
+def require_assignee_or_coordinator_override(user, requirement, override_reason, operation):
+    """Return True for an explicit Coordinator exception, otherwise require an assignee."""
+    if is_active_assignee(user, requirement):
+        return False
+    if is_scoped_coordinator(user, requirement.area):
+        if not (override_reason or '').strip():
+            raise ValidationError({'override_reason': f'A reason is required for a Coordinator {operation} override.'})
+        return True
+    raise PermissionDenied('Only an active assignee may work on this requirement.')
+
+
+def require_document_steward_or_coordinator_override(user, document, override_reason, operation):
+    if document.steward_id == user.id:
+        return False
+    if document.steward_id is None:
+        raise ValidationError('This legacy document has no steward. A scoped Coordinator must explicitly delegate stewardship first.')
+    if is_scoped_coordinator(user, document.area):
+        if not (override_reason or '').strip():
+            raise ValidationError({'override_reason': f'A reason is required for a Coordinator {operation} override.'})
+        return True
+    raise PermissionDenied('Only the document steward may replace or submit this evidence.')
 
 
 def visible_versions_for(user, queryset=None):

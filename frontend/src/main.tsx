@@ -38,6 +38,7 @@ import type {
   Item,
   Audit,
   Certification,
+  AssignmentCandidate,
   SearchResults,
   ComplianceReport,
 } from "./types";
@@ -305,8 +306,11 @@ function App() {
   const [upload, setUpload] = useState<{
       doc?: Document;
       item?: Item;
+      requirement?: number;
       area?: number;
     } | null>(null),
+    [assignmentRequirement, setAssignmentRequirement] = useState<Requirement | null>(null),
+    [stewardshipDocument, setStewardshipDocument] = useState<Document | null>(null),
     [mappingItem, setMappingItem] = useState<Item | null>(null),
     [review, setReview] = useState<Submission | null>(null),
     [certification, setCertification] = useState<{
@@ -330,6 +334,8 @@ function App() {
     setReview(null);
     setCertification(null);
     setMappingItem(null);
+    setAssignmentRequirement(null);
+    setStewardshipDocument(null);
     setRequirementForm(false);
     setSecurity(false);
     setCycleTransition(null);
@@ -1068,6 +1074,16 @@ function App() {
                   <p>Exclusion reason: {detail.exclusion_reason}</p>
                 )}
               </div>
+              <section className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Assigned contributors</h2>
+                    <p>Only these active, area-authorized users may submit new evidence.</p>
+                  </div>
+                  {detail.can_assign && <button className="secondary" onClick={() => setAssignmentRequirement(detail)}>Manage assignments</button>}
+                </div>
+                {detail.assignments?.length ? <div className="metadata">{detail.assignments.map((assignment) => <span key={assignment.id}><strong>{assignment.name}</strong> <small>assigned by {assignment.assigned_by}</small></span>)}</div> : <p className="muted">No active assignee. Contributors cannot upload, map, or submit new evidence until a scoped Coordinator assigns one.</p>}
+              </section>
               {detail.status === "ready_for_completion_review" && (
                 <section className="panel completion-review" aria-live="polite">
                   <div>
@@ -1185,6 +1201,7 @@ function App() {
                                     (d) => d.id === m.document,
                                   ),
                                   item,
+                                  requirement: detail.id,
                                   area: detail.area,
                                 })
                               }
@@ -1237,7 +1254,7 @@ function App() {
                     <div className="actions">
                       <button
                         className="secondary"
-                        onClick={() => setUpload({ item, area: detail.area })}
+                        onClick={() => setUpload({ item, requirement: detail.id, area: detail.area })}
                       >
                         <Upload size={16} />
                         Upload evidence
@@ -1346,6 +1363,7 @@ function App() {
                   <p>
                     {docDetail.category} · {docDetail.area_title}
                   </p>
+                  <p className="muted">Steward: <strong>{docDetail.steward || "Unassigned legacy document"}</strong></p>
                 </div>
                 {docDetail.can_upload && (
                   <button
@@ -1357,6 +1375,7 @@ function App() {
                   </button>
                 )}
               </div>
+              {docDetail.can_delegate_stewardship && <div className="actions"><button className="secondary" onClick={() => setStewardshipDocument(docDetail)}>Delegate stewardship</button></div>}
               <section className="panel">
                 <h3>Document version history</h3>
                 <p className="muted">
@@ -1660,6 +1679,7 @@ function App() {
         <UploadForm
           context={upload}
           areas={areas.filter((a) => a.can_upload)}
+          requirements={requirements.filter((r) => r.can_upload)}
           close={() => setUpload(null)}
           saved={async (message) => {
             setUpload(null);
@@ -1678,6 +1698,8 @@ function App() {
           }}
         />
       )}
+      {assignmentRequirement && <AssignmentForm requirement={assignmentRequirement} close={() => setAssignmentRequirement(null)} saved={async () => { setAssignmentRequirement(null); await changed("Requirement assignments updated."); }} />}
+      {stewardshipDocument && <StewardshipForm document={stewardshipDocument} close={() => setStewardshipDocument(null)} saved={async () => { setStewardshipDocument(null); await changed("Document stewardship updated."); }} />}
       {review && (
         <ReviewForm
           submission={review}
@@ -1920,14 +1942,53 @@ function RequirementForm({
   );
 }
 
+function AssignmentForm({ requirement, close, saved }: { requirement: Requirement; close: () => void; saved: () => Promise<void> }) {
+  const [data, setData] = useState<{ assignments: Requirement["assignments"]; candidates: AssignmentCandidate[] } | null>(null),
+    [error, setError] = useState(""), [busy, setBusy] = useState(false), [replace, setReplace] = useState(false);
+  useEffect(() => { api<{ assignments: Requirement["assignments"]; candidates: AssignmentCandidate[] }>(`requirements/${requirement.id}/assignments/`).then(setData).catch((e) => setError(e.message)); }, [requirement.id]);
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true); setError(""); const f = new FormData(e.currentTarget);
+    try { await post(`requirements/${requirement.id}/assignments/`, { user: Number(f.get("user")), reason: f.get("reason"), replace }); await saved(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title="Manage requirement assignments" close={close}><form onSubmit={submit}>
+    <ErrorBox error={error} />
+    <p className="muted">Assignments are limited to active Custodians with a grant in this exact area and cycle. A reason is recorded in the audit trail.</p>
+    <p><strong>Current:</strong> {data?.assignments?.length ? data.assignments.map((a) => a.name).join(", ") : "No active assignees"}</p>
+    <label>Assigned contributor<select name="user" required disabled={!data}><option value="">Select user</option>{data?.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
+    <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />Replace the current active assignees</label>
+    <label>Assignment or reassignment reason<textarea name="reason" rows={3} required /></label>
+    <div className="form-actions"><button className="secondary" type="button" onClick={close}>Cancel</button><button className="primary" disabled={busy || !data}>{busy ? "Saving…" : replace ? "Reassign" : "Add assignee"}</button></div>
+  </form></Modal>;
+}
+
+function StewardshipForm({ document, close, saved }: { document: Document; close: () => void; saved: () => Promise<void> }) {
+  const [data, setData] = useState<{ steward_id: number | null; candidates: AssignmentCandidate[] } | null>(null),
+    [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  useEffect(() => { api<{ steward_id: number | null; candidates: AssignmentCandidate[] }>(`documents/${document.id}/stewardship/`).then(setData).catch((e) => setError(e.message)); }, [document.id]);
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true); setError(""); const f = new FormData(e.currentTarget);
+    try { await post(`documents/${document.id}/stewardship/`, { steward: Number(f.get("steward")), reason: f.get("reason") }); await saved(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title="Delegate document stewardship" close={close}><form onSubmit={submit}>
+    <ErrorBox error={error} /><p className="muted">This explicit Coordinator action transfers future replacement and submission stewardship. It does not alter historic versions or submissions.</p>
+    <label>New steward<select name="steward" required defaultValue={data?.steward_id || ""} disabled={!data}><option value="">Select user</option>{data?.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
+    <label>Delegation reason<textarea name="reason" rows={3} required /></label>
+    <div className="form-actions"><button className="secondary" type="button" onClick={close}>Cancel</button><button className="primary" disabled={busy || !data}>{busy ? "Saving…" : "Delegate stewardship"}</button></div>
+  </form></Modal>;
+}
+
 function UploadForm({
   context,
   areas,
+  requirements,
   close,
   saved,
 }: {
-  context: { doc?: Document; item?: Item; area?: number };
+  context: { doc?: Document; item?: Item; requirement?: number; area?: number };
   areas: Area[];
+  requirements: Requirement[];
   close: () => void;
   saved: (message: string) => Promise<void>;
 }) {
@@ -1939,6 +2000,7 @@ function UploadForm({
     setBusy(true);
     setError("");
     const f = new FormData(e.currentTarget);
+    if (context.requirement) f.set("requirement", String(context.requirement));
     if (!f.get("valid_until")) f.delete("valid_until");
     try {
       const doc =
@@ -1952,10 +2014,12 @@ function UploadForm({
         const m = await post<{ id: number }>("evidence-mappings/", {
           item: context.item.id,
           document: doc.id,
+          override_reason: f.get("override_reason"),
         });
         await post("submissions/", {
           mapping: m.id,
           version: doc.versions[0].id,
+          override_reason: f.get("override_reason"),
         });
       }
       await saved(
@@ -1988,6 +2052,13 @@ function UploadForm({
         )}
         {!context.doc && (
           <>
+            {!context.item && <label>
+              Requirement
+              <select name="requirement" required disabled={!!uploaded}>
+                <option value="">Select your assigned requirement</option>
+                {requirements.map((requirement) => <option key={requirement.id} value={requirement.id}>{requirement.code} — {requirement.title}</option>)}
+              </select>
+            </label>}
             <label>
               Document title
               <input
@@ -2046,6 +2117,10 @@ function UploadForm({
           Valid until (optional)
           <input name="valid_until" type="date" disabled={!!uploaded} />
         </label>
+        <label>
+          Coordinator override reason (required only outside assignment or stewardship)
+          <textarea name="override_reason" rows={2} disabled={!!uploaded} />
+        </label>
         <p className="muted">
           Every upload creates an immutable version. Approvals never carry over
           automatically.
@@ -2094,10 +2169,12 @@ function MappingForm({
       const m = await post<{ id: number }>("evidence-mappings/", {
         item: item.id,
         document: docId,
+        override_reason: f.get("override_reason"),
       });
       await post("submissions/", {
         mapping: m.id,
         version: Number(f.get("version")),
+        override_reason: f.get("override_reason"),
       });
       await saved();
     } catch (e) {
@@ -2136,6 +2213,10 @@ function MappingForm({
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          Coordinator override reason (required only outside assignment or stewardship)
+          <textarea name="override_reason" rows={2} />
         </label>
         {!eligible.length && (
           <p className="muted">Upload a document in an assigned area first.</p>

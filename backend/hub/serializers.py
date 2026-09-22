@@ -54,16 +54,41 @@ class UploadInput(serializers.Serializer):
     title = serializers.CharField(max_length=180, required=False)
     category = serializers.CharField(max_length=100, required=False, default='Supporting Document')
     area = serializers.IntegerField(required=False)
+    requirement = serializers.IntegerField(required=False)
+    override_reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=4000)
 
 
 class MappingInput(serializers.Serializer):
     item = serializers.IntegerField()
     document = serializers.UUIDField()
+    override_reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=4000)
 
 
 class SubmitInput(serializers.Serializer):
     mapping = serializers.IntegerField()
     version = serializers.IntegerField()
+    override_reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=4000)
+
+
+class RequirementAssignmentInput(serializers.Serializer):
+    user = serializers.IntegerField()
+    reason = serializers.CharField(trim_whitespace=True, max_length=4000)
+    replace = serializers.BooleanField(default=False)
+
+    def validate_reason(self, value):
+        if not value:
+            raise serializers.ValidationError('A reason is required.')
+        return value
+
+
+class StewardshipInput(serializers.Serializer):
+    steward = serializers.IntegerField()
+    reason = serializers.CharField(trim_whitespace=True, max_length=4000)
+
+    def validate_reason(self, value):
+        if not value:
+            raise serializers.ValidationError('A reason is required.')
+        return value
 
 
 class ReviewInput(serializers.Serializer):

@@ -174,8 +174,10 @@ def req_data(req, user, detail=False):
         'responsible': req.responsible, 'deadline': req.deadline, 'active': req.active,
         'applicable': req.applicable, 'exclusion_reason': req.exclusion_reason, **result_data,
         'can_manage': can_certify,
-        'can_upload': req.area.cycle.status == 'active' and areas_for(user, WRITE_ROLES).filter(pk=req.area_id).exists()}
+        'can_assign': can_certify,
+        'can_upload': req.area.cycle.status == 'active' and (is_active_assignee(user, req) or can_certify)}
     if detail:
+        result['assignments'] = [assignment_data(a) for a in req.user_assignments.filter(active=True).select_related('user')]
         result['items'] = [{'id': i.id, 'label': i.label, 'criteria': i.criteria, 'mandatory': i.mandatory,
                             'status': item_state(i),
                             'mappings': [mapping_data(m, user) for m in visible_mappings_for(user, i.mappings.all())]}
@@ -184,6 +186,22 @@ def req_data(req, user, detail=False):
         result['can_complete'] = can_certify and result['status'] == 'ready_for_completion_review'
         result['can_reopen'] = can_certify and result['status'] == 'complete'
     return result
+
+
+def assignment_data(assignment):
+    return {'id': assignment.id, 'user': assignment.user_id,
+            'name': assignment.user.get_full_name() or assignment.user.username,
+            'username': assignment.user.username, 'active': assignment.active,
+            'assigned_by': assignment.assigned_by.get_full_name() or assignment.assigned_by.username,
+            'created_at': assignment.created_at}
+
+
+def assignment_candidates(requirement):
+    """Only active Custodians with an exact area grant may be assigned/steward."""
+    users = User.objects.filter(is_active=True, assignments__role='custodian',
+                                assignments__cycle=requirement.area.cycle,
+                                assignments__area=requirement.area).distinct().order_by('username')
+    return [{'id': user.id, 'name': user.get_full_name() or user.username, 'username': user.username} for user in users]
 
 
 def certification_data(certification):
@@ -229,7 +247,10 @@ def doc_data(doc, user):
     return {'id': str(doc.id), 'title': doc.title, 'category': doc.category, 'area': doc.area_id,
         'area_title': doc.area.title, 'cycle': doc.area.cycle_id, 'versions': versions,
         'custodian': doc.custodian.get_full_name() or doc.custodian.username,
-        'can_upload': doc.area.cycle.status == 'active' and areas_for(user, WRITE_ROLES).filter(pk=doc.area_id).exists(),
+        'steward': (doc.steward.get_full_name() or doc.steward.username) if doc.steward else None,
+        'steward_id': doc.steward_id,
+        'can_upload': doc.area.cycle.status == 'active' and (doc.steward_id == user.id or is_scoped_coordinator(user, doc.area)),
+        'can_delegate_stewardship': doc.area.cycle.status == 'active' and is_scoped_coordinator(user, doc.area),
         'mappings': [mapping_data(m, user) for m in mappings]}
 
 
@@ -375,18 +396,22 @@ def upload_document(request, document_id=None):
     try:
         with transaction.atomic():
             if document_id:
-                # Existing area writers retain their current write capability;
-                # the response below is still filtered through the read policy.
                 doc = get_object_or_404(Document.objects.filter(area__in=areas_for(request.user, WRITE_ROLES)), pk=document_id)
                 require_area(request.user, doc.area, WRITE_ROLES)
                 lock_active_cycles(doc.area.cycle_id)
                 doc = Document.objects.select_for_update().get(pk=doc.pk)
+                overridden = require_document_steward_or_coordinator_override(
+                    request.user, doc, data.get('override_reason'), 'version replacement')
             else:
-                if not data.get('title') or not data.get('area'):
-                    raise ValidationError('A document title and owning area are required.')
+                if not data.get('title') or not data.get('area') or not data.get('requirement'):
+                    raise ValidationError('A document title, owning area, and requirement are required.')
                 area = get_object_or_404(areas_for(request.user, WRITE_ROLES), pk=data['area'])
+                requirement = get_object_or_404(Requirement.objects.filter(area=area), pk=data['requirement'])
                 lock_active_cycles(area.cycle_id)
-                doc = Document.objects.create(title=data['title'], category=data['category'], area=area, custodian=request.user)
+                overridden = require_assignee_or_coordinator_override(
+                    request.user, requirement, data.get('override_reason'), 'upload')
+                doc = Document.objects.create(title=data['title'], category=data['category'], area=area,
+                                              custodian=request.user, steward=request.user)
             last = doc.versions.order_by('-number').first()
             version = DocumentVersion.objects.create(document=doc, number=last.number + 1 if last else 1,
                 original_name=name, content_type=content_type, size=len(contents), checksum=checksum,
@@ -395,7 +420,9 @@ def upload_document(request, document_id=None):
             storage_path = settings.PRIVATE_MEDIA_ROOT / str(version.storage_key)
             with storage_path.open('xb') as output:
                 output.write(contents)
-            audit(request.user, doc.area, 'version_uploaded', doc.title, version=version.id, number=version.number)
+            audit(request.user, doc.area, 'version_uploaded', doc.title, version=version.id, number=version.number,
+                  steward=doc.steward_id, override=overridden,
+                  override_reason=data.get('override_reason', '') if overridden else '')
             result = doc_data(doc, request.user)
         return Response(result, status=201)
     except Exception:
@@ -428,6 +455,77 @@ class DownloadView(APIView):
         return response
 
 
+class RequirementAssignmentsView(APIView):
+    def get(self, request, pk):
+        requirement = get_object_or_404(scoped_requirements(request.user), pk=pk)
+        if not is_scoped_coordinator(request.user, requirement.area):
+            raise PermissionDenied('Only a scoped Coordinator may manage assignments.')
+        return Response({'assignments': [assignment_data(a) for a in requirement.user_assignments.filter(active=True).select_related('user')],
+                         'candidates': assignment_candidates(requirement)})
+
+    @transaction.atomic
+    def post(self, request, pk):
+        requirement = get_object_or_404(scoped_requirements(request.user), pk=pk)
+        require_area(request.user, requirement.area, ['coordinator'])
+        lock_active_cycles(requirement.area.cycle_id)
+        requirement = Requirement.objects.select_for_update().get(pk=requirement.pk)
+        data = payload(RequirementAssignmentInput, request).validated_data
+        candidate = get_object_or_404(User.objects.filter(is_active=True), pk=data['user'])
+        if candidate.id not in [entry['id'] for entry in assignment_candidates(requirement)]:
+            raise ValidationError({'user': 'The assignee must be active and have a Custodian grant in this requirement area and cycle.'})
+        if data['replace']:
+            removed = list(requirement.user_assignments.select_for_update().filter(active=True).exclude(user=candidate))
+            for assignment in removed:
+                assignment.active = False
+                assignment.save(update_fields=['active', 'updated_at'])
+                audit(request.user, requirement.area, 'requirement_assignment_deactivated', requirement.title,
+                      assignment=assignment.id, assignee=assignment.user_id, reason=data['reason'])
+        assignment, created = RequirementAssignment.objects.select_for_update().get_or_create(
+            requirement=requirement, user=candidate,
+            defaults={'active': True, 'assigned_by': request.user},
+        )
+        if not created and assignment.active:
+            raise ValidationError({'user': 'This user is already an active assignee.'})
+        if not created:
+            assignment.active = True
+            assignment.assigned_by = request.user
+            assignment.save(update_fields=['active', 'assigned_by', 'updated_at'])
+        audit(request.user, requirement.area,
+              'requirement_reassigned' if data['replace'] else 'requirement_assigned', requirement.title,
+              assignment=assignment.id, assignee=candidate.id, replace=data['replace'], reason=data['reason'])
+        return Response(assignment_data(assignment), status=201 if created else 200)
+
+
+class DocumentStewardshipView(APIView):
+    def get(self, request, pk):
+        document = get_object_or_404(documents_for(request.user).select_related('area__cycle'), pk=pk)
+        if not is_scoped_coordinator(request.user, document.area):
+            raise PermissionDenied('Only a scoped Coordinator may delegate document stewardship.')
+        candidates = User.objects.filter(is_active=True, assignments__role='custodian',
+                                         assignments__cycle=document.area.cycle,
+                                         assignments__area=document.area).distinct().order_by('username')
+        return Response({'steward_id': document.steward_id,
+                         'candidates': [{'id': u.id, 'name': u.get_full_name() or u.username, 'username': u.username} for u in candidates]})
+
+    @transaction.atomic
+    def post(self, request, pk):
+        document = get_object_or_404(Document.objects.select_for_update().select_related('area__cycle'), pk=pk)
+        require_area(request.user, document.area, ['coordinator'])
+        lock_active_cycles(document.area.cycle_id)
+        data = payload(StewardshipInput, request).validated_data
+        candidate = get_object_or_404(User.objects.filter(is_active=True), pk=data['steward'])
+        eligible = RoleAssignment.objects.filter(user=candidate, role='custodian', cycle=document.area.cycle,
+                                                  area=document.area).exists()
+        if not eligible:
+            raise ValidationError({'steward': 'The steward must be active and have a Custodian grant in this document area and cycle.'})
+        previous = document.steward_id
+        document.steward = candidate
+        document.save(update_fields=['steward'])
+        audit(request.user, document.area, 'document_stewardship_delegated', document.title,
+              document=str(document.id), previous_steward=previous, steward=candidate.id, reason=data['reason'])
+        return Response(doc_data(document, request.user))
+
+
 class MappingsView(APIView):
     def get(self, request):
         qs = visible_mappings_for(request.user)
@@ -442,9 +540,15 @@ class MappingsView(APIView):
         if doc.area_id != item.requirement.area_id or doc.area.cycle_id != item.requirement.area.cycle_id:
             raise ValidationError('Evidence can be mapped only within its owning area and cycle.')
         lock_active_cycles(item.requirement.area.cycle_id)
+        requirement_override = require_assignee_or_coordinator_override(
+            request.user, item.requirement, data.get('override_reason'), 'mapping')
+        stewardship_override = require_document_steward_or_coordinator_override(
+            request.user, doc, data.get('override_reason'), 'mapping')
         mapping, created = EvidenceMapping.objects.get_or_create(item=item, document=doc, defaults={'created_by': request.user})
         if created:
-            audit(request.user, item.requirement.area, 'evidence_mapped', doc.title, mapping=mapping.id, item=item.id)
+            audit(request.user, item.requirement.area, 'evidence_mapped', doc.title, mapping=mapping.id, item=item.id,
+                  override=requirement_override or stewardship_override,
+                  override_reason=data.get('override_reason', '') if requirement_override or stewardship_override else '')
         return Response(mapping_data(mapping, request.user), status=201 if created else 200)
 
 
@@ -465,6 +569,10 @@ class SubmissionsView(APIView):
             raise ValidationError('Evidence can be submitted only within its owning area and cycle.')
         lock_active_cycles(mapping.item.requirement.area.cycle_id)
         mapping = EvidenceMapping.objects.select_for_update().get(pk=mapping.pk)
+        requirement_override = require_assignee_or_coordinator_override(
+            request.user, mapping.item.requirement, data.get('override_reason'), 'submission')
+        stewardship_override = require_document_steward_or_coordinator_override(
+            request.user, mapping.document, data.get('override_reason'), 'submission')
         version = get_object_or_404(DocumentVersion, pk=data['version'], document=mapping.document)
         if not can_version(request.user, version):
             raise PermissionDenied()
@@ -476,7 +584,9 @@ class SubmissionsView(APIView):
         if version.valid_until and version.valid_until < timezone.localdate():
             raise ValidationError('Expired evidence cannot be submitted.')
         sub = Submission.objects.create(mapping=mapping, version=version, submitted_by=request.user)
-        audit(request.user, mapping.item.requirement.area, 'evidence_submitted', mapping.document.title, submission=sub.id, version=version.id)
+        audit(request.user, mapping.item.requirement.area, 'evidence_submitted', mapping.document.title, submission=sub.id,
+              version=version.id, override=requirement_override or stewardship_override,
+              override_reason=data.get('override_reason', '') if requirement_override or stewardship_override else '')
         return Response(submission_data(sub, request.user), status=201)
 
 

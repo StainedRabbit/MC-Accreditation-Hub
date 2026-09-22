@@ -83,6 +83,37 @@ class Requirement(models.Model):
                        models.CheckConstraint(condition=models.Q(applicable=True) | ~models.Q(exclusion_reason=''), name='exclusion_reason_required')]
 
 
+class RequirementAssignment(models.Model):
+    """The active people accountable for new evidence on a requirement.
+
+    Deactivation preserves the original assignment rather than rewriting
+    assignment history.  AuditEvent records the reason for every transition.
+    """
+    requirement = models.ForeignKey(Requirement, on_delete=models.PROTECT, related_name='user_assignments')
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='requirement_assignments')
+    active = models.BooleanField(default=True)
+    assigned_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='assignments_made')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['requirement', 'user'], name='unique_requirement_user_assignment')]
+
+    def clean(self):
+        if not self.user.is_active:
+            raise ValidationError('Requirement assignees must have an active account.')
+        has_scope = RoleAssignment.objects.filter(
+            user=self.user, role='custodian', cycle=self.requirement.area.cycle,
+            area=self.requirement.area,
+        ).exists()
+        if not has_scope:
+            raise ValidationError('Requirement assignees need an active Custodian grant in this area and cycle.')
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
 class EvidenceItem(models.Model):
     requirement = models.ForeignKey(Requirement, on_delete=models.PROTECT, related_name='items')
     label = models.CharField(max_length=180)
@@ -96,6 +127,10 @@ class Document(models.Model):
     title = models.CharField(max_length=180)
     category = models.CharField(max_length=100, default='Supporting Document')
     custodian = models.ForeignKey(User, on_delete=models.PROTECT)
+    # Nullable only for pre-F04 records.  The migration deliberately does not
+    # infer stewardship from the older custodian field.
+    steward = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT,
+                                related_name='stewarded_documents')
     created_at = models.DateTimeField(auto_now_add=True)
 
 

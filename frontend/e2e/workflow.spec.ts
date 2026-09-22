@@ -88,6 +88,14 @@ test("evidence visibility follows draft, submitted, and approved states", async 
   await requirementModal.getByLabel("Evidence item 1").fill("Visibility evidence");
   await requirementModal.getByRole("button", { name: "Save Requirement" }).click();
 
+  await coordinator.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View", exact: true }).click();
+  await coordinator.getByRole("button", { name: "Manage assignments", exact: true }).click();
+  const assignment = coordinator.getByRole("dialog");
+  await assignment.getByRole("combobox", { name: "Assigned contributor" }).selectOption({ index: 1 });
+  await assignment.getByRole("textbox", { name: "Assignment or reassignment reason" }).fill("F04 browser workflow assignment.");
+  await assignment.getByRole("button", { name: "Add assignee", exact: true }).click();
+  await expect(assignment).toHaveCount(0);
+
   const custodianContext = await browser.newContext();
   const custodian = await custodianContext.newPage();
   await login(custodian, "custodian");
@@ -97,6 +105,7 @@ test("evidence visibility follows draft, submitted, and approved states", async 
   await custodian.getByRole("button", { name: "Upload Document", exact: true }).click();
   const upload = custodian.getByRole("dialog");
   await upload.getByLabel("Document title").fill(documentTitle);
+  await upload.getByRole("combobox", { name: "Requirement" }).selectOption({ index: 1 });
   await upload.getByRole("combobox", { name: "Owning area" }).selectOption({ label: "Faculty" });
   await upload.locator("input[type=file]").setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
   await upload.getByRole("button", { name: "Upload Draft", exact: true }).click();
@@ -184,6 +193,7 @@ test("create, upload, request revisions, replace and approve", async ({
   await modal
     .locator("input[type=file]")
     .setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
+  await modal.getByRole("textbox", { name: "Coordinator override reason (required only outside assignment or stewardship)" }).fill("F04 browser workflow Coordinator override.");
   await modal.getByRole("button", { name: "Upload & Submit" }).click();
   await expect(modal).toHaveCount(0);
   await expect(page.getByText("Updating records…")).toHaveCount(0);
@@ -247,6 +257,7 @@ test("create, upload, request revisions, replace and approve", async ({
   await modal
     .locator("input[type=file]")
     .setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
+  await modal.getByRole("textbox", { name: "Coordinator override reason (required only outside assignment or stewardship)" }).fill("F04 browser workflow Coordinator override.");
   await modal.getByRole("button", { name: "Upload & Submit" }).click();
   await expect(modal).toHaveCount(0);
   await reviewer.reload();

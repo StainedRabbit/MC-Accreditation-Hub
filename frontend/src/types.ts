@@ -96,12 +96,24 @@ export type Requirement = {
   approved_items: number;
   required_items: number;
   can_manage: boolean;
+  can_assign: boolean;
   can_upload: boolean;
+  assignments?: RequirementAssignment[];
   can_complete?: boolean;
   can_reopen?: boolean;
   certifications?: Certification[];
   items?: Item[];
 };
+export type RequirementAssignment = {
+  id: number;
+  user: number;
+  name: string;
+  username: string;
+  active: boolean;
+  assigned_by: string;
+  created_at: string;
+};
+export type AssignmentCandidate = { id: number; name: string; username: string };
 export type Certification = {
   id: number;
   outcome: "complete" | "reopened";
@@ -129,8 +141,11 @@ export type Document = {
   area_title: string;
   cycle: number;
   custodian: string;
+  steward: string | null;
+  steward_id: number | null;
   versions: Version[];
   can_upload: boolean;
+  can_delegate_stewardship: boolean;
   mappings: Mapping[];
 };
 export type Audit = {

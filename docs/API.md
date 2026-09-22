@@ -20,15 +20,17 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpo
 | POST `requirements/` | `{area,code,title,description?,responsible,deadline?,active,applicable?,exclusion_reason?,items:[{label,criteria?,mandatory?}]}` |
 | GET `requirements/{id}/` | Requirement plus evidence items, mappings, version submissions and decisions |
 | PATCH `requirements/{id}/` | Editable requirement metadata/applicability/activation; cannot move areas or replace the evidence checklist |
+| GET/POST `requirements/{id}/assignments/` | Scoped Coordinator only: active assignments and eligible exact-area/cycle Custodians / `{user,reason,replace?:boolean}`. `replace:true` explicitly deactivates other active assignments and is audited. |
 | GET/POST `requirements/{id}/certifications/` | Scoped append-only completion history / Coordinator-only `{outcome: complete|reopened, rationale}` action |
 | GET `evidence-items/?requirement=id` | Scoped evidence-item definitions |
 | GET `documents/?cycle=id&search=text` | Scoped metadata, visible versions and mappings |
-| POST `documents/` | Multipart `file,title,area,category?,valid_until?`; creates document and immutable v1 |
+| POST `documents/` | Multipart `file,title,area,requirement,category?,valid_until?,override_reason?`; assigned Custodian creates a stewarded document and immutable v1. A scoped Coordinator exception requires `override_reason`. |
 | GET `documents/{uuid}/` | Document and accessible version history |
-| GET/POST `documents/{uuid}/versions/` | List visible versions / upload multipart `file,valid_until?` to create a new draft |
+| GET/POST `documents/{uuid}/versions/` | List visible versions / steward-only multipart `file,valid_until?,override_reason?` replacement. A scoped Coordinator exception requires `override_reason`. |
+| GET/POST `documents/{uuid}/stewardship/` | Scoped Coordinator only: eligible exact-area/cycle Custodians / `{steward,reason}` explicit stewardship delegation. |
 | GET `document-versions/{id}/download/` | Permission-checked file attachment; no-store cache policy |
-| GET/POST `evidence-mappings/` | List scoped mappings / `{item,document}`; existing pair returns the existing mapping |
-| GET/POST `submissions/` | List scoped submission history (`?cycle=id`) / `{mapping,version}` |
+| GET/POST `evidence-mappings/` | List scoped mappings / `{item,document,override_reason?}`; assignment and stewardship are enforced; a Coordinator exception requires a reason and is audited. Existing pair returns the existing mapping. |
+| GET/POST `submissions/` | List scoped submission history (`?cycle=id`) / `{mapping,version,override_reason?}`; assignment and stewardship are enforced; a Coordinator exception requires a reason and is audited. |
 | GET/POST `review-decisions/` | List scoped decisions / `{submission,outcome,comment}` |
 | GET `compliance/?cycle=id` | `{total,complete,ready_for_completion_review,pending,for_compliance,missing,excluded,percentage,formula,formula_version,calculated_at,scope}` |
 | GET `audit/?cycle=id&search=text&action=name` | Last 200 scoped audit events, optionally filtered by record/actor/action |
@@ -43,10 +45,10 @@ The Project Owner has provisionally selected D01–D03 Option A; formal Academic
 |---|---|---|
 | Coordinator | All versions in scope | Submission/review history in scope; only a cycle-wide Coordinator grant (`area=null`) can close/reopen the entire cycle. |
 | Reviewer | Submitted versions only | Submitted/review history in scope; no drafts or lifecycle authority. |
-| Custodian (Contributor implementation) | Own document/upload/submission plus approved shared evidence | Own submission history only. Requirement assignments and final ownership rules remain D04 work. |
+| Custodian (Contributor implementation) | Own document/upload/submission plus approved shared evidence | New evidence work additionally requires an active requirement assignment and recorded document stewardship under provisional D04 Option A. |
 | Viewer | Approved versions only | No submission/review history or write authority. |
 
-New `POST evidence-mappings/` and `POST submissions/` requests require the document and requirement to have the same owning area and cycle. Existing immutable cross-area/cross-cycle records are retained and may be read only through a historical submitted/approved relationship allowed by the table. Search can match an original filename only when that exact version is visible to the requester; a hidden newer filename cannot produce a document result.
+New `POST evidence-mappings/` and `POST submissions/` requests require the document and requirement to have the same owning area and cycle, an active requirement assignee, and the document steward. A scoped Coordinator must supply a reason for any assignment/stewardship override; the action is audited. Existing immutable cross-area/cross-cycle records and pre-F04 documents/submissions are retained without invented assignments or owners. A legacy unowned document cannot receive a new version until a scoped Coordinator explicitly delegates stewardship. Search can match an original filename only when that exact version is visible to the requester; a hidden newer filename cannot produce a document result.
 
 Decision outcomes: `approved`, `revision_requested`, `rejected`. Submission display states add `pending` and `expired`. `current` indicates the latest submission for its mapping, and `can_review` describes authorized current UI actions. The server rechecks permissions and state on POST.
 
