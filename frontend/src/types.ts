@@ -51,6 +51,7 @@ export type Submission = {
   mapping: number;
   version: number;
   version_number: number;
+  criteria_revision: number;
   document_title: string;
   document: string;
   item_label: string;
@@ -92,6 +93,8 @@ export type Requirement = {
   active: boolean;
   applicable: boolean;
   exclusion_reason: string;
+  criteria_revision: number;
+  legacy_certification: boolean;
   status: string;
   approved_items: number;
   required_items: number;
@@ -102,6 +105,8 @@ export type Requirement = {
   can_complete?: boolean;
   can_reopen?: boolean;
   certifications?: Certification[];
+  applicability_history?: ApplicabilityDecision[];
+  certification_candidates?: CertificationEvidence[];
   items?: Item[];
 };
 export type RequirementAssignment = {
@@ -120,7 +125,17 @@ export type Certification = {
   coordinator: string;
   rationale: string;
   created_at: string;
+  legacy: boolean;
+  criteria_snapshot: { revision: number; code: string; title: string; cycle: number; area: number; instrument: string; description: string; items: Array<{ id: number; label: string; criteria: string; mandatory: boolean }> } | null;
+  evidence: CertificationEvidence[];
 };
+export type CertificationEvidence = {
+  submission: number; item: number; item_label: string; document: string; document_title: string;
+  submission_criteria_revision: number | null;
+  version: number; version_number: number; original_name: string; checksum: string;
+  valid_until: string | null; review_decision: number;
+};
+export type ApplicabilityDecision = { id: number; applicable: boolean; reason: string; coordinator: string; created_at: string };
 export type Version = {
   id: number;
   number: number;

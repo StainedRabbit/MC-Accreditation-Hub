@@ -173,6 +173,7 @@ def req_data(req, user, detail=False):
         'area': req.area_id, 'area_title': req.area.title, 'icon': req.area.icon, 'cycle': req.area.cycle_id,
         'responsible': req.responsible, 'deadline': req.deadline, 'active': req.active,
         'applicable': req.applicable, 'exclusion_reason': req.exclusion_reason, **result_data,
+        'criteria_revision': req.criteria_revision,
         'can_manage': can_certify,
         'can_assign': can_certify,
         'can_upload': req.area.cycle.status == 'active' and (is_active_assignee(user, req) or can_certify)}
@@ -183,8 +184,12 @@ def req_data(req, user, detail=False):
                             'mappings': [mapping_data(m, user) for m in visible_mappings_for(user, i.mappings.all())]}
                            for i in req.items.all()]
         result['certifications'] = [certification_data(c) for c in req.certifications.all()]
+        result['applicability_history'] = [applicability_data(d) for d in req.applicability_decisions.all()]
+        result['certification_candidates'] = [certification_candidate(s) for item in req.items.all()
+            for mapping in item.mappings.all() for s in mapping.submissions.all()
+            if s.id == next(iter(mapping.submissions.all()), s).id and submission_state(s) == 'approved']
         result['can_complete'] = can_certify and result['status'] == 'ready_for_completion_review'
-        result['can_reopen'] = can_certify and result['status'] == 'complete'
+        result['can_reopen'] = can_certify and certification_is_open(req)
     return result
 
 
@@ -207,19 +212,53 @@ def assignment_candidates(requirement):
 def certification_data(certification):
     return {'id': certification.id, 'outcome': certification.outcome, 'rationale': certification.rationale,
             'coordinator': certification.coordinator.get_full_name() or certification.coordinator.username,
-            'created_at': certification.created_at}
+            'created_at': certification.created_at, 'legacy': certification.outcome == 'complete' and not certification_has_support(certification),
+            'criteria_snapshot': certification.criteria_snapshot,
+            'evidence': [link.snapshot for link in certification.evidence.all()]}
+
+
+def applicability_data(decision):
+    return {'id': decision.id, 'applicable': decision.applicable, 'reason': decision.reason,
+            'coordinator': decision.coordinator.get_full_name() or decision.coordinator.username,
+            'created_at': decision.created_at}
+
+
+def certification_is_open(requirement):
+    latest = next(iter(requirement.certifications.all()), None)
+    return bool(latest and latest.outcome == 'complete')
+
+
+def criteria_snapshot(requirement):
+    return {'revision': requirement.criteria_revision, 'code': requirement.code, 'title': requirement.title,
+            'cycle': requirement.area.cycle_id, 'area': requirement.area_id,
+            'instrument': requirement.area.cycle.instrument, 'description': requirement.description,
+            'items': [{'id': item.id, 'label': item.label, 'criteria': item.criteria, 'mandatory': item.mandatory}
+                      for item in requirement.items.all()]}
+
+
+def certification_candidate(sub):
+    version = sub.version
+    return {'submission': sub.id, 'item': sub.mapping.item_id, 'item_label': sub.mapping.item.label,
+            'submission_criteria_revision': sub.criteria_revision,
+            'document': str(sub.mapping.document_id), 'document_title': sub.mapping.document.title,
+            'version': version.id, 'version_number': version.number, 'original_name': version.original_name,
+            'checksum': version.checksum, 'valid_until': version.valid_until.isoformat() if version.valid_until else None,
+            'review_decision': sub.decision.id}
 
 
 def submission_data(sub, user):
     decision = getattr(sub, 'decision', None)
     current = sub.mapping.submissions.order_by('-id').first().id == sub.id
     return {'id': sub.id, 'mapping': sub.mapping_id, 'version': sub.version_id, 'version_number': sub.version.number,
+        'criteria_revision': sub.criteria_revision,
         'document_title': sub.mapping.document.title, 'document': str(sub.mapping.document_id),
         'item_label': sub.mapping.item.label, 'requirement': sub.mapping.item.requirement_id,
         'requirement_title': sub.mapping.item.requirement.title, 'submitted_at': sub.submitted_at,
         'submitted_by': sub.submitted_by.get_full_name() or sub.submitted_by.username,
         'status': submission_state(sub), 'current': current,
-        'can_review': current and not decision and sub.version.uploaded_by_id != user.id and sub.submitted_by_id != user.id
+        'can_review': current and not decision and submission_state(sub) != 'outdated'
+            and not certification_is_open(sub.mapping.item.requirement)
+            and sub.version.uploaded_by_id != user.id and sub.submitted_by_id != user.id
             and sub.mapping.item.requirement.area.cycle.status == 'active'
             and areas_for(user, REVIEW_ROLES).filter(pk=sub.mapping.item.requirement.area_id).exists(),
         'decision': {'outcome': decision.outcome, 'comment': decision.comment,
@@ -335,6 +374,8 @@ class RequirementsView(APIView):
         # Revalidate uniqueness after the cycle lock.
         serializer = payload(RequirementInput, request)
         req = serializer.save(created_by=request.user)
+        ApplicabilityDecision.objects.create(requirement=req, coordinator=request.user, applicable=req.applicable,
+            reason=serializer.validated_data.get('applicability_reason') or req.exclusion_reason or 'Initial applicable requirement.')
         audit(request.user, area, 'requirement_created', req.title, requirement=req.id)
         return Response(req_data(req, request.user, True), status=201)
 
@@ -347,10 +388,31 @@ class RequirementsView(APIView):
         lock_active_cycles(req.area.cycle_id)
         req = Requirement.objects.select_for_update().get(pk=pk)
         serializer = payload(RequirementInput, request, instance=req, partial=True)
-        before = {k: str(getattr(req, k)) for k in serializer.validated_data}
+        data = serializer.validated_data
+        substantive = ('description' in data and data['description'] != req.description) or (
+            'active' in data and data['active'] != req.active) or (
+            'applicable' in data and data['applicable'] != req.applicable) or (
+            'exclusion_reason' in data and data['exclusion_reason'] != req.exclusion_reason)
+        if substantive and req.certifications.first() and req.certifications.first().outcome == 'complete':
+            raise ValidationError('Reopen the requirement with a documented reason before changing criteria, activation, or applicability.')
+        before = {k: str(getattr(req, k)) for k in data if hasattr(req, k)}
+        prior_description = req.description
+        prior_applicable = req.applicable
+        prior_exclusion_reason = req.exclusion_reason
         serializer.save()
+        if req.description != prior_description:
+            req.criteria_revision += 1
+            req.save(update_fields=['criteria_revision'])
+            audit(request.user, req.area, 'criteria_revised', req.title, requirement=req.id,
+                  revision=req.criteria_revision, before=prior_description, after=req.description,
+                  reason=data['change_reason'])
+        if req.applicable != prior_applicable or req.exclusion_reason != prior_exclusion_reason:
+            decision = ApplicabilityDecision.objects.create(requirement=req, coordinator=request.user,
+                applicable=req.applicable, reason=data['applicability_reason'])
+            audit(request.user, req.area, 'applicability_decided', req.title,
+                  decision=decision.id, applicable=req.applicable, reason=decision.reason)
         audit(request.user, req.area, 'requirement_updated', req.title, before=before,
-              after={k: str(getattr(req, k)) for k in serializer.validated_data})
+              after={k: str(getattr(req, k)) for k in data if hasattr(req, k)})
         return Response(req_data(req, request.user, True))
 
 
@@ -540,6 +602,8 @@ class MappingsView(APIView):
         if doc.area_id != item.requirement.area_id or doc.area.cycle_id != item.requirement.area.cycle_id:
             raise ValidationError('Evidence can be mapped only within its owning area and cycle.')
         lock_active_cycles(item.requirement.area.cycle_id)
+        if certification_is_open(item.requirement):
+            raise ValidationError('Reopen the requirement before changing supporting evidence.')
         requirement_override = require_assignee_or_coordinator_override(
             request.user, item.requirement, data.get('override_reason'), 'mapping')
         stewardship_override = require_document_steward_or_coordinator_override(
@@ -568,6 +632,8 @@ class SubmissionsView(APIView):
         if mapping.document.area_id != mapping.item.requirement.area_id or mapping.document.area.cycle_id != mapping.item.requirement.area.cycle_id:
             raise ValidationError('Evidence can be submitted only within its owning area and cycle.')
         lock_active_cycles(mapping.item.requirement.area.cycle_id)
+        if certification_is_open(mapping.item.requirement):
+            raise ValidationError('Reopen the requirement before replacing supporting evidence.')
         mapping = EvidenceMapping.objects.select_for_update().get(pk=mapping.pk)
         requirement_override = require_assignee_or_coordinator_override(
             request.user, mapping.item.requirement, data.get('override_reason'), 'submission')
@@ -583,7 +649,8 @@ class SubmissionsView(APIView):
             raise ValidationError('A replacement must be a newer version.')
         if version.valid_until and version.valid_until < timezone.localdate():
             raise ValidationError('Expired evidence cannot be submitted.')
-        sub = Submission.objects.create(mapping=mapping, version=version, submitted_by=request.user)
+        sub = Submission.objects.create(mapping=mapping, version=version, submitted_by=request.user,
+            criteria_revision=mapping.item.requirement.criteria_revision)
         audit(request.user, mapping.item.requirement.area, 'evidence_submitted', mapping.document.title, submission=sub.id,
               version=version.id, override=requirement_override or stewardship_override,
               override_reason=data.get('override_reason', '') if requirement_override or stewardship_override else '')
@@ -601,8 +668,12 @@ class ReviewsView(APIView):
         sub = get_object_or_404(Submission.objects.filter(mapping__item__requirement__area__in=areas_for(request.user, REVIEW_ROLES)), pk=data['submission'])
         area = sub.mapping.item.requirement.area
         lock_active_cycles(area.cycle_id)
+        if certification_is_open(sub.mapping.item.requirement):
+            raise ValidationError('Reopen the requirement before reviewing changed supporting evidence.')
         EvidenceMapping.objects.select_for_update().get(pk=sub.mapping_id)
         sub = Submission.objects.select_for_update().select_related('version').get(pk=sub.pk)
+        if submission_state(sub) == 'outdated':
+            raise ValidationError('This submission uses outdated criteria. Submit a new version after the criteria revision.')
         if sub.version.uploaded_by_id == request.user.id or sub.submitted_by_id == request.user.id:
             raise PermissionDenied('You cannot review your own upload or submission.')
         if sub.mapping.submissions.first().id != sub.id or ReviewDecision.objects.filter(submission=sub).exists():
@@ -631,13 +702,29 @@ class RequirementCertificationsView(APIView):
         if data['outcome'] == 'complete':
             if result['status'] != 'ready_for_completion_review':
                 raise ValidationError('Only a requirement with all mandatory evidence approved can be completed.')
+            selected_ids = data.get('submissions')
+            if not selected_ids or len(selected_ids) != len(set(selected_ids)):
+                raise ValidationError({'submissions': 'Select distinct approved submissions deliberately.'})
+            candidates = {s['submission']: s for s in req_data(requirement, request.user, True)['certification_candidates']}
+            if any(sid not in candidates for sid in selected_ids):
+                raise ValidationError({'submissions': 'Every selection must be a current, approved, unexpired submission for this requirement.'})
+            mandatory = {i.id for i in requirement.items.all() if i.mandatory}
+            if not mandatory.issubset({candidates[sid]['item'] for sid in selected_ids}):
+                raise ValidationError({'submissions': 'Select approved evidence for every mandatory item.'})
             action = 'requirement_completed'
         else:
-            if result['status'] != 'complete' or not latest or latest.outcome != 'complete':
+            if not latest or latest.outcome != 'complete':
                 raise ValidationError('Only a completed requirement can be reopened.')
+            if data.get('submissions'):
+                raise ValidationError({'submissions': 'Reopening does not select evidence.'})
             action = 'requirement_reopened'
         certification = RequirementCertification.objects.create(
-            requirement=requirement, coordinator=request.user, outcome=data['outcome'], rationale=data['rationale'])
+            requirement=requirement, coordinator=request.user, outcome=data['outcome'], rationale=data['rationale'],
+            criteria_snapshot=criteria_snapshot(requirement) if data['outcome'] == 'complete' else None)
+        if data['outcome'] == 'complete':
+            for sid in selected_ids:
+                CertificationEvidence.objects.create(certification=certification, submission_id=sid,
+                    snapshot=candidates[sid])
         audit(request.user, requirement.area, action, requirement.title,
               certification=certification.id, rationale=certification.rationale)
         requirement = with_evidence(Requirement.objects).get(pk=requirement.pk)

@@ -2,9 +2,9 @@
 
 Prepared: 2026-09-17
 
-Status: **D01–D03 are Provisional Project Owner Decision — formal approval pending. All other decisions remain Pending Decision.**
+Status: **D01–D06 are Provisional Project Owner Decision — formal approval pending. All other decisions remain Pending Decision.**
 
-Formal approver names, approval dates and sign-off evidence: **Not recorded**. D01–D03's selected options are recorded below as provisional Project Owner direction only.
+Formal approver names, approval dates and sign-off evidence: **Not recorded**. D01–D06's selected options are recorded below as provisional Project Owner direction only.
 
 ## Purpose and authority
 
@@ -21,9 +21,9 @@ An approved option resolves a choice, not the underlying implementation or accep
 | D01 | Who can close/reopen the entire cycle? | F01 | Provisional Project Owner Decision — formal approval pending |
 | D02 | Who can read drafts, submitted work and approved evidence? | F02, F04 | Provisional Project Owner Decision — formal approval pending |
 | D03 | May evidence cross area/cycle boundaries, and which versions may be searched? | F03, F02, F27 | Provisional Project Owner Decision — formal approval pending |
-| D04 | Are submissions assigned to specific people or an area team? | F04 | Pending Decision |
-| D05 | What evidence and criteria must a certification preserve? | F05, F22 | Pending Decision |
-| D06 | What requires reopening or a new criteria/applicability decision? | F06, F05 | Pending Decision |
+| D04 | Are submissions assigned to specific people or an area team? | F04 | Provisional Project Owner Decision — formal approval pending |
+| D05 | What evidence and criteria must a certification preserve? | F05, F22 | Provisional Project Owner Decision — formal approval pending |
+| D06 | What requires reopening or a new criteria/applicability decision? | F06, F05 | Provisional Project Owner Decision — formal approval pending |
 | D07 | Are submissions requirement packages or individual mapped versions? | F07, F04, F22 | Pending Decision |
 | D08 | What does evidence validity/expiry affect? | F06, F07, F27 | Pending Decision |
 | D09 | Who may inspect academic and security audit history? | F13 | Pending Decision |
@@ -90,7 +90,7 @@ This is the single implementation matrix for the current F01–F03 checkpoint. I
 | Cycle-wide Coordinator | Read, download, and manage | Read, download, and review | Read and download | Read in scope | Only a grant with `area=null` may close/reopen the cycle; new mappings/submissions stay in the same area/cycle. |
 | Area Coordinator | Read, download, and manage in the area | Read, download, and review in the area | Read and download in the area | Read in area | Cannot close/reopen the whole cycle; new mappings/submissions stay in the same area/cycle. |
 | Reviewer | Hidden | Read/download only once submitted to the reviewer’s area | Read/download | Read submitted-review context in area | Cannot create mappings/submissions or change lifecycle. |
-| Custodian (current Contributor role) | Own document, upload, or own submission only | Own document/submission | Own work plus approved shared evidence | Own document/submission only | Existing area-write behavior remains pending D04; new mappings/submissions must be same-area/same-cycle. |
+| Custodian (current Contributor role) | Own document, upload, or own submission only | Own document/submission | Own work plus approved shared evidence | Own document/submission only | D04's assignment and stewardship boundaries are provisional; new mappings/submissions must be same-area/same-cycle. |
 | Viewer | Hidden | Hidden | Read/download approved evidence only | Hidden | Read-only; cannot create mappings/submissions or change lifecycle. |
 
 Existing cross-area/cross-cycle mappings and immutable submissions are preserved. A recipient may retain access only through the corresponding historical submitted/approved visibility rule above; no new mapping or submission may extend that legacy relationship. All document lists, document detail/version history, mapping/submission/review lists, search filename matching, download authorization, and frontend displays use this matrix. Requirement/dashboard/report scope remains area-grant based; it does not expose hidden filenames or evidence-version history.
@@ -109,25 +109,25 @@ Existing cross-area/cross-cycle mappings and immutable submissions are preserved
 
 ### D05 — Certification support and historical evidence
 
-**Status:** Pending Decision. **Findings:** F05, F22. **Decision to make:** How will a Coordinator record the exact criteria and approved evidence supporting completion?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected option:** A. **Findings:** F05, F22. **Decision:** A Coordinator deliberately selects approved supporting submissions; the certification retains immutable submission/version references and a criteria snapshot.
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
 | A. Coordinator selects approved supporting submissions | Completion form shows criteria and exact versions; records immutable submission references, criteria/revision snapshot, actor, rationale and time. | Yes: history relationships/migration, validation, form context and tests. |
 | B. System proposes the qualifying approved set; Coordinator explicitly confirms it | Same durable snapshot/references as A, but the system assembles a visible selection covering mandatory items before confirmation. | Yes: the same persistence safeguards plus deterministic selection/confirmation. |
 
-**Recommended option:** A, matching the plan's deliberate selection. **Required approver:** Academic Owner; Security/Records Owner for historical record handling. **Production-acceptance impact:** Rationale-only certification does not close F05. Preserve existing certifications; do not invent/backdate supporting evidence. Record whether legacy unlinked certifications must be reopened/re-certified before institutional use or may remain clearly labelled legacy records outside the accepted readiness numerator. The approved legacy treatment must be documented before any migration/backfill.
+**Provisional legacy handling:** Preserve and label pre-F05 certification rows without pinned support. Exclude them from the compliance numerator. A scoped Coordinator may create a new auditable certification against deliberately selected current approved evidence and a current criteria snapshot; never infer or backfill old support or rewrite the old row. **Required approver:** Academic Owner; Security/Records Owner for historical record handling. **Production-acceptance impact:** This is implemented as provisional Project Owner direction only; formal approvals and target-environment verification remain required.
 
 ### D06 — Criteria changes, replacements and applicability decisions
 
-**Status:** Pending Decision. **Finding:** F06, dependent on D05. **Decision to make:** Which changes require reopening a completed requirement, and how are applicability changes recorded?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected option:** A. **Finding:** F06, dependent on D05. **Decision:** Documented reopen before substantive criteria or supporting-evidence changes; rationale-backed applicability decisions retain history.
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
 | A. Reopen before substantive criteria or supporting-evidence replacement | Harmless repository drafts and editorial corrections do not invalidate certification. Substantive criteria get a revision/snapshot; stale pending work cannot be approved. Complete/Reopen/Applicable/Not Applicable are rationale-backed history actions. | Yes: guarded transitions, revision tracking, append-only applicability and UI. |
 | B. Preserve completion of a pinned baseline while newer work is assessed separately | Certification stays effective for its D05 snapshot; new criteria/evidence is shown as a separate uncertified revision, not silently presented as the certified baseline. Applicability still has recorded decisions. | Yes: parallel revision/effective-baseline model and separate readiness display. |
 
-**Recommended option:** A. It avoids competing effective revisions and follows the proposed workflow. **Required approver:** Academic Owner; Project Owner. **Production-acceptance impact:** Blocks acceptance until the chosen semantics prevent changed current text/evidence being mistaken for the certified evidence. Classify editorial versus substantive fields and define how reopening remains available after draft/exclusion changes. Direct flag toggles alone must not stand in for approved applicability/history behavior.
+**Provisional boundary:** Description/acceptance text, activation, applicability/exclusion reason, new mapping/submission, and review decisions require reopening while the latest certification is `complete`; title, code, responsible office, and deadline remain editorial. A draft version upload remains allowed. Description changes after reopening increment the criteria revision and retain a reason in audit history. Every applicability transition requires a Coordinator reason and an append-only decision. **Required approver:** Academic Owner; Security/Records Owner for record treatment. **Production-acceptance impact:** These semantics remain provisional until formally approved and tested in the target environment.
 
 ### D07 — Submission unit, transitions and dashboard states
 

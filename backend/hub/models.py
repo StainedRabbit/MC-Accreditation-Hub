@@ -74,6 +74,7 @@ class Requirement(models.Model):
     active = models.BooleanField(default=False)
     applicable = models.BooleanField(default=True)
     exclusion_reason = models.TextField(blank=True)
+    criteria_revision = models.PositiveIntegerField(default=1)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -179,6 +180,8 @@ class Submission(ImmutableRecord):
     version = models.ForeignKey(DocumentVersion, on_delete=models.PROTECT, related_name='submissions')
     submitted_by = models.ForeignKey(User, on_delete=models.PROTECT)
     submitted_at = models.DateTimeField(auto_now_add=True)
+    # Null is honest for submissions created before criteria revision tracking.
+    criteria_revision = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ['-id']
@@ -202,6 +205,29 @@ class RequirementCertification(ImmutableRecord):
     coordinator = models.ForeignKey(User, on_delete=models.PROTECT)
     outcome = models.CharField(max_length=10, choices=[('complete', 'Complete'), ('reopened', 'Reopened')])
     rationale = models.TextField()
+    # Null identifies pre-F05 completions. No historical evidence is inferred.
+    criteria_snapshot = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-id']
+
+
+class CertificationEvidence(ImmutableRecord):
+    certification = models.ForeignKey(RequirementCertification, on_delete=models.PROTECT, related_name='evidence')
+    submission = models.ForeignKey(Submission, on_delete=models.PROTECT)
+    # Preserve displayed details even if editable document metadata changes.
+    snapshot = models.JSONField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['certification', 'submission'], name='unique_certification_submission')]
+
+
+class ApplicabilityDecision(ImmutableRecord):
+    requirement = models.ForeignKey(Requirement, on_delete=models.PROTECT, related_name='applicability_decisions')
+    coordinator = models.ForeignKey(User, on_delete=models.PROTECT)
+    applicable = models.BooleanField()
+    reason = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

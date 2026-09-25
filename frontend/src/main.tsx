@@ -55,6 +55,7 @@ const labels: Record<string, string> = {
   revision_requested: "Revision Requested",
   rejected: "Rejected",
   expired: "Expired",
+  outdated: "Outdated Criteria",
   excluded: "Not Applicable",
   draft: "Draft",
 };
@@ -1131,6 +1132,12 @@ function App() {
                   </button>
                 </section>
               )}
+              {detail.legacy_certification && (
+                <section className="panel completion-review">
+                  <div><h2>Legacy completion — evidence not pinned</h2><p>This historical decision is preserved but excluded from the compliance count. A Coordinator may re-certify it against selected approved evidence and a current criteria snapshot.</p></div>
+                  {detail.can_reopen && <button className="secondary" onClick={() => setCertification({ requirement: detail, outcome: "reopened" })}>Reopen Requirement</button>}
+                </section>
+              )}
               <section className="panel certification-history">
                 <div className="section-heading">
                   <div>
@@ -1153,6 +1160,10 @@ function App() {
                             {entry.coordinator} · {dateTime(entry.created_at)}
                           </span>
                           <p>{entry.rationale}</p>
+                          {entry.legacy && <p><strong>Legacy: no selected evidence or criteria snapshot; excluded from the compliance count.</strong></p>}
+                          {entry.criteria_snapshot && <div><p>Criteria revision {entry.criteria_snapshot.revision} · {entry.criteria_snapshot.code} · {entry.criteria_snapshot.title} · {entry.criteria_snapshot.instrument}: {entry.criteria_snapshot.description || "No general criteria"}</p>
+                            {entry.criteria_snapshot.items.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}</div>}
+                          {entry.evidence.map((evidence) => <p key={evidence.submission}>Selected submission #{evidence.submission} · {evidence.item_label} · {evidence.document_title} · {evidence.original_name} · version {evidence.version_number} (#{evidence.version}) · SHA-256 {evidence.checksum} · submission criteria {evidence.submission_criteria_revision ?? "legacy unknown"}</p>)}
                         </div>
                       </article>
                     ))}
@@ -1162,6 +1173,10 @@ function App() {
                     No Coordinator certification has been recorded yet.
                   </div>
                 )}
+              </section>
+              <section className="panel"><h2>Applicability history</h2>
+                {!detail.applicability_history?.length && <p className="muted">Legacy applicability state: no recorded decision history is available.</p>}
+                {detail.applicability_history?.map((entry) => <p key={entry.id}>{entry.applicable ? "Applicable" : "Not applicable"} · {entry.coordinator} · {dateTime(entry.created_at)} · {entry.reason}</p>)}
               </section>
               <div className="section-heading">
                 <h2>Evidence checklist</h2>
@@ -1744,6 +1759,7 @@ function RequirementForm({
     [busy, setBusy] = useState(false),
     [applicable, setApplicable] = useState(editing?.applicable ?? true);
   const [items, setItems] = useState([{ label: "", criteria: "" }]);
+  const [exclusionReason, setExclusionReason] = useState(editing?.exclusion_reason ?? "");
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -1759,6 +1775,8 @@ function RequirementForm({
       active: f.get("active") === "on",
       applicable,
       exclusion_reason: applicable ? "" : f.get("exclusion_reason"),
+      applicability_reason: editing && (applicable !== editing.applicable || exclusionReason !== editing.exclusion_reason) ? f.get("applicability_reason") : "",
+      change_reason: editing && f.get("description") !== editing.description ? f.get("change_reason") : "",
       ...(!editing
         ? { items: items.map((i) => ({ ...i, mandatory: true })) }
         : {}),
@@ -1869,10 +1887,13 @@ function RequirementForm({
             <textarea
               name="exclusion_reason"
               required
-              defaultValue={editing?.exclusion_reason}
+              value={exclusionReason}
+              onChange={(event) => setExclusionReason(event.target.value)}
             />
           </label>
         )}
+        {editing && (applicable !== editing.applicable || !applicable) && <label>Applicability decision reason<textarea name="applicability_reason" required={applicable !== editing.applicable || exclusionReason !== editing.exclusion_reason} /></label>}
+        {editing && <label>Criteria change reason (required when description changes)<textarea name="change_reason" /></label>}
         {!editing && (
           <fieldset>
             <legend>Mandatory evidence checklist</legend>
@@ -2328,7 +2349,8 @@ function CertificationForm({
   saved: () => Promise<void>;
 }) {
   const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [selected, setSelected] = useState<number[]>([]);
   const completing = outcome === "complete";
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -2339,6 +2361,7 @@ function CertificationForm({
       await post(`requirements/${requirement.id}/certifications/`, {
         outcome,
         rationale: f.get("rationale"),
+        ...(completing ? { submissions: selected } : {}),
       });
       await saved();
     } catch (e) {
@@ -2362,6 +2385,16 @@ function CertificationForm({
               : "This will remove the requirement from completed compliance."}
           </p>
         </div>
+        {completing && <div className="review-context">
+          <h3>Applicable criteria · revision {requirement.criteria_revision}</h3>
+          <p>{requirement.description || "No general criteria"}</p>
+          {requirement.items?.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}
+          <h3>Select exact approved evidence</h3>
+          {requirement.certification_candidates?.map((candidate) => <label className="check" key={candidate.submission}>
+            <input type="checkbox" checked={selected.includes(candidate.submission)} onChange={(event) => setSelected(event.target.checked ? [...selected, candidate.submission] : selected.filter((id) => id !== candidate.submission))} />
+            <span>{candidate.item_label} · {candidate.document_title} · {candidate.original_name} · version {candidate.version_number} (#{candidate.version}) · submission #{candidate.submission} · SHA-256 {candidate.checksum} · valid until {candidate.valid_until || "No expiry"} · submission criteria {candidate.submission_criteria_revision ?? "legacy unknown"} <a href={`/api/document-versions/${candidate.version}/download/`} onClick={(event) => event.stopPropagation()}>Download selected version</a></span>
+          </label>)}
+        </div>}
         <label>
           Rationale
           <textarea

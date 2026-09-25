@@ -91,11 +91,96 @@ class WorkflowFixture:
 
     def certify(self, outcome='complete', rationale='Evidence satisfies the requirement.', user=None):
         self.client.force_authenticate(user or self.coordinator)
+        selected = [mapping.submissions.first().id for item in self.requirement.items.all()
+                    for mapping in item.mappings.all() if mapping.submissions.first() and
+                    ReviewDecision.objects.filter(submission=mapping.submissions.first(), outcome='approved').exists()]
         return self.client.post(f'/api/requirements/{self.requirement.id}/certifications/',
-                                {'outcome': outcome, 'rationale': rationale}, format='json')
+                                {'outcome': outcome, 'rationale': rationale,
+                                 **({'submissions': selected} if outcome == 'complete' else {})}, format='json')
 
 
 class WorkflowTests(WorkflowFixture, TestCase):
+    def test_certification_requires_deliberate_current_evidence_and_preserves_snapshot(self):
+        doc = self.upload()
+        sub = self.submit(doc)
+        self.decide(sub)
+        self.client.force_authenticate(self.coordinator)
+        url = f'/api/requirements/{self.requirement.id}/certifications/'
+        self.assertEqual(self.client.post(url, {'outcome': 'complete', 'rationale': 'Checked'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(url, {'outcome': 'complete', 'rationale': 'Checked', 'submissions': [999999]}, format='json').status_code, 400)
+        completed = self.certify()
+        self.assertEqual(completed.status_code, 201, completed.data)
+        record = RequirementCertification.objects.get(pk=completed.data['certification']['id'])
+        self.assertEqual(record.criteria_snapshot['revision'], 1)
+        self.assertEqual(record.criteria_snapshot['code'], 'R1')
+        self.assertEqual(record.criteria_snapshot['items'][0]['label'], 'Plan')
+        self.assertEqual(record.evidence.get().submission_id, sub['id'])
+        self.assertEqual(record.evidence.get().snapshot['version'], sub['version'])
+        self.assertEqual(record.evidence.get().snapshot['checksum'], doc['versions'][0]['checksum'])
+        pinned = record.evidence.get()
+        pinned.snapshot = {'version': -1}
+        from django.core.exceptions import ValidationError as ModelValidationError
+        with self.assertRaises(ModelValidationError):
+            pinned.save()
+        self.assertEqual(self.compliance()['complete'], 1)
+        self.assertEqual(self.client.get('/api/reports/compliance/').data['complete'], 1)
+
+    def test_legacy_completion_excluded_until_new_auditable_certification(self):
+        self.decide(self.submit(self.upload()))
+        old = RequirementCertification.objects.create(requirement=self.requirement, coordinator=self.coordinator,
+            outcome='complete', rationale='Pre-F05 historical decision')
+        self.assertEqual(self.compliance()['complete'], 0)
+        self.assertEqual(self.compliance()['ready_for_completion_review'], 1)
+        self.assertEqual(self.client.get('/api/reports/compliance/').data['complete'], 0)
+        self.client.force_authenticate(self.coordinator)
+        detail = self.client.get(f'/api/requirements/{self.requirement.id}/').data
+        self.assertTrue(detail['legacy_certification'])
+        self.assertTrue(detail['certifications'][0]['legacy'])
+        self.assertIsNone(old.criteria_snapshot)
+        self.assertEqual(self.certify().status_code, 201)
+        self.assertEqual(self.compliance()['complete'], 1)
+        old.refresh_from_db()
+        self.assertIsNone(old.criteria_snapshot)
+        self.assertEqual(RequirementCertification.objects.count(), 2)
+
+    def test_reopen_precedes_substantive_change_and_applicability_history(self):
+        doc = self.upload()
+        self.decide(self.submit(doc))
+        self.certify()
+        self.client.force_authenticate(self.coordinator)
+        url = f'/api/requirements/{self.requirement.id}/'
+        self.assertEqual(self.client.patch(url, {'description': 'New standard', 'change_reason': 'Policy update'}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'applicable': False, 'exclusion_reason': 'Out of scope', 'applicability_reason': 'Scope decision'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post('/api/evidence-mappings/', {'item': self.item.id, 'document': doc['id']}, format='json').status_code, 400)
+        self.assertEqual(self.certify(outcome='reopened', rationale='Update criteria').status_code, 201)
+        self.assertEqual(self.client.patch(url, {'description': 'New standard', 'change_reason': 'Policy update'}, format='json').status_code, 200)
+        self.assertEqual(self.requirement.certifications.get(outcome='complete').criteria_snapshot['description'], '')
+        self.assertEqual(self.client.patch(url, {'applicable': False, 'exclusion_reason': 'Out of scope', 'applicability_reason': 'Scope decision'}, format='json').status_code, 200)
+        self.assertEqual(self.compliance()['excluded'], 1)
+        self.assertEqual(self.client.patch(url, {'exclusion_reason': 'Revised scope'}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'exclusion_reason': 'Revised scope', 'applicability_reason': 'Clarified exclusion'}, format='json').status_code, 200)
+        self.assertEqual(self.client.patch(url, {'applicable': True}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'applicable': True, 'applicability_reason': 'Returned to scope'}, format='json').status_code, 200)
+        self.assertEqual(list(self.requirement.applicability_decisions.values_list('applicable', flat=True)), [True, False, False, True])
+        decision = self.requirement.applicability_decisions.first()
+        decision.reason = 'Overwritten'
+        from django.core.exceptions import ValidationError as ModelValidationError
+        with self.assertRaises(ModelValidationError):
+            decision.save()
+        self.assertEqual(self.compliance()['for_compliance'], 1)
+        updated = self.upload(doc['id'])
+        self.decide(self.submit(updated))
+        self.assertEqual(self.certify().status_code, 201)
+        self.assertEqual(self.requirement.certifications.first().criteria_snapshot['revision'], 2)
+
+    def test_pending_submission_cannot_be_reviewed_after_criteria_revision(self):
+        sub = self.submit(self.upload())
+        self.client.force_authenticate(self.coordinator)
+        self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/',
+            {'description': 'Revised criteria', 'change_reason': 'Updated standard'}, format='json').status_code, 200)
+        self.assertEqual(self.decide(sub).status_code, 400)
+        self.assertEqual(self.compliance()['for_compliance'], 1)
+
     def test_health_probe_is_public_and_checks_database(self):
         client = APIClient()
         response = client.get('/api/health/')
@@ -128,13 +213,15 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertEqual(DocumentVersion.objects.count(), 2)
         self.assertEqual(ReviewDecision.objects.get(submission_id=sub['id']).outcome, 'revision_requested')
 
-    def test_new_draft_or_submission_does_not_reopen_completed_requirement(self):
+    def test_new_draft_allowed_but_submission_requires_reopen(self):
         doc = self.upload()
         self.decide(self.submit(doc))
         self.certify()
         updated = self.upload(doc['id'])
         self.assertEqual(self.compliance()['percentage'], 100)
-        self.submit(updated)
+        mapping = EvidenceMapping.objects.get(item=self.item, document_id=doc['id'])
+        blocked = self.client.post('/api/submissions/', {'mapping': mapping.id, 'version': updated['versions'][0]['id']}, format='json')
+        self.assertEqual(blocked.status_code, 400)
         self.assertEqual(self.compliance()['percentage'], 100)
 
     def test_anonymous_and_outside_scope(self):
@@ -421,7 +508,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.client.force_authenticate(self.coordinator)
         response = self.client.patch(f'/api/requirements/{self.requirement.id}/', {'applicable': False}, format='json')
         self.assertEqual(response.status_code, 400)
-        response = self.client.patch(f'/api/requirements/{self.requirement.id}/', {'applicable': False, 'exclusion_reason': 'Outside program scope'}, format='json')
+        response = self.client.patch(f'/api/requirements/{self.requirement.id}/', {'applicable': False, 'exclusion_reason': 'Outside program scope', 'applicability_reason': 'Outside program scope'}, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(self.compliance()['percentage'])
         self.assertEqual(self.compliance()['excluded'], 1)

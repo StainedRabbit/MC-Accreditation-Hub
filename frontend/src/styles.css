@@ -112,6 +112,10 @@ label.check {
   gap: 9px;
   margin: 18px 0;
   color: #52637a;
+  overflow-wrap: anywhere;
+}
+label.check input[type="checkbox"] {
+  flex: 0 0 17px;
 }
 input[type="checkbox"] {
   width: 17px;

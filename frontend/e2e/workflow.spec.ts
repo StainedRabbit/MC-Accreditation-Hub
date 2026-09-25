@@ -327,6 +327,10 @@ test("create, upload, request revisions, replace and approve", async ({
     .getByRole("button", { name: "View", exact: true })
     .click();
   await page.getByRole("button", { name: "Mark Complete", exact: true }).click();
+  const certificationDialog = page.getByRole("dialog");
+  await expect(certificationDialog.getByText("Select exact approved evidence")).toBeVisible();
+  await expect(certificationDialog.getByText(/revision 1/)).toBeVisible();
+  await expect(certificationDialog.getByText(/SHA-256/)).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Rationale" })).toHaveAttribute(
     "required",
     "",
@@ -334,12 +338,23 @@ test("create, upload, request revisions, replace and approve", async ({
   await page
     .getByRole("textbox", { name: "Rationale" })
     .fill("All mandatory evidence has been reviewed and is current.");
+  await certificationDialog.getByRole("button", { name: "Mark Complete", exact: true }).click();
+  await expect(certificationDialog.getByText(/Select distinct approved submissions deliberately/)).toBeVisible();
+  await certificationDialog.getByRole("checkbox").check();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Mark Complete", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("Marked complete", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Selected submission #/)).toBeVisible();
+  await page.getByRole("button", { name: "Edit Requirement" }).click();
+  const editWhileComplete = page.getByRole("dialog");
+  await editWhileComplete.getByLabel("Description / acceptance criteria").fill("Revised fictional criteria");
+  await editWhileComplete.getByLabel("Criteria change reason (required when description changes)").fill("Revised standard");
+  await editWhileComplete.getByRole("button", { name: "Save Requirement" }).click();
+  await expect(editWhileComplete.getByText(/Reopen the requirement with a documented reason/)).toBeVisible();
+  await editWhileComplete.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(
     page
@@ -378,6 +393,17 @@ test("create, upload, request revisions, replace and approve", async ({
   await expect(
     page.locator(".stat").filter({ hasText: "Completed" }).locator("strong"),
   ).toHaveText(String(completeBefore));
+  await page.getByRole("button", { name: "Requirements", exact: true }).click();
+  await page.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Requirement" }).click();
+  const applicabilityEdit = page.getByRole("dialog");
+  await applicabilityEdit.getByLabel("Applicable to this cycle").uncheck();
+  await applicabilityEdit.getByLabel("Exclusion reason").fill("Fictional scope change");
+  await applicabilityEdit.getByLabel("Applicability decision reason").fill("Coordinator reviewed fictional scope");
+  await applicabilityEdit.getByRole("button", { name: "Save Requirement" }).click();
+  await expect(applicabilityEdit).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Applicability history" })).toBeVisible();
+  await expect(page.getByText(/Coordinator reviewed fictional scope/)).toBeVisible();
   await page
     .getByRole("button", { name: "Evidence Repository", exact: true })
     .click();
