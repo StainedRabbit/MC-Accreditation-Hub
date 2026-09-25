@@ -24,7 +24,7 @@ An approved option resolves a choice, not the underlying implementation or accep
 | D04 | Are submissions assigned to specific people or an area team? | F04 | Provisional Project Owner Decision — formal approval pending |
 | D05 | What evidence and criteria must a certification preserve? | F05, F22 | Provisional Project Owner Decision — formal approval pending |
 | D06 | What requires reopening or a new criteria/applicability decision? | F06, F05 | Provisional Project Owner Decision — formal approval pending |
-| D07 | Are submissions requirement packages or individual mapped versions? | F07, F04, F22 | Pending Decision |
+| D07 | Are submissions requirement packages or individual mapped versions? | F07, F04, F22 | Provisional Project Owner Decision — formal approval pending |
 | D08 | What does evidence validity/expiry affect? | F06, F07, F27 | Pending Decision |
 | D09 | Who may inspect academic and security audit history? | F13 | Pending Decision |
 | D10 | Which file formats, size units and resource limits are accepted? | F19 | Pending Decision |
@@ -131,7 +131,7 @@ Existing cross-area/cross-cycle mappings and immutable submissions are preserved
 
 ### D07 — Submission unit, transitions and dashboard states
 
-**Status:** Pending Decision. **Finding:** F07, dependent on D04–D06. **Decision to make:** Does review concern a requirement-level package or a single mapped document version?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected option:** A. **Finding:** F07, dependent on D04–D06. **Decision:** New work uses requirement-level package attempts with draft editing, pinned evidence items, explicit submission, confirmed withdrawal, immutable terminal attempts, and resubmission through a new draft. Only one package per requirement may await review.
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -139,7 +139,9 @@ Existing cross-area/cross-cycle mappings and immutable submissions are preserved
 | B. Formally adopt item-level attempts with explicit history transitions | Retain mapping/version review, add deliberate withdrawal/resubmission/supersession records and a defined pending-replacement rule. Publish a complete item-to-requirement status table, including missing-plus-pending behavior and draft work. | Yes: narrower transition/history/UI work; amended plan and acceptance tests. |
 | C. Retain current newer-version supersession as the accepted workflow | No package editor/withdraw action; old pending submissions become historical and unreviewable. Missing-plus-pending remains For Compliance; repository drafts do not imply In progress. Those limits must be explicit in training and scope. | No package model required; criteria/certification/visibility fixes and verification still required. |
 
-**Recommended option:** A because it satisfies the proposed package checkpoints. **Required approver:** Academic Owner; Project Owner. **Production-acceptance impact:** B/C are scope amendments, not evidence that the original slice-5 deliverable is complete. All choices retain exact-version review, independent reviewer checks, concurrency protection and immutable decisions. Decide whether Reject remains distinct from Request revisions and document its resubmission path.
+**Provisional state and precedence rule:** Drafts may be edited or deleted by their owner before submission. Submission pins a nonempty set of exact versions and the current criteria revision. A submitted attempt may be approved or returned for revisions by an independent reviewer, or withdrawn by its submitter before review; these are terminal attempts. Resubmission starts a new draft, optionally copying pinned item choices. For active applicable requirements, the ordered status rule is Complete, For verification (any submitted package, even with missing mandatory items), Needs revision (latest non-withdrawn attempt requested revisions), Ready for completion review (qualifying approved package), In progress (draft or reopened work), then Missing. Draft and Not Applicable remain outside that ordered set.
+
+**Reject rule proposed, Academic Owner decision pending:** Reject stays distinct from Request revisions in preserved pre-F07 item-level decisions. The proposed new-package rule is to leave Reject unavailable until the Academic Owner defines whether a rejected package can seed a new draft and how it appears in readiness counts. It is not silently mapped to `revisions_requested` or `needs_revision`. **Required approver:** Academic Owner. **Production-acceptance impact:** D07 Option A remains provisional Project Owner direction; formal Academic Owner approval and target workflow verification are required before real evidence use.
 
 ### D08 — Evidence validity and expiry
 

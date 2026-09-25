@@ -174,23 +174,46 @@ def req_data(req, user, detail=False):
         'responsible': req.responsible, 'deadline': req.deadline, 'active': req.active,
         'applicable': req.applicable, 'exclusion_reason': req.exclusion_reason, **result_data,
         'criteria_revision': req.criteria_revision,
+        'legacy_submission_mode': req.legacy_submission_mode,
         'can_manage': can_certify,
         'can_assign': can_certify,
         'can_upload': req.area.cycle.status == 'active' and (is_active_assignee(user, req) or can_certify)}
     if detail:
         result['assignments'] = [assignment_data(a) for a in req.user_assignments.filter(active=True).select_related('user')]
         result['items'] = [{'id': i.id, 'label': i.label, 'criteria': i.criteria, 'mandatory': i.mandatory,
-                            'status': item_state(i),
+                            'status': package_item_state(req, i) if req.packages.exists() else item_state(i),
                             'mappings': [mapping_data(m, user) for m in visible_mappings_for(user, i.mappings.all())]}
                            for i in req.items.all()]
         result['certifications'] = [certification_data(c) for c in req.certifications.all()]
+        result['packages'] = [package_data(p, user) for p in visible_packages_for(user, req.packages.all())]
+        result['package_choices'] = [
+            {'mapping': mapping.id, 'item': mapping.item_id, 'item_label': mapping.item.label,
+             'document_title': mapping.document.title, 'version': version.id,
+             'version_number': version.number, 'original_name': version.original_name,
+             'checksum': version.checksum, 'valid_until': version.valid_until}
+            for item in req.items.all() for mapping in visible_mappings_for(user, item.mappings.all())
+            if mapping.document.area_id == req.area_id
+            for version in mapping.document.versions.all() if can_version(user, version)
+        ] if result['can_upload'] else []
         result['applicability_history'] = [applicability_data(d) for d in req.applicability_decisions.all()]
         result['certification_candidates'] = [certification_candidate(s) for item in req.items.all()
             for mapping in item.mappings.all() for s in mapping.submissions.all()
             if s.id == next(iter(mapping.submissions.all()), s).id and submission_state(s) == 'approved']
+        result['package_certification_candidates'] = [package_data(p, user) for p in req.packages.all()
+            if can_certify and package_is_ready(p, req)]
         result['can_complete'] = can_certify and result['status'] == 'ready_for_completion_review'
         result['can_reopen'] = can_certify and certification_is_open(req)
     return result
+
+
+def package_item_state(requirement, item):
+    for status, display in [('submitted', 'pending'), ('revisions_requested', 'revision_requested'),
+                            ('approved', 'approved'), ('draft', 'draft')]:
+        if any(package.status == status and (status != 'approved' or package_is_ready(package, requirement)) and
+               any(entry.mapping.item_id == item.id for entry in package.items.all())
+               for package in requirement.packages.all()):
+            return display
+    return 'missing'
 
 
 def assignment_data(assignment):
@@ -214,7 +237,41 @@ def certification_data(certification):
             'coordinator': certification.coordinator.get_full_name() or certification.coordinator.username,
             'created_at': certification.created_at, 'legacy': certification.outcome == 'complete' and not certification_has_support(certification),
             'criteria_snapshot': certification.criteria_snapshot,
-            'evidence': [link.snapshot for link in certification.evidence.all()]}
+            'evidence': [link.snapshot for link in certification.evidence.all()],
+            'packages': [link.snapshot for link in certification.packages.all()]}
+
+
+def package_item_snapshot(entry):
+    version = entry.version
+    return {'mapping': entry.mapping_id, 'item': entry.mapping.item_id,
+            'item_label': entry.mapping.item.label, 'document': str(entry.mapping.document_id),
+            'document_title': entry.mapping.document.title, 'version': version.id,
+            'version_number': version.number, 'original_name': version.original_name,
+            'checksum': version.checksum, 'valid_until': version.valid_until.isoformat() if version.valid_until else None,
+            'note': entry.note}
+
+
+def package_data(package, user):
+    requirement = package.requirement
+    editable = package.status == 'draft' and package.owner_id == user.id and requirement.area.cycle.status == 'active'
+    reviewable = package.status == 'submitted' and requirement.area.cycle.status == 'active' and not certification_is_open(requirement) and (
+        areas_for(user, REVIEW_ROLES).filter(pk=requirement.area_id).exists()) and user.id != package.owner_id and not any(
+            entry.version.uploaded_by_id == user.id for entry in package.items.all())
+    return {'id': package.id, 'requirement': requirement.id, 'requirement_title': requirement.title,
+            'number': package.number, 'owner': package.owner.get_full_name() or package.owner.username,
+            'owner_id': package.owner_id, 'source_attempt': package.source_attempt_id,
+            'source_attempt_number': package.source_attempt.number if package.source_attempt_id else None,
+            'status': package.status, 'notes': package.notes, 'criteria_revision': package.criteria_revision,
+            'criteria_snapshot': package.criteria_snapshot, 'withdrawal_reason': package.withdrawal_reason,
+            'created_at': package.created_at, 'submitted_at': package.submitted_at, 'resolved_at': package.resolved_at,
+            'items': [entry.snapshot or package_item_snapshot(entry) for entry in package.items.all()],
+            'decision': {'outcome': package.decision.outcome, 'comment': package.decision.comment,
+                         'reviewer': package.decision.reviewer.get_full_name() or package.decision.reviewer.username,
+                         'created_at': package.decision.created_at} if hasattr(package, 'decision') else None,
+            'can_edit': editable, 'can_submit': editable, 'can_withdraw': package.status == 'submitted' and package.owner_id == user.id and requirement.area.cycle.status == 'active',
+            'can_review': reviewable,
+            'can_resubmit': package.status in ('approved', 'revisions_requested', 'withdrawn') and requirement.area.cycle.status == 'active' and (is_active_assignee(user, requirement) or is_scoped_coordinator(user, requirement.area)),
+            'requires_override': is_scoped_coordinator(user, requirement.area) and not is_active_assignee(user, requirement)}
 
 
 def applicability_data(decision):
@@ -632,6 +689,8 @@ class SubmissionsView(APIView):
         if mapping.document.area_id != mapping.item.requirement.area_id or mapping.document.area.cycle_id != mapping.item.requirement.area.cycle_id:
             raise ValidationError('Evidence can be submitted only within its owning area and cycle.')
         lock_active_cycles(mapping.item.requirement.area.cycle_id)
+        if not mapping.item.requirement.legacy_submission_mode:
+            raise ValidationError('New evidence work uses requirement-level package attempts.')
         if certification_is_open(mapping.item.requirement):
             raise ValidationError('Reopen the requirement before replacing supporting evidence.')
         mapping = EvidenceMapping.objects.select_for_update().get(pk=mapping.pk)
@@ -685,6 +744,216 @@ class ReviewsView(APIView):
         return Response(submission_data(Submission.objects.get(pk=sub.pk), request.user), status=201)
 
 
+def validated_package_items(user, requirement, entries, override_reason):
+    if len(entries) != len({entry['mapping'] for entry in entries}) or len(entries) != len({entry['version'] for entry in entries}):
+        raise ValidationError({'items': 'Choose each mapping and version at most once.'})
+    result = []
+    for entry in entries:
+        mapping = get_object_or_404(EvidenceMapping.objects.select_related('item', 'document'),
+                                    pk=entry['mapping'], item__requirement=requirement)
+        if mapping.document.area_id != requirement.area_id:
+            raise ValidationError({'items': 'Package evidence must belong to the requirement area and cycle.'})
+        version = get_object_or_404(DocumentVersion, pk=entry['version'], document=mapping.document)
+        if not can_version(user, version):
+            raise PermissionDenied('The selected version is not visible in your scope.')
+        require_document_steward_or_coordinator_override(user, mapping.document, override_reason, 'package evidence selection')
+        if version.valid_until and version.valid_until < timezone.localdate():
+            raise ValidationError({'items': 'Expired versions cannot be submitted in a package.'})
+        result.append((mapping, version, entry.get('note', '')))
+    return result
+
+
+class PackagesView(APIView):
+    def get(self, request, pk=None):
+        qs = visible_packages_for(request.user).select_related('requirement__area__cycle', 'owner', 'decision__reviewer').prefetch_related(
+            'items__mapping__item', 'items__mapping__document', 'items__version')
+        if pk is not None:
+            return Response(package_data(get_object_or_404(qs, pk=pk), request.user))
+        if query_id(request, 'requirement'):
+            qs = qs.filter(requirement_id=request.query_params['requirement'])
+        if query_id(request, 'cycle'):
+            qs = qs.filter(requirement__area__cycle_id=request.query_params['cycle'])
+        return Response([package_data(package, request.user) for package in qs.order_by('-id')])
+
+    @transaction.atomic
+    def post(self, request, pk=None):
+        if pk is not None:
+            raise MethodNotAllowed('POST')
+        data = payload(PackageDraftInput, request).validated_data
+        if 'requirement' not in data:
+            raise ValidationError({'requirement': 'Select a requirement.'})
+        requirement = get_object_or_404(Requirement.objects.select_related('area__cycle').filter(
+            area__in=areas_for(request.user, WRITE_ROLES)), pk=data['requirement'])
+        lock_active_cycles(requirement.area.cycle_id)
+        requirement = Requirement.objects.select_for_update().get(pk=requirement.pk)
+        override = require_assignee_or_coordinator_override(request.user, requirement, data.get('override_reason'), 'package draft')
+        selections = validated_package_items(request.user, requirement, data.get('items', []), data.get('override_reason'))
+        number = (requirement.packages.order_by('-number').first().number + 1) if requirement.packages.exists() else 1
+        package = PackageAttempt.objects.create(requirement=requirement, number=number, owner=request.user,
+                                                notes=data.get('notes', ''))
+        for mapping, version, note in selections:
+            PackageItem.objects.create(package=package, mapping=mapping, version=version, note=note)
+        if requirement.legacy_submission_mode:
+            requirement.legacy_submission_mode = False
+            requirement.save(update_fields=['legacy_submission_mode'])
+        audit(request.user, requirement.area, 'package_draft_created', requirement.title,
+              package=package.id, attempt=number, override=override, override_reason=data.get('override_reason', '') if override else '')
+        return Response(package_data(package, request.user), status=201)
+
+    @transaction.atomic
+    def patch(self, request, pk=None):
+        if pk is None:
+            raise MethodNotAllowed('PATCH')
+        package = get_object_or_404(visible_packages_for(request.user), pk=pk)
+        lock_active_cycles(package.requirement.area.cycle_id)
+        package = PackageAttempt.objects.select_for_update().select_related('requirement__area').get(pk=pk)
+        if package.status != 'draft' or package.owner_id != request.user.id:
+            raise PermissionDenied('Only the draft owner may edit it.')
+        data = payload(PackageDraftInput, request).validated_data
+        if 'requirement' in data and data['requirement'] != package.requirement_id:
+            raise ValidationError('A package cannot move to another requirement.')
+        require_assignee_or_coordinator_override(request.user, package.requirement, data.get('override_reason'), 'package edit')
+        if 'items' in data:
+            selections = validated_package_items(request.user, package.requirement, data['items'], data.get('override_reason'))
+            for entry in package.items.all():
+                entry.delete()
+            for mapping, version, note in selections:
+                PackageItem.objects.create(package=package, mapping=mapping, version=version, note=note)
+        if 'notes' in data:
+            package.notes = data['notes']
+            package.save(update_fields=['notes'])
+        audit(request.user, package.requirement.area, 'package_draft_edited', package.requirement.title, package=package.id)
+        return Response(package_data(package, request.user))
+
+    @transaction.atomic
+    def delete(self, request, pk=None):
+        if pk is None:
+            raise MethodNotAllowed('DELETE')
+        package = get_object_or_404(visible_packages_for(request.user), pk=pk)
+        lock_active_cycles(package.requirement.area.cycle_id)
+        package = PackageAttempt.objects.select_for_update().get(pk=pk)
+        if package.status != 'draft' or package.owner_id != request.user.id:
+            raise PermissionDenied('Only the owner may delete an unsubmitted draft.')
+        for entry in package.items.all():
+            entry.delete()
+        requirement = package.requirement
+        number = package.number
+        package.delete()
+        audit(request.user, requirement.area, 'package_draft_deleted', requirement.title, attempt=number)
+        return Response(status=204)
+
+
+class PackageSubmitView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        package = get_object_or_404(visible_packages_for(request.user), pk=pk)
+        lock_active_cycles(package.requirement.area.cycle_id)
+        package = PackageAttempt.objects.select_for_update().select_related('requirement__area__cycle').get(pk=pk)
+        if package.status != 'draft' or package.owner_id != request.user.id:
+            raise PermissionDenied('Only the draft owner may submit it.')
+        data = payload(PackageActionInput, request).validated_data
+        requirement = package.requirement
+        require_assignee_or_coordinator_override(request.user, requirement, data.get('override_reason'), 'package submission')
+        if certification_is_open(requirement):
+            raise ValidationError('Reopen the requirement before submitting changed supporting evidence.')
+        if requirement.packages.filter(status='submitted').exclude(pk=package.pk).exists():
+            raise ValidationError('Another package is awaiting review for this requirement.')
+        if any(not hasattr(submission, 'decision') for mapping in EvidenceMapping.objects.filter(item__requirement=requirement)
+               for submission in mapping.submissions.all()[:1]):
+            raise ValidationError('Resolve the legacy item-level pending review before submitting a package.')
+        entries = list(package.items.select_related('mapping__item', 'mapping__document', 'version'))
+        if not entries:
+            raise ValidationError({'items': 'A package needs at least one pinned evidence version.'})
+        validated_package_items(request.user, requirement,
+            [{'mapping': entry.mapping_id, 'version': entry.version_id, 'note': entry.note} for entry in entries], data.get('override_reason'))
+        for entry in entries:
+            entry.snapshot = package_item_snapshot(entry)
+            entry.save(update_fields=['snapshot'])
+        package.criteria_revision = requirement.criteria_revision
+        package.criteria_snapshot = criteria_snapshot(requirement)
+        package.submitted_at = timezone.now()
+        package.status = 'submitted'
+        package.save(update_fields=['criteria_revision', 'criteria_snapshot', 'submitted_at', 'status'])
+        audit(request.user, requirement.area, 'package_submitted', requirement.title, package=package.id, attempt=package.number)
+        return Response(package_data(package, request.user))
+
+
+class PackageWithdrawView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        package = get_object_or_404(visible_packages_for(request.user), pk=pk)
+        lock_active_cycles(package.requirement.area.cycle_id)
+        package = PackageAttempt.objects.select_for_update().get(pk=pk)
+        data = payload(PackageActionInput, request).validated_data
+        if package.status != 'submitted' or package.owner_id != request.user.id:
+            raise PermissionDenied('Only the submitter may withdraw a package before review.')
+        if not data['confirm']:
+            raise ValidationError({'confirm': 'Confirm withdrawal of this submitted attempt.'})
+        package.status = 'withdrawn'
+        package.withdrawal_reason = data.get('reason', '')
+        package.resolved_at = timezone.now()
+        package.save(update_fields=['status', 'withdrawal_reason', 'resolved_at'])
+        audit(request.user, package.requirement.area, 'package_withdrawn', package.requirement.title,
+              package=package.id, reason=package.withdrawal_reason)
+        return Response(package_data(package, request.user))
+
+
+class PackageReviewView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        package = get_object_or_404(PackageAttempt.objects.filter(requirement__area__in=areas_for(request.user, REVIEW_ROLES)), pk=pk)
+        lock_active_cycles(package.requirement.area.cycle_id)
+        package = PackageAttempt.objects.select_for_update().select_related('requirement__area__cycle').get(pk=pk)
+        data = payload(PackageReviewInput, request).validated_data
+        if package.status != 'submitted':
+            raise ValidationError('This package is no longer awaiting review. Refresh the page.')
+        if certification_is_open(package.requirement):
+            raise ValidationError('Reopen the requirement before reviewing changed supporting evidence.')
+        entries = list(package.items.select_related('version', 'mapping__item', 'mapping__document'))
+        if package.owner_id == request.user.id or any(entry.version.uploaded_by_id == request.user.id for entry in entries):
+            raise PermissionDenied('You cannot review your own package or an upload in it.')
+        if data['outcome'] == 'approved':
+            if package.criteria_revision != package.requirement.criteria_revision:
+                raise ValidationError('Outdated criteria require a revision request and a new attempt.')
+            required = set(package.requirement.items.filter(mandatory=True).values_list('id', flat=True))
+            if not required.issubset({entry.mapping.item_id for entry in entries}):
+                raise ValidationError('Missing mandatory evidence requires a revision request.')
+            if any(entry.version.valid_until and entry.version.valid_until < timezone.localdate() for entry in entries):
+                raise ValidationError('Expired evidence cannot be approved.')
+        package.status = data['outcome']
+        package.resolved_at = timezone.now()
+        package.save(update_fields=['status', 'resolved_at'])
+        PackageDecision.objects.create(package=package, reviewer=request.user,
+                                       outcome=data['outcome'], comment=data.get('comment', ''))
+        audit(request.user, package.requirement.area, 'package_' + data['outcome'], package.requirement.title,
+              package=package.id, comment=data.get('comment', ''))
+        return Response(package_data(package, request.user), status=201)
+
+
+class PackageResubmitView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        source = get_object_or_404(visible_packages_for(request.user), pk=pk)
+        lock_active_cycles(source.requirement.area.cycle_id)
+        requirement = Requirement.objects.select_for_update().get(pk=source.requirement_id)
+        data = payload(PackageActionInput, request).validated_data
+        if source.status not in ('approved', 'revisions_requested', 'withdrawn'):
+            raise ValidationError('Only a terminal attempt can seed a new draft.')
+        require_assignee_or_coordinator_override(request.user, requirement, data.get('override_reason'), 'package resubmission')
+        number = requirement.packages.order_by('-number').first().number + 1
+        package = PackageAttempt.objects.create(requirement=requirement, number=number, owner=request.user,
+                                                source_attempt=source, notes=source.notes)
+        if data['copy_items']:
+            validated_package_items(request.user, requirement,
+                [{'mapping': entry.mapping_id, 'version': entry.version_id, 'note': entry.note}
+                 for entry in source.items.all()], data.get('override_reason'))
+            for entry in source.items.all():
+                PackageItem.objects.create(package=package, mapping=entry.mapping, version=entry.version, note=entry.note)
+        audit(request.user, requirement.area, 'package_resubmission_draft_created', requirement.title,
+              package=package.id, source_attempt=source.id)
+        return Response(package_data(package, request.user), status=201)
+
+
 class RequirementCertificationsView(APIView):
     def get(self, request, pk):
         requirement = get_object_or_404(scoped_requirements(request.user), pk=pk)
@@ -702,29 +971,49 @@ class RequirementCertificationsView(APIView):
         if data['outcome'] == 'complete':
             if result['status'] != 'ready_for_completion_review':
                 raise ValidationError('Only a requirement with all mandatory evidence approved can be completed.')
-            selected_ids = data.get('submissions')
-            if not selected_ids or len(selected_ids) != len(set(selected_ids)):
-                raise ValidationError({'submissions': 'Select distinct approved submissions deliberately.'})
-            candidates = {s['submission']: s for s in req_data(requirement, request.user, True)['certification_candidates']}
-            if any(sid not in candidates for sid in selected_ids):
-                raise ValidationError({'submissions': 'Every selection must be a current, approved, unexpired submission for this requirement.'})
-            mandatory = {i.id for i in requirement.items.all() if i.mandatory}
-            if not mandatory.issubset({candidates[sid]['item'] for sid in selected_ids}):
-                raise ValidationError({'submissions': 'Select approved evidence for every mandatory item.'})
+            if requirement.packages.exists():
+                selected_ids = data.get('packages')
+                if data.get('submissions') or not selected_ids or len(selected_ids) != len(set(selected_ids)):
+                    raise ValidationError({'packages': 'Select distinct approved package attempts deliberately.'})
+                candidates = {p.id: p for p in requirement.packages.all() if package_is_ready(p, requirement)}
+                if any(pid not in candidates for pid in selected_ids):
+                    raise ValidationError({'packages': 'Every selection must be an approved, current package for this requirement.'})
+                mandatory = {i.id for i in requirement.items.all() if i.mandatory}
+                selected_items = {entry.mapping.item_id for pid in selected_ids for entry in candidates[pid].items.all()}
+                if not mandatory.issubset(selected_items):
+                    raise ValidationError({'packages': 'Selected packages must cover every mandatory item.'})
+            else:
+                selected_ids = data.get('submissions')
+                if data.get('packages') or not selected_ids or len(selected_ids) != len(set(selected_ids)):
+                    raise ValidationError({'submissions': 'Select distinct approved submissions deliberately.'})
+                candidates = {s['submission']: s for s in req_data(requirement, request.user, True)['certification_candidates']}
+                if any(sid not in candidates for sid in selected_ids):
+                    raise ValidationError({'submissions': 'Every selection must be a current, approved, unexpired submission for this requirement.'})
+                mandatory = {i.id for i in requirement.items.all() if i.mandatory}
+                if not mandatory.issubset({candidates[sid]['item'] for sid in selected_ids}):
+                    raise ValidationError({'submissions': 'Select approved evidence for every mandatory item.'})
             action = 'requirement_completed'
         else:
             if not latest or latest.outcome != 'complete':
                 raise ValidationError('Only a completed requirement can be reopened.')
-            if data.get('submissions'):
-                raise ValidationError({'submissions': 'Reopening does not select evidence.'})
+            if data.get('submissions') or data.get('packages'):
+                raise ValidationError('Reopening does not select evidence.')
             action = 'requirement_reopened'
         certification = RequirementCertification.objects.create(
             requirement=requirement, coordinator=request.user, outcome=data['outcome'], rationale=data['rationale'],
             criteria_snapshot=criteria_snapshot(requirement) if data['outcome'] == 'complete' else None)
         if data['outcome'] == 'complete':
-            for sid in selected_ids:
-                CertificationEvidence.objects.create(certification=certification, submission_id=sid,
-                    snapshot=candidates[sid])
+            if requirement.packages.exists():
+                for pid in selected_ids:
+                    package = candidates[pid]
+                    CertificationPackage.objects.create(certification=certification, package=package,
+                        snapshot={'package': package.id, 'attempt': package.number, 'owner': package.owner_id,
+                                  'criteria_revision': package.criteria_revision,
+                                  'items': [entry.snapshot for entry in package.items.all()]})
+            else:
+                for sid in selected_ids:
+                    CertificationEvidence.objects.create(certification=certification, submission_id=sid,
+                        snapshot=candidates[sid])
         audit(request.user, requirement.area, action, requirement.title,
               certification=certification.id, rationale=certification.rationale)
         requirement = with_evidence(Requirement.objects).get(pk=requirement.pk)
@@ -739,7 +1028,7 @@ class ComplianceView(APIView):
         return Response({**summary(qs), 'calculated_at': timezone.now(), 'scope': 'Your authorized areas'})
 
 
-REPORT_STATUSES = {'complete', 'ready_for_completion_review', 'pending', 'for_compliance', 'missing', 'draft', 'excluded'}
+REPORT_STATUSES = {'complete', 'for_verification', 'needs_revision', 'ready_for_completion_review', 'in_progress', 'missing', 'draft', 'excluded'}
 
 
 def report_rows(request):

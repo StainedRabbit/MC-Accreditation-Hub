@@ -120,11 +120,42 @@ class CertificationInput(serializers.Serializer):
     outcome = serializers.ChoiceField(choices=['complete', 'reopened'])
     rationale = serializers.CharField(trim_whitespace=True, max_length=4000)
     submissions = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False)
+    packages = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False)
 
     def validate_rationale(self, value):
         if not value:
             raise serializers.ValidationError('A rationale is required.')
         return value
+
+
+class PackageItemInput(serializers.Serializer):
+    mapping = serializers.IntegerField(min_value=1)
+    version = serializers.IntegerField(min_value=1)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+
+
+class PackageDraftInput(serializers.Serializer):
+    requirement = serializers.IntegerField(min_value=1, required=False)
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+    items = PackageItemInput(many=True, required=False)
+    override_reason = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+
+
+class PackageActionInput(serializers.Serializer):
+    override_reason = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+    confirm = serializers.BooleanField(required=False, default=False)
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+    copy_items = serializers.BooleanField(required=False, default=True)
+
+
+class PackageReviewInput(serializers.Serializer):
+    outcome = serializers.ChoiceField(choices=['approved', 'revisions_requested'])
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+
+    def validate(self, attrs):
+        if attrs['outcome'] == 'revisions_requested' and not attrs.get('comment', '').strip():
+            raise serializers.ValidationError({'comment': 'Explain the revisions needed.'})
+        return attrs
 
 
 class CycleTransitionInput(serializers.Serializer):

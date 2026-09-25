@@ -49,6 +49,9 @@ class WorkflowFixture:
             'responsible': 'Graduate School', 'active': True, 'items': [{'label': 'Plan'}]}, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.requirement = Requirement.objects.get(pk=response.data['id'])
+        # Existing tests exercise the preserved pre-F07 item-level history path.
+        self.requirement.legacy_submission_mode = True
+        self.requirement.save(update_fields=['legacy_submission_mode'])
         self.item = self.requirement.items.get()
         RequirementAssignment.objects.create(requirement=self.requirement, user=self.custodian, assigned_by=self.coordinator)
 
@@ -167,7 +170,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
         from django.core.exceptions import ValidationError as ModelValidationError
         with self.assertRaises(ModelValidationError):
             decision.save()
-        self.assertEqual(self.compliance()['for_compliance'], 1)
+        self.assertEqual(self.compliance()['needs_revision'], 1)
         updated = self.upload(doc['id'])
         self.decide(self.submit(updated))
         self.assertEqual(self.certify().status_code, 201)
@@ -179,7 +182,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/',
             {'description': 'Revised criteria', 'change_reason': 'Updated standard'}, format='json').status_code, 200)
         self.assertEqual(self.decide(sub).status_code, 400)
-        self.assertEqual(self.compliance()['for_compliance'], 1)
+        self.assertEqual(self.compliance()['needs_revision'], 1)
 
     def test_health_probe_is_public_and_checks_database(self):
         client = APIClient()
@@ -191,7 +194,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertEqual(self.compliance()['percentage'], 0)
         document = self.upload()
         sub = self.submit(document)
-        self.assertEqual(self.compliance()['pending'], 1)
+        self.assertEqual(self.compliance()['for_verification'], 1)
         self.assertEqual(self.decide(sub).status_code, 201)
         self.assertEqual(self.compliance()['percentage'], 0)
         self.assertEqual(self.compliance()['ready_for_completion_review'], 1)
@@ -672,3 +675,197 @@ class ConcurrencyTests(WorkflowFixture, TransactionTestCase):
             futures = [pool.submit(decide, self.reviewer.id, 'approved'), pool.submit(decide, self.coordinator.id, 'rejected')]
             self.assertEqual(sorted(f.result() for f in futures), [201, 400])
         self.assertEqual(ReviewDecision.objects.filter(submission_id=sub['id']).count(), 1)
+
+
+class PackageWorkflowTests(WorkflowFixture, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.requirement.legacy_submission_mode = False
+        self.requirement.save(update_fields=['legacy_submission_mode'])
+
+    def mapped(self, item=None, document=None, user=None):
+        doc = document or self.upload(user=user)
+        self.client.force_authenticate(user or self.custodian)
+        mapping = self.client.post('/api/evidence-mappings/', {
+            'item': (item or self.item).id, 'document': doc['id'],
+            **({'override_reason': 'Coordinator package mapping override'} if user == self.coordinator else {})}, format='json')
+        self.assertIn(mapping.status_code, (200, 201), mapping.data)
+        return doc, mapping.data['id']
+
+    def draft(self, entries=None, user=None, notes='Package draft notes'):
+        self.client.force_authenticate(user or self.custodian)
+        response = self.client.post('/api/packages/', {'requirement': self.requirement.id, 'notes': notes,
+            'items': entries or [], **({'override_reason': 'Coordinator package draft override'} if user == self.coordinator else {})}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        return response.data
+
+    def test_draft_edit_submit_review_and_certification_pin_package(self):
+        doc, mapping = self.mapped()
+        version = doc['versions'][0]['id']
+        draft = self.draft()
+        self.assertEqual(self.compliance()['in_progress'], 1)
+        self.client.force_authenticate(self.custodian)
+        edited = self.client.patch(f'/api/packages/{draft["id"]}/', {'notes': 'Updated notes',
+            'items': [{'mapping': mapping, 'version': version, 'note': 'Exact faculty plan'}]}, format='json')
+        self.assertEqual(edited.status_code, 200, edited.data)
+        self.assertEqual(edited.data['items'][0]['version'], version)
+        submitted = self.client.post(f'/api/packages/{draft["id"]}/submit/', {}, format='json')
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+        self.assertEqual(self.compliance()['for_verification'], 1)
+        self.assertEqual(self.client.patch(f'/api/packages/{draft["id"]}/', {'notes': 'Rewrite'}, format='json').status_code, 403)
+        self.client.force_authenticate(self.reviewer)
+        reviewed = self.client.post(f'/api/packages/{draft["id"]}/review/', {'outcome': 'approved', 'comment': 'Meets criteria'}, format='json')
+        self.assertEqual(reviewed.status_code, 201, reviewed.data)
+        self.assertEqual(self.compliance()['ready_for_completion_review'], 1)
+        self.client.force_authenticate(self.coordinator)
+        cert = self.client.post(f'/api/requirements/{self.requirement.id}/certifications/', {
+            'outcome': 'complete', 'rationale': 'Selected approved package', 'packages': [draft['id']]}, format='json')
+        self.assertEqual(cert.status_code, 201, cert.data)
+        link = CertificationPackage.objects.get(certification_id=cert.data['certification']['id'])
+        self.assertEqual(link.package_id, draft['id'])
+        self.assertEqual(link.snapshot['items'][0]['version'], version)
+        self.assertEqual(link.snapshot['items'][0]['checksum'], doc['versions'][0]['checksum'])
+        self.assertEqual(self.compliance()['complete'], 1)
+        self.assertEqual(self.client.get('/api/reports/compliance/').data['complete'], 1)
+        package = PackageAttempt.objects.get(pk=draft['id'])
+        package.notes = 'Attempted rewrite'
+        from django.core.exceptions import ValidationError as ModelValidationError
+        with self.assertRaises(ModelValidationError):
+            package.save()
+
+    def test_pending_missing_precedence_withdrawal_and_resubmission_history(self):
+        second = EvidenceItem.objects.create(requirement=self.requirement, label='Second mandatory')
+        doc, mapping = self.mapped()
+        first = self.draft([{'mapping': mapping, 'version': doc['versions'][0]['id']}])
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.client.post(f'/api/packages/{first["id"]}/submit/', {}, format='json').status_code, 200)
+        self.assertEqual(self.compliance()['for_verification'], 1)
+        self.assertEqual(self.client.get('/api/reports/compliance/').data['for_verification'], 1)
+        self.client.force_authenticate(self.reviewer)
+        self.assertEqual(self.client.post(f'/api/packages/{first["id"]}/review/', {'outcome': 'approved'}, format='json').status_code, 400)
+        another = self.draft()
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.client.post(f'/api/packages/{another["id"]}/submit/', {}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(f'/api/packages/{first["id"]}/withdraw/', {}, format='json').status_code, 400)
+        withdrawn = self.client.post(f'/api/packages/{first["id"]}/withdraw/', {'confirm': True, 'reason': 'Needs replacement'}, format='json')
+        self.assertEqual(withdrawn.status_code, 200, withdrawn.data)
+        self.assertEqual(PackageAttempt.objects.get(pk=first['id']).status, 'withdrawn')
+        self.assertEqual(self.compliance()['in_progress'], 1)
+        self.client.force_authenticate(self.custodian)
+        resumed = self.client.post(f'/api/packages/{first["id"]}/resubmit/', {}, format='json')
+        self.assertEqual(resumed.status_code, 201, resumed.data)
+        self.assertEqual(resumed.data['number'], 3)
+        self.assertEqual(resumed.data['source_attempt'], first['id'])
+        self.assertEqual(resumed.data['items'][0]['version'], doc['versions'][0]['id'])
+        self.assertEqual(PackageAttempt.objects.count(), 3)
+        self.assertTrue(self.requirement.items.filter(pk=second.id).exists())
+
+    def test_revision_resubmission_and_independent_review_guards(self):
+        doc, mapping = self.mapped()
+        first = self.draft([{'mapping': mapping, 'version': doc['versions'][0]['id']}])
+        self.client.force_authenticate(self.custodian)
+        self.client.post(f'/api/packages/{first["id"]}/submit/', {}, format='json')
+        self.assertEqual(self.client.post(f'/api/packages/{first["id"]}/review/', {'outcome': 'approved'}, format='json').status_code, 404)
+        self.client.force_authenticate(self.reviewer)
+        self.assertEqual(self.client.post(f'/api/packages/{first["id"]}/review/', {'outcome': 'revisions_requested'}, format='json').status_code, 400)
+        revision = self.client.post(f'/api/packages/{first["id"]}/review/', {'outcome': 'revisions_requested', 'comment': 'Add signatures'}, format='json')
+        self.assertEqual(revision.status_code, 201, revision.data)
+        self.assertEqual(self.compliance()['needs_revision'], 1)
+        self.assertEqual(self.client.post(f'/api/packages/{first["id"]}/review/', {'outcome': 'approved'}, format='json').status_code, 400)
+        self.client.force_authenticate(self.custodian)
+        second = self.client.post(f'/api/packages/{first["id"]}/resubmit/', {'copy_items': True}, format='json')
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertEqual(self.compliance()['in_progress'], 1)
+        newer = self.upload(doc['id'])
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.client.patch(f'/api/packages/{second.data["id"]}/', {'items': [
+            {'mapping': mapping, 'version': newer['versions'][0]['id'], 'note': 'Signed plan'}]}, format='json').status_code, 200)
+        self.assertEqual(self.client.post(f'/api/packages/{second.data["id"]}/submit/', {}, format='json').status_code, 200)
+        self.client.force_authenticate(self.reviewer)
+        self.assertEqual(self.client.post(f'/api/packages/{second.data["id"]}/review/', {'outcome': 'approved'}, format='json').status_code, 201)
+        self.assertEqual(PackageDecision.objects.count(), 2)
+        self.assertEqual(PackageAttempt.objects.get(pk=first['id']).status, 'revisions_requested')
+
+    def test_scope_assignment_stewardship_and_legacy_history(self):
+        doc, mapping = self.mapped()
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get('/api/packages/').data, [])
+        self.assertEqual(self.client.post('/api/packages/', {'requirement': self.requirement.id}, format='json').status_code, 404)
+        other = self.user('custodian', self.area, 'teammate')
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.post('/api/packages/', {'requirement': self.requirement.id,
+            'items': [{'mapping': mapping, 'version': doc['versions'][0]['id']}]}, format='json').status_code, 403)
+        self.client.force_authenticate(self.custodian)
+        draft = self.draft([{'mapping': mapping, 'version': doc['versions'][0]['id']}])
+        self.client.force_authenticate(self.viewer)
+        self.assertEqual(self.client.get('/api/packages/').data, [])
+        self.assertEqual(self.client.get(f'/api/packages/{draft["id"]}/').status_code, 404)
+        self.assertEqual(Submission.objects.count(), 0)
+        self.assertEqual(ReviewDecision.objects.count(), 0)
+
+    def test_starting_package_preserves_legacy_item_review_without_backfill(self):
+        self.requirement.legacy_submission_mode = True
+        self.requirement.save(update_fields=['legacy_submission_mode'])
+        doc = self.upload()
+        submission = self.submit(doc)
+        self.assertEqual(self.decide(submission).status_code, 201)
+        original_count = Submission.objects.count()
+        decision_count = ReviewDecision.objects.count()
+        self.client.force_authenticate(self.custodian)
+        draft = self.client.post('/api/packages/', {'requirement': self.requirement.id, 'notes': 'New package work'}, format='json')
+        self.assertEqual(draft.status_code, 201, draft.data)
+        self.requirement.refresh_from_db()
+        self.assertFalse(self.requirement.legacy_submission_mode)
+        self.assertEqual(Submission.objects.count(), original_count)
+        self.assertEqual(ReviewDecision.objects.count(), decision_count)
+        self.assertEqual(PackageAttempt.objects.count(), 1)
+        self.assertEqual(PackageItem.objects.count(), 0)
+        self.assertEqual(self.client.post('/api/submissions/', {'mapping': submission['mapping'],
+            'version': submission['version']}, format='json').status_code, 400)
+
+
+class PackageConcurrencyTests(WorkflowFixture, TransactionTestCase):
+    def test_competing_package_submissions_leave_one_pending(self):
+        self.requirement.legacy_submission_mode = False
+        self.requirement.save(update_fields=['legacy_submission_mode'])
+        doc = self.upload()
+        self.client.force_authenticate(self.custodian)
+        mapping = self.client.post('/api/evidence-mappings/', {'item': self.item.id, 'document': doc['id']}, format='json').data
+        drafts = [self.client.post('/api/packages/', {'requirement': self.requirement.id,
+            'items': [{'mapping': mapping['id'], 'version': doc['versions'][0]['id']}]}, format='json').data['id']
+            for _ in range(2)]
+        def submit(package_id):
+            close_old_connections()
+            try:
+                client = APIClient()
+                client.force_authenticate(User.objects.get(pk=self.custodian.id))
+                return client.post(f'/api/packages/{package_id}/submit/', {}, format='json').status_code
+            finally:
+                close_old_connections()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertEqual(sorted(pool.map(submit, drafts)), [200, 400])
+        self.assertEqual(PackageAttempt.objects.filter(requirement=self.requirement, status='submitted').count(), 1)
+
+    def test_competing_package_reviews_are_serialized(self):
+        self.requirement.legacy_submission_mode = False
+        self.requirement.save(update_fields=['legacy_submission_mode'])
+        doc = self.upload()
+        self.client.force_authenticate(self.custodian)
+        mapping = self.client.post('/api/evidence-mappings/', {'item': self.item.id, 'document': doc['id']}, format='json').data
+        draft = self.client.post('/api/packages/', {'requirement': self.requirement.id,
+            'items': [{'mapping': mapping['id'], 'version': doc['versions'][0]['id']}]}, format='json').data
+        self.client.post(f'/api/packages/{draft["id"]}/submit/', {}, format='json')
+        def decide(user_id, outcome):
+            close_old_connections()
+            try:
+                client = APIClient()
+                client.force_authenticate(User.objects.get(pk=user_id))
+                return client.post(f'/api/packages/{draft["id"]}/review/', {'outcome': outcome,
+                    'comment': 'Concurrent decision'}, format='json').status_code
+            finally:
+                close_old_connections()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(decide, self.reviewer.id, 'approved'),
+                       pool.submit(decide, self.coordinator.id, 'revisions_requested')]
+            self.assertEqual(sorted(f.result() for f in futures), [201, 400])
+        self.assertEqual(PackageDecision.objects.filter(package_id=draft['id']).count(), 1)

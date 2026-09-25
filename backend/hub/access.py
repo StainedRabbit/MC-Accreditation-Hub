@@ -8,7 +8,7 @@ academic/evidence access still requires an explicit academic grant.
 from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from .models import Area, Cycle, Document, DocumentVersion, EvidenceMapping, Submission, RequirementAssignment
+from .models import Area, Cycle, Document, DocumentVersion, EvidenceMapping, Submission, RequirementAssignment, PackageAttempt
 
 
 READ_ROLES = ['coordinator', 'reviewer', 'custodian', 'viewer']
@@ -91,24 +91,30 @@ def visible_versions_for(user, queryset=None):
 
     coordinator_scope = (
         Q(document__area__in=coordinator_areas) |
-        Q(submissions__mapping__item__requirement__area__in=coordinator_areas)
+        Q(submissions__mapping__item__requirement__area__in=coordinator_areas) |
+        Q(package_items__package__requirement__area__in=coordinator_areas)
     )
-    reviewer_scope = Q(submissions__mapping__item__requirement__area__in=reviewer_areas)
+    reviewer_scope = (Q(submissions__mapping__item__requirement__area__in=reviewer_areas) |
+                      Q(package_items__package__requirement__area__in=reviewer_areas,
+                        package_items__package__status__in=['submitted', 'approved', 'revisions_requested', 'withdrawn']))
     custodian_own_source = Q(document__area__in=custodian_areas) & (
         Q(document__custodian=user) | Q(uploaded_by=user)
     )
     custodian_own_submission = Q(
         submissions__submitted_by=user,
         submissions__mapping__item__requirement__area__in=custodian_areas,
-    )
+    ) | Q(package_items__package__owner=user,
+          package_items__package__requirement__area__in=custodian_areas)
     custodian_approved_shared = Q(
         submissions__decision__outcome='approved',
         submissions__mapping__item__requirement__area__in=custodian_areas,
-    )
+    ) | Q(package_items__package__status='approved',
+          package_items__package__requirement__area__in=custodian_areas)
     viewer_approved = Q(
         submissions__decision__outcome='approved',
         submissions__mapping__item__requirement__area__in=viewer_areas,
-    )
+    ) | Q(package_items__package__status='approved',
+          package_items__package__requirement__area__in=viewer_areas)
     return qs.filter(
         coordinator_scope | reviewer_scope | custodian_own_source |
         custodian_own_submission | custodian_approved_shared | viewer_approved
@@ -152,6 +158,18 @@ def visible_mappings_for(user, queryset=None):
         (Q(item__requirement__area__in=reviewer_areas) & Q(submissions__isnull=False)) |
         (Q(document__area__in=custodian_areas) &
          (Q(document__custodian=user) | Q(created_by=user) | Q(submissions__submitted_by=user)))
+    ).distinct()
+
+
+def visible_packages_for(user, queryset=None):
+    qs = queryset if queryset is not None else PackageAttempt.objects.all()
+    if not user.assignments.filter(role__in=['coordinator', 'reviewer', 'custodian']).exists():
+        return qs.none()
+    return qs.filter(
+        Q(requirement__area__in=areas_for(user, ['coordinator'])) |
+        Q(requirement__area__in=areas_for(user, ['reviewer']),
+          status__in=['submitted', 'approved', 'revisions_requested', 'withdrawn']) |
+        Q(requirement__area__in=areas_for(user, ['custodian']), owner=user)
     ).distinct()
 
 

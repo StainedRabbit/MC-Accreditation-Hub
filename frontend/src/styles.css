@@ -790,7 +790,9 @@ td:first-child {
   background: #ddfce8;
   border-color: #b6f5cf;
 }
-.badge.pending {
+.badge.pending,
+.badge.submitted,
+.badge.for_verification {
   color: #1e50e9;
   background: #e0ecff;
   border-color: #bfd9ff;
@@ -800,8 +802,9 @@ td:first-child {
   background: #f1e9ff;
   border-color: #dac6ff;
 }
-.badge.for_compliance,
+.badge.needs_revision,
 .badge.revision_requested,
+.badge.revisions_requested,
 .badge.expired {
   color: #c34d00;
   background: #fff0dc;
@@ -814,6 +817,8 @@ td:first-child {
   border-color: #ffc7cf;
 }
 .badge.draft,
+.badge.in_progress,
+.badge.withdrawn,
 .badge.excluded {
   background: #eff1f5;
   color: #64748b;

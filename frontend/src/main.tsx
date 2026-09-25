@@ -38,6 +38,8 @@ import type {
   Item,
   Audit,
   Certification,
+  PackageAttempt,
+  PackageChoice,
   AssignmentCandidate,
   SearchResults,
   ComplianceReport,
@@ -49,10 +51,14 @@ const labels: Record<string, string> = {
   ready_for_completion_review: "Ready for Completion Review",
   reopened: "Reopened",
   approved: "Approved",
-  pending: "For Verification",
-  for_compliance: "For Compliance",
+  for_verification: "For Verification",
+  needs_revision: "Needs Revision",
+  in_progress: "In Progress",
   missing: "Missing Evidence",
   revision_requested: "Revision Requested",
+  revisions_requested: "Revisions Requested",
+  submitted: "Submitted",
+  withdrawn: "Withdrawn",
   rejected: "Rejected",
   expired: "Expired",
   outdated: "Outdated Criteria",
@@ -281,6 +287,7 @@ function App() {
   const [requirements, setRequirements] = useState<Requirement[]>([]),
     [documents, setDocuments] = useState<Document[]>([]),
     [submissions, setSubmissions] = useState<Submission[]>([]),
+    [packages, setPackages] = useState<PackageAttempt[]>([]),
     [events, setEvents] = useState<Audit[]>([]),
     [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState(""),
@@ -314,6 +321,8 @@ function App() {
     [stewardshipDocument, setStewardshipDocument] = useState<Document | null>(null),
     [mappingItem, setMappingItem] = useState<Item | null>(null),
     [review, setReview] = useState<Submission | null>(null),
+    [packageEditor, setPackageEditor] = useState<{ requirement: Requirement; draft?: PackageAttempt } | null>(null),
+    [packageReview, setPackageReview] = useState<PackageAttempt | null>(null),
     [certification, setCertification] = useState<{
       requirement: Requirement;
       outcome: "complete" | "reopened";
@@ -327,12 +336,15 @@ function App() {
     setRequirements([]);
     setDocuments([]);
     setSubmissions([]);
+    setPackages([]);
     setEvents([]);
     setSummary(null);
     setDetail(null);
     setDocDetail(null);
     setUpload(null);
     setReview(null);
+    setPackageEditor(null);
+    setPackageReview(null);
     setCertification(null);
     setMappingItem(null);
     setAssignmentRequirement(null);
@@ -385,11 +397,12 @@ function App() {
     setError("");
     try {
       const suffix = `?cycle=${cycle}`;
-      const [a, r, d, s, c, ev] = await Promise.all([
+      const [a, r, d, s, p, c, ev] = await Promise.all([
         api<Area[]>("areas/" + suffix),
         api<Requirement[]>("requirements/" + suffix),
         api<Document[]>("documents/" + suffix),
         api<Submission[]>("submissions/" + suffix),
+        api<PackageAttempt[]>("packages/" + suffix),
         api<Summary>("compliance/" + suffix),
         api<Audit[]>("audit/" + suffix),
       ]);
@@ -398,6 +411,7 @@ function App() {
       setRequirements(r);
       setDocuments(d);
       setSubmissions(s);
+      setPackages(p);
       setSummary(c);
       setEvents(ev);
       if (includeDetails && detail) {
@@ -501,6 +515,21 @@ function App() {
     setNotice(message);
     await refresh();
   }
+  async function openPackageEditor(requirement: Requirement, draft?: PackageAttempt) {
+    try {
+      const fresh = await api<Requirement>(`requirements/${requirement.id}/`);
+      setPackageEditor({ requirement: fresh, draft: draft && fresh.packages?.find((attempt) => attempt.id === draft.id) });
+    } catch (failure) { setError((failure as Error).message); }
+  }
+  async function packageAction(packageId: number, action: "submit" | "withdraw" | "resubmit", requiresOverride = false) {
+    if (action === "withdraw" && !window.confirm("Withdraw this submitted package attempt? Its history will remain available.")) return;
+    const overrideReason = requiresOverride && action !== "withdraw" ? window.prompt("Coordinator override reason for this package action") : null;
+    if (requiresOverride && action !== "withdraw" && !overrideReason?.trim()) return;
+    try {
+      await post(`packages/${packageId}/${action}/`, action === "withdraw" ? { confirm: true } : overrideReason ? { override_reason: overrideReason } : {});
+      await changed(action === "submit" ? "Package submitted for review." : action === "withdraw" ? "Package withdrawn; its history is preserved." : "New draft attempt created.");
+    } catch (error) { setError((error as Error).message); }
+  }
   async function transitionCycle(action: "close" | "reopen", rationale: string) {
     if (!selectedCycle) return;
     const result = await post<{ detail: string }>(`cycles/${selectedCycle.id}/${action}/`, { rationale });
@@ -576,8 +605,9 @@ function App() {
           {[
             "complete",
             "ready_for_completion_review",
-            "pending",
-            "for_compliance",
+            "for_verification",
+            "needs_revision",
+            "in_progress",
             "missing",
             "draft",
             "excluded",
@@ -783,18 +813,19 @@ function App() {
                   ],
                   [
                     "🔎",
-                    summary?.pending ?? 0,
+                    summary?.for_verification ?? 0,
                     "For Verification",
                     "Awaiting review",
                     "blue",
                   ],
                   [
                     "⚠️",
-                    summary?.for_compliance ?? 0,
-                    "For Compliance",
+                    summary?.needs_revision ?? 0,
+                    "Needs Revision",
                     "Needs attention",
                     "orange",
                   ],
+                  ["📝", summary?.in_progress ?? 0, "In Progress", "Draft or reopened work", "purple"],
                   [
                     "🔴",
                     summary?.missing ?? 0,
@@ -929,7 +960,7 @@ function App() {
                         <small>Done</small>
                       </div>
                       <div>
-                        <b className="blue">{a.pending}</b>
+                        <b className="blue">{a.for_verification}</b>
                         <small>Review</small>
                       </div>
                       <div>
@@ -938,8 +969,7 @@ function App() {
                       </div>
                     </div>
                     <small>
-                      {a.total} applicable requirements · {a.for_compliance} for
-                      compliance
+                      {a.total} applicable requirements · {a.needs_revision} need revision
                     </small>
                   </button>
                 ))}
@@ -1164,6 +1194,8 @@ function App() {
                           {entry.criteria_snapshot && <div><p>Criteria revision {entry.criteria_snapshot.revision} · {entry.criteria_snapshot.code} · {entry.criteria_snapshot.title} · {entry.criteria_snapshot.instrument}: {entry.criteria_snapshot.description || "No general criteria"}</p>
                             {entry.criteria_snapshot.items.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}</div>}
                           {entry.evidence.map((evidence) => <p key={evidence.submission}>Selected submission #{evidence.submission} · {evidence.item_label} · {evidence.document_title} · {evidence.original_name} · version {evidence.version_number} (#{evidence.version}) · SHA-256 {evidence.checksum} · submission criteria {evidence.submission_criteria_revision ?? "legacy unknown"}</p>)}
+                          {entry.packages?.map((packageLink) => <div key={packageLink.package}><p>Selected package attempt {packageLink.attempt} · criteria revision {packageLink.criteria_revision}</p>
+                            {packageLink.items.map((item) => <p key={item.mapping}>{item.item_label} · {item.original_name} · version {item.version_number} · SHA-256 {item.checksum}</p>)}</div>)}
                         </div>
                       </article>
                     ))}
@@ -1174,6 +1206,27 @@ function App() {
                   </div>
                 )}
               </section>
+              <section className="panel">
+                <div className="section-heading"><div><h2>Submission packages</h2><p>Each attempt pins exact evidence versions. Submitted and terminal attempts retain their history.</p></div>
+                  {detail.can_upload && <button className="primary" onClick={() => void openPackageEditor(detail)}>New package draft</button>}
+                </div>
+                {detail.packages?.length ? detail.packages.map((attempt) => <article className="certification-entry" key={attempt.id}>
+                  <Badge status={attempt.status} /><div><strong>Attempt {attempt.number}</strong><span>{attempt.owner} · {dateTime(attempt.created_at)}</span>
+                    <p>{attempt.notes || "No package notes"}</p>
+                    {attempt.source_attempt && <p>Resubmitted from attempt #{attempt.source_attempt_number}</p>}
+                    {attempt.items.map((entry) => <p key={entry.mapping}>{entry.item_label} · {entry.document_title} · {entry.original_name} · version {entry.version_number} · SHA-256 {entry.checksum} · {entry.note || "No item note"} <a href={`/api/document-versions/${entry.version}/download/`}>Download</a></p>)}
+                    {attempt.decision && <p>{attempt.decision.reviewer}: {attempt.decision.outcome} · {attempt.decision.comment || "Approved"}</p>}
+                    {attempt.withdrawal_reason && <p>Withdrawal reason: {attempt.withdrawal_reason}</p>}
+                    <div className="actions">
+                      {attempt.can_edit && <button className="secondary" onClick={() => void openPackageEditor(detail, attempt)}>Edit draft</button>}
+                      {attempt.can_submit && <button className="primary" onClick={() => void packageAction(attempt.id, "submit", attempt.requires_override)}>Submit package</button>}
+                      {attempt.can_withdraw && <button className="secondary" onClick={() => void packageAction(attempt.id, "withdraw")}>Withdraw package</button>}
+                      {attempt.can_review && <button className="primary" onClick={() => setPackageReview(attempt)}>Review package</button>}
+                      {attempt.can_resubmit && <button className="secondary" onClick={() => void packageAction(attempt.id, "resubmit", attempt.requires_override)}>Create resubmission draft</button>}
+                    </div>
+                  </div>
+                </article>) : <p className="muted">No package attempts yet. Map evidence versions, then create a draft.</p>}
+              </section>
               <section className="panel"><h2>Applicability history</h2>
                 {!detail.applicability_history?.length && <p className="muted">Legacy applicability state: no recorded decision history is available.</p>}
                 {detail.applicability_history?.map((entry) => <p key={entry.id}>{entry.applicable ? "Applicable" : "Not applicable"} · {entry.coordinator} · {dateTime(entry.created_at)} · {entry.reason}</p>)}
@@ -1181,7 +1234,7 @@ function App() {
               <div className="section-heading">
                 <h2>Evidence checklist</h2>
                 <span className="muted">
-                  Approvals apply to individual submitted versions
+                  Existing item-level submissions remain historical. New reviews use packages.
                 </span>
               </div>
               {detail.items?.map((item) => (
@@ -1455,15 +1508,18 @@ function App() {
                 <div>
                   <h1>Evidence Verification</h1>
                   <p>
-                    {
-                      currentSubmissions.filter((s) => s.status === "pending")
-                        .length
-                    }{" "}
-                    submissions awaiting review
+                    {packages.filter((attempt) => attempt.status === "submitted").length + currentSubmissions.filter((s) => s.status === "pending").length} submissions awaiting review
                   </p>
                 </div>
               </div>
+              <div className="panel table-wrap"><h2>Requirement packages</h2>
+                <table><thead><tr><th>Requirement</th><th>Attempt</th><th>Submitted by</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody>{packages.map((attempt) => <tr key={attempt.id}><td>{attempt.requirement_title}</td><td>#{attempt.number} · {attempt.items.length} pinned versions</td><td>{attempt.owner}</td><td><Badge status={attempt.status} /></td>
+                    <td>{attempt.can_review ? <button className="primary" onClick={() => setPackageReview(attempt)}>Review package</button> : <button className="link" onClick={() => void openRequirement(attempt.requirement)}>View history</button>}</td></tr>)}</tbody>
+                </table>{!packages.length && <p className="muted">Submitted packages will appear here.</p>}
+              </div>
               <div className="panel table-wrap">
+                <h2>Legacy item-level submissions</h2>
                 <table>
                   <thead>
                     <tr>
@@ -1606,7 +1662,7 @@ function App() {
                 <label>Status
                   <select value={reportStatus} onChange={(e) => setReportStatus(e.target.value)}>
                     <option value="">All statuses</option>
-                    {["complete", "ready_for_completion_review", "pending", "for_compliance", "missing", "draft", "excluded"].map((status) => <option key={status} value={status}>{labels[status]}</option>)}
+                    {["complete", "for_verification", "needs_revision", "ready_for_completion_review", "in_progress", "missing", "draft", "excluded"].map((status) => <option key={status} value={status}>{labels[status]}</option>)}
                   </select>
                 </label>
               </section>
@@ -1709,10 +1765,12 @@ function App() {
           close={() => setMappingItem(null)}
           saved={async () => {
             setMappingItem(null);
-            await changed("Evidence submitted for verification.");
+            await changed("Evidence mapped. Add its exact version to a package draft.");
           }}
         />
       )}
+      {packageEditor && <PackageEditor requirement={packageEditor.requirement} draft={packageEditor.draft} close={() => setPackageEditor(null)} saved={async () => { setPackageEditor(null); await changed("Package draft saved."); }} />}
+      {packageReview && <PackageReviewForm attempt={packageReview} close={() => setPackageReview(null)} saved={async () => { setPackageReview(null); await changed("Package review recorded."); }} />}
       {assignmentRequirement && <AssignmentForm requirement={assignmentRequirement} close={() => setAssignmentRequirement(null)} saved={async () => { setAssignmentRequirement(null); await changed("Requirement assignments updated."); }} />}
       {stewardshipDocument && <StewardshipForm document={stewardshipDocument} close={() => setStewardshipDocument(null)} saved={async () => { setStewardshipDocument(null); await changed("Document stewardship updated."); }} />}
       {review && (
@@ -2032,25 +2090,20 @@ function UploadForm({
         ));
       setUploaded(doc);
       if (context.item) {
-        const m = await post<{ id: number }>("evidence-mappings/", {
+        await post<{ id: number }>("evidence-mappings/", {
           item: context.item.id,
           document: doc.id,
-          override_reason: f.get("override_reason"),
-        });
-        await post("submissions/", {
-          mapping: m.id,
-          version: doc.versions[0].id,
           override_reason: f.get("override_reason"),
         });
       }
       await saved(
         context.item
-          ? "Evidence uploaded and submitted for verification."
-          : "Draft version uploaded. Open a requirement to map and submit it.",
+          ? "Evidence uploaded and mapped. Add its version to a package draft."
+          : "Draft version uploaded. Open a requirement to map it into a package.",
       );
     } catch (e) {
       setError(
-        (uploaded ? "The file is saved. Retry submission: " : "") +
+        (uploaded ? "The file is saved. Retry mapping: " : "") +
           (e as Error).message,
       );
     } finally {
@@ -2068,7 +2121,7 @@ function UploadForm({
         <ErrorBox error={error} />
         {context.item && (
           <p className="muted">
-            Submit evidence for: <strong>{context.item.label}</strong>
+            Map evidence for: <strong>{context.item.label}</strong>
           </p>
         )}
         {!context.doc && (
@@ -2154,9 +2207,9 @@ function UploadForm({
             {busy
               ? "Saving…"
               : uploaded
-                ? "Retry submission"
+                ? "Retry mapping"
                 : context.item
-                  ? "Upload & Submit"
+                  ? "Upload & Map"
                   : "Upload Draft"}
           </button>
         </div>
@@ -2180,21 +2233,15 @@ function MappingForm({
     [docId, setDocId] = useState(eligible[0]?.id || ""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const doc = eligible.find((d) => d.id === docId);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError("");
     const f = new FormData(e.currentTarget);
     try {
-      const m = await post<{ id: number }>("evidence-mappings/", {
+      await post<{ id: number }>("evidence-mappings/", {
         item: item.id,
         document: docId,
-        override_reason: f.get("override_reason"),
-      });
-      await post("submissions/", {
-        mapping: m.id,
-        version: Number(f.get("version")),
         override_reason: f.get("override_reason"),
       });
       await saved();
@@ -2209,7 +2256,7 @@ function MappingForm({
       <form onSubmit={submit}>
         <ErrorBox error={error} />
         <p>
-          Submit a specific version for <strong>{item.label}</strong>.
+          Map this document to <strong>{item.label}</strong>. Select its exact version in a package draft.
         </p>
         <label>
           Document
@@ -2226,16 +2273,6 @@ function MappingForm({
           </select>
         </label>
         <label>
-          Version
-          <select name="version" key={docId} required>
-            {doc?.versions.map((v) => (
-              <option key={v.id} value={v.id}>
-                v{v.number} — {v.original_name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
           Coordinator override reason (required only outside assignment or stewardship)
           <textarea name="override_reason" rows={2} />
         </label>
@@ -2247,13 +2284,90 @@ function MappingForm({
             Cancel
           </button>
           <button className="primary" disabled={busy || !docId}>
-            {busy ? "Submitting…" : "Submit for Verification"}
+            {busy ? "Mapping…" : "Map Document"}
           </button>
         </div>
       </form>
     </Modal>
   );
 }
+
+function PackageEditor({ requirement, draft, close, saved }: {
+  requirement: Requirement; draft?: PackageAttempt; close: () => void; saved: () => Promise<void>;
+}) {
+  const choices = requirement.package_choices || [];
+  const mappingIds = [...new Set(choices.map((choice) => choice.mapping))];
+  const [selected, setSelected] = useState<Array<{ mapping: number; version: number; note: string }>>(
+    draft?.items.map((item) => ({ mapping: item.mapping, version: item.version, note: item.note })) || [],
+  );
+  const [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  function setEntry(mapping: number, entry: { mapping: number; version: number; note: string } | null) {
+    setSelected((current) => [...current.filter((item) => item.mapping !== mapping), ...(entry ? [entry] : [])]);
+  }
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      await api(draft ? `packages/${draft.id}/` : "packages/", { method: draft ? "PATCH" : "POST",
+        body: JSON.stringify({ requirement: requirement.id, notes: form.get("notes"), items: selected,
+          override_reason: form.get("override_reason") }) });
+      await saved();
+    } catch (failure) { setError((failure as Error).message); } finally { setBusy(false); }
+  }
+  async function removeDraft() {
+    if (!draft || !window.confirm("Delete this unsubmitted draft?")) return;
+    setBusy(true); setError("");
+    try { await api(`packages/${draft.id}/`, { method: "DELETE" }); await saved(); }
+    catch (failure) { setError((failure as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={draft ? `Edit package attempt ${draft.number}` : "New package draft"} close={close}>
+    <form onSubmit={submit}><ErrorBox error={error} />
+      <div className="review-context"><h3>{requirement.title}</h3><p>{requirement.description || "Review the evidence checklist below."}</p>
+        {requirement.items?.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}
+      </div>
+      <label>Package notes<textarea name="notes" rows={3} defaultValue={draft?.notes || ""} /></label>
+      <h3>Pinned evidence items</h3>
+      {!mappingIds.length && <p className="muted">Map a document to an evidence item first. You can save an empty draft.</p>}
+      {mappingIds.map((mapping) => {
+        const versions: PackageChoice[] = choices.filter((choice) => choice.mapping === mapping);
+        const current = selected.find((entry) => entry.mapping === mapping);
+        return <div className="checklist-edit" key={mapping}>
+          <label className="check"><input type="checkbox" checked={!!current} onChange={(event) => setEntry(mapping, event.target.checked ? { mapping, version: versions[0].version, note: "" } : null)} />Include {versions[0].item_label} · {versions[0].document_title}</label>
+          {current && <><label>Exact version for {versions[0].item_label}<select value={current.version} onChange={(event) => setEntry(mapping, { ...current, version: Number(event.target.value) })}>
+            {versions.map((choice) => <option key={choice.version} value={choice.version}>v{choice.version_number} · {choice.original_name} · SHA-256 {choice.checksum}</option>)}
+          </select></label><label>Evidence note<textarea value={current.note} onChange={(event) => setEntry(mapping, { ...current, note: event.target.value })} /></label></>}
+        </div>;
+      })}
+      <label>Coordinator override reason (required outside assignment or stewardship)<textarea name="override_reason" rows={2} /></label>
+      <div className="form-actions">{draft && <button type="button" className="secondary" onClick={() => void removeDraft()} disabled={busy}>Delete draft</button>}
+        <button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy}>{busy ? "Saving…" : "Save draft"}</button></div>
+    </form>
+  </Modal>;
+}
+
+
+function PackageReviewForm({ attempt, close, saved }: { attempt: PackageAttempt; close: () => void; saved: () => Promise<void> }) {
+  const [outcome, setOutcome] = useState<"approved" | "revisions_requested">("approved");
+  const [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError("");
+    const form = new FormData(event.currentTarget);
+    try { await post(`packages/${attempt.id}/review/`, { outcome, comment: form.get("comment") }); await saved(); }
+    catch (failure) { setError((failure as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={`Review package attempt ${attempt.number}`} close={close}><form onSubmit={submit}>
+    <ErrorBox error={error} /><div className="review-context"><h3>{attempt.requirement_title}</h3><p>{attempt.notes || "No package notes"}</p>
+      <p>Submitted criteria revision {attempt.criteria_revision}: {attempt.criteria_snapshot?.description || "No general criteria"}</p>
+      {attempt.criteria_snapshot?.items.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}
+      {attempt.items.map((item) => <p key={item.mapping}>{item.item_label} · {item.document_title} · {item.original_name} · version {item.version_number} · SHA-256 {item.checksum} · {item.note || "No item note"} <a href={`/api/document-versions/${item.version}/download/`}>Download exact version</a></p>)}
+    </div>
+    <label>Decision<select value={outcome} onChange={(event) => setOutcome(event.target.value as "approved" | "revisions_requested")}><option value="approved">Approve package</option><option value="revisions_requested">Request revisions</option></select></label>
+    <label>Review comments {outcome === "revisions_requested" ? "(required)" : "(optional)"}<textarea name="comment" rows={4} required={outcome === "revisions_requested"} /></label>
+    <p className="muted">This decision applies to the whole pinned package attempt. Reject is pending an Academic Owner rule.</p>
+    <div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy}>{busy ? "Recording…" : "Record package decision"}</button></div>
+  </form></Modal>;
+}
+
 
 function ReviewForm({
   submission,
@@ -2352,6 +2466,7 @@ function CertificationForm({
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState<number[]>([]);
   const completing = outcome === "complete";
+  const packageMode = !!requirement.packages?.length;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -2361,7 +2476,7 @@ function CertificationForm({
       await post(`requirements/${requirement.id}/certifications/`, {
         outcome,
         rationale: f.get("rationale"),
-        ...(completing ? { submissions: selected } : {}),
+        ...(completing ? packageMode ? { packages: selected } : { submissions: selected } : {}),
       });
       await saved();
     } catch (e) {
@@ -2390,7 +2505,10 @@ function CertificationForm({
           <p>{requirement.description || "No general criteria"}</p>
           {requirement.items?.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}
           <h3>Select exact approved evidence</h3>
-          {requirement.certification_candidates?.map((candidate) => <label className="check" key={candidate.submission}>
+          {packageMode ? requirement.package_certification_candidates?.map((attempt) => <label className="check" key={attempt.id}>
+            <input type="checkbox" checked={selected.includes(attempt.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, attempt.id] : selected.filter((id) => id !== attempt.id))} />
+            Approved package attempt {attempt.number} · {attempt.items.map((item) => `${item.item_label}: ${item.original_name} v${item.version_number} SHA-256 ${item.checksum}`).join(" · ")}
+          </label>) : requirement.certification_candidates?.map((candidate) => <label className="check" key={candidate.submission}>
             <input type="checkbox" checked={selected.includes(candidate.submission)} onChange={(event) => setSelected(event.target.checked ? [...selected, candidate.submission] : selected.filter((id) => id !== candidate.submission))} />
             <span>{candidate.item_label} · {candidate.document_title} · {candidate.original_name} · version {candidate.version_number} (#{candidate.version}) · submission #{candidate.submission} · SHA-256 {candidate.checksum} · valid until {candidate.valid_until || "No expiry"} · submission criteria {candidate.submission_criteria_revision ?? "legacy unknown"} <a href={`/api/document-versions/${candidate.version}/download/`} onClick={(event) => event.stopPropagation()}>Download selected version</a></span>
           </label>)}

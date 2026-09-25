@@ -75,6 +75,9 @@ class Requirement(models.Model):
     applicable = models.BooleanField(default=True)
     exclusion_reason = models.TextField(blank=True)
     criteria_revision = models.PositiveIntegerField(default=1)
+    # Pre-F07 requirements retain their item-level write path until their first
+    # package draft. New requirements use packages from the start.
+    legacy_submission_mode = models.BooleanField(default=False)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -199,6 +202,77 @@ class ReviewDecision(ImmutableRecord):
         constraints = [models.CheckConstraint(condition=models.Q(outcome='approved') | ~models.Q(comment=''), name='review_reason_required')]
 
 
+class PackageAttempt(models.Model):
+    STATES = [('draft', 'Draft'), ('submitted', 'Submitted'), ('approved', 'Approved'),
+              ('revisions_requested', 'Revisions requested'), ('withdrawn', 'Withdrawn')]
+    requirement = models.ForeignKey(Requirement, on_delete=models.PROTECT, related_name='packages')
+    number = models.PositiveIntegerField()
+    owner = models.ForeignKey(User, on_delete=models.PROTECT, related_name='package_attempts')
+    source_attempt = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT)
+    status = models.CharField(max_length=22, choices=STATES, default='draft')
+    notes = models.TextField(blank=True)
+    criteria_revision = models.PositiveIntegerField(null=True, blank=True)
+    criteria_snapshot = models.JSONField(null=True, blank=True)
+    withdrawal_reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-number']
+        constraints = [
+            models.UniqueConstraint(fields=['requirement', 'number'], name='package_attempt_number'),
+            models.UniqueConstraint(fields=['requirement'], condition=models.Q(status='submitted'), name='one_submitted_package_per_requirement'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            before = type(self).objects.get(pk=self.pk)
+            if before.status in ('approved', 'revisions_requested', 'withdrawn'):
+                raise ValidationError('Terminal package attempts cannot be changed.')
+            if before.status == 'submitted' and (self.status not in ('approved', 'revisions_requested', 'withdrawn') or
+                    any(getattr(self, field) != getattr(before, field) for field in
+                        ('requirement_id', 'number', 'owner_id', 'source_attempt_id', 'notes',
+                         'criteria_revision', 'criteria_snapshot', 'created_at', 'submitted_at'))):
+                raise ValidationError('Submitted package contents cannot be changed.')
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status != 'draft':
+            raise ValidationError('Submitted and terminal package attempts cannot be deleted.')
+        super().delete(*args, **kwargs)
+
+
+class PackageItem(models.Model):
+    package = models.ForeignKey(PackageAttempt, on_delete=models.PROTECT, related_name='items')
+    mapping = models.ForeignKey(EvidenceMapping, on_delete=models.PROTECT)
+    version = models.ForeignKey(DocumentVersion, on_delete=models.PROTECT, related_name='package_items')
+    note = models.TextField(blank=True)
+    snapshot = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['package', 'mapping'], name='package_mapping_once'),
+                       models.UniqueConstraint(fields=['package', 'version'], name='package_version_once')]
+
+    def save(self, *args, **kwargs):
+        if self.package.status != 'draft':
+            raise ValidationError('Submitted package items cannot be changed.')
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.package.status != 'draft':
+            raise ValidationError('Submitted package items cannot be deleted.')
+        super().delete(*args, **kwargs)
+
+
+class PackageDecision(ImmutableRecord):
+    package = models.OneToOneField(PackageAttempt, on_delete=models.PROTECT, related_name='decision')
+    reviewer = models.ForeignKey(User, on_delete=models.PROTECT)
+    outcome = models.CharField(max_length=22, choices=[('approved', 'Approved'), ('revisions_requested', 'Revisions requested')])
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class RequirementCertification(ImmutableRecord):
     """Append-only coordinator decisions that determine requirement completion."""
     requirement = models.ForeignKey(Requirement, on_delete=models.PROTECT, related_name='certifications')
@@ -221,6 +295,15 @@ class CertificationEvidence(ImmutableRecord):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['certification', 'submission'], name='unique_certification_submission')]
+
+
+class CertificationPackage(ImmutableRecord):
+    certification = models.ForeignKey(RequirementCertification, on_delete=models.PROTECT, related_name='packages')
+    package = models.ForeignKey(PackageAttempt, on_delete=models.PROTECT)
+    snapshot = models.JSONField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['certification', 'package'], name='unique_certification_package')]
 
 
 class ApplicabilityDecision(ImmutableRecord):

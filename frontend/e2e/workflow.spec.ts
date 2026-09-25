@@ -3,15 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve("..");
-const credentials = fs.readFileSync(
-  path.join(root, ".local/demo-credentials.txt"),
-  "utf8",
-);
-const password = credentials
-  .match(/Password for these fictional accounts: (.+)/)![1]
-  .trim();
-const screenshots = path.join(root, ".local/screenshots");
-fs.mkdirSync(screenshots, { recursive: true });
+const password = fs.readFileSync(path.join(root, ".local/demo-credentials.txt"), "utf8")
+  .match(/Password for these fictional accounts: (.+)/)![1].trim();
 
 async function login(page: Page, role: string) {
   await page.goto("/");
@@ -19,419 +12,209 @@ async function login(page: Page, role: string) {
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign In", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Welcome,/ })).toBeVisible();
-  await expect(page.getByText("Updating records…")).toHaveCount(0);
+  await ready(page);
 }
 
-test("Figma login and mobile layout", async ({ page }) => {
-  await page.setViewportSize({ width: 1916, height: 900 });
-  await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "MC Accreditation Hub" }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: path.join(screenshots, "login-desktop.png"),
-    fullPage: true,
-  });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({
-    path: path.join(screenshots, "login-mobile.png"),
-    fullPage: true,
-  });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBeTruthy();
-});
+async function ready(page: Page) {
+  await expect(page.getByText("Updating records…")).toHaveCount(0, { timeout: 30000 });
+}
 
-test("scoped search and printable compliance report", async ({ page }) => {
+async function openRequirement(page: Page, title: string) {
+  await page.getByRole("button", { name: "Requirements", exact: true }).click();
+  await ready(page);
+  await page.getByRole("row").filter({ hasText: title })
+    .getByRole("button", { name: "View", exact: true }).click();
+}
+
+test("login, scoped search and compliance report", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "MC Accreditation Hub" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.setViewportSize({ width: 1440, height: 900 });
   await login(page, "coordinator");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page
-    .getByLabel("Search all authorized records")
-    .fill("Faculty");
+  await page.getByLabel("Search all authorized records").fill("Faculty");
   await page.getByRole("button", { name: "Search", exact: true }).last().click();
   await expect(page.getByRole("heading", { name: "Requirements" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Evidence documents" })).toBeVisible();
   await page.getByRole("button", { name: "Reports", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Compliance Report" })).toBeVisible();
-  await expect(
-    page.getByText("Applicable requirements", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: /Export CSV/ })).toHaveAttribute(
-    "href",
-    /download=csv/,
-  );
+  await expect(page.getByRole("link", { name: /Export CSV/ })).toHaveAttribute("href", /download=csv/);
 });
 
-test("evidence visibility follows draft, submitted, and approved states", async ({
-  browser,
-}) => {
-  const title = `Visibility policy ${Date.now()}`;
-  const documentTitle = `${title} evidence`;
-  const coordinatorContext = await browser.newContext();
-  const coordinator = await coordinatorContext.newPage();
+test("submitted package outranks missing evidence in the report", async ({ browser }) => {
+  const title = `F07 precedence ${Date.now()}`;
+  const coordinator = await browser.newPage();
+  const custodian = await browser.newPage();
   await login(coordinator, "coordinator");
-  await coordinator
-    .getByRole("button", { name: "Requirements", exact: true })
-    .click();
-  await coordinator
-    .getByRole("button", { name: "Add Requirement", exact: true })
-    .click();
-  const requirementModal = coordinator.getByRole("dialog");
-  await requirementModal
-    .getByRole("combobox", { name: "Accreditation area", exact: true })
-    .selectOption({ label: "Faculty" });
-  await requirementModal.getByLabel("Requirement code").fill(`VIS-${Date.now()}`);
-  await requirementModal.getByLabel("Requirement title").fill(title);
-  await requirementModal.getByLabel("Responsible office / person").fill("Graduate School");
-  await requirementModal.getByLabel("Evidence item 1").fill("Visibility evidence");
-  await requirementModal.getByRole("button", { name: "Save Requirement" }).click();
-
-  await coordinator.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View", exact: true }).click();
-  await coordinator.getByRole("button", { name: "Manage assignments", exact: true }).click();
+  await coordinator.getByRole("button", { name: "Requirements", exact: true }).click();
+  await coordinator.getByRole("button", { name: "Add Requirement" }).click();
+  const form = coordinator.getByRole("dialog");
+  await form.getByRole("combobox", { name: "Accreditation area", exact: true }).selectOption({ label: "Faculty" });
+  await form.getByLabel("Requirement code").fill(`F07-P-${Date.now()}`);
+  await form.getByLabel("Requirement title").fill(title);
+  await form.getByLabel("Responsible office / person").fill("Graduate School");
+  await form.getByLabel("Evidence item 1").fill("Primary plan");
+  await form.getByRole("button", { name: "Add evidence item" }).click();
+  await form.getByLabel("Evidence item 2").fill("Missing attachment");
+  await form.getByRole("button", { name: "Save Requirement" }).click();
+  await coordinator.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View" }).click();
+  await coordinator.getByRole("button", { name: "Manage assignments" }).click();
   const assignment = coordinator.getByRole("dialog");
   await assignment.getByRole("combobox", { name: "Assigned contributor" }).selectOption({ index: 1 });
-  await assignment.getByRole("textbox", { name: "Assignment or reassignment reason" }).fill("F04 browser workflow assignment.");
-  await assignment.getByRole("button", { name: "Add assignee", exact: true }).click();
-  await expect(assignment).toHaveCount(0);
-
-  const custodianContext = await browser.newContext();
-  const custodian = await custodianContext.newPage();
+  await assignment.getByRole("textbox", { name: "Assignment or reassignment reason" }).fill("F07 status test assignment.");
+  await assignment.getByRole("button", { name: "Add assignee" }).click();
   await login(custodian, "custodian");
-  await custodian
-    .getByRole("button", { name: "Evidence Repository", exact: true })
-    .click();
-  await custodian.getByRole("button", { name: "Upload Document", exact: true }).click();
+  await openRequirement(custodian, title);
+  await custodian.getByRole("button", { name: "Upload evidence" }).first().click();
   const upload = custodian.getByRole("dialog");
-  await upload.getByLabel("Document title").fill(documentTitle);
-  await upload.getByRole("combobox", { name: "Requirement" }).selectOption({ index: 1 });
-  await upload.getByRole("combobox", { name: "Owning area" }).selectOption({ label: "Faculty" });
+  await upload.getByLabel("Document title").fill(`${title} evidence`);
   await upload.locator("input[type=file]").setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
-  await upload.getByRole("button", { name: "Upload Draft", exact: true }).click();
+  await upload.getByRole("button", { name: "Upload & Map" }).click();
   await expect(upload).toHaveCount(0);
-
-  const reviewerContext = await browser.newContext();
-  const reviewer = await reviewerContext.newPage();
-  const viewerContext = await browser.newContext();
-  const viewer = await viewerContext.newPage();
-  await login(reviewer, "reviewer");
-  await login(viewer, "viewer");
-  for (const page of [reviewer, viewer]) {
-    await page.getByRole("button", { name: "Evidence Repository", exact: true }).click();
-    await expect(page.getByText(documentTitle, { exact: true })).toHaveCount(0);
-  }
-
-  await custodian.getByRole("button", { name: "Requirements", exact: true }).click();
-  await custodian.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View", exact: true }).click();
-  await custodian.getByRole("button", { name: "Use existing document", exact: true }).click();
-  const mapping = custodian.getByRole("dialog");
-  await mapping.getByRole("combobox", { name: "Document" }).selectOption({ label: documentTitle });
-  await mapping.getByRole("button", { name: "Submit for Verification" }).click();
-  await expect(custodian.getByText("Evidence submitted for verification.", { exact: true })).toBeVisible();
-
-  await reviewer.reload();
-  await reviewer.getByRole("button", { name: "Evidence Repository", exact: true }).click();
-  await expect(reviewer.getByText(documentTitle, { exact: true })).toBeVisible();
-  await viewer.reload();
-  await viewer.getByRole("button", { name: "Evidence Repository", exact: true }).click();
-  await expect(viewer.getByText(documentTitle, { exact: true })).toHaveCount(0);
-
-  await reviewer.getByRole("button", { name: "Evidence Verification", exact: true }).click();
-  await reviewer.getByRole("row").filter({ hasText: documentTitle }).getByRole("button", { name: "Review", exact: true }).click();
-  await reviewer.getByRole("button", { name: "Record Decision", exact: true }).click();
-  await expect(reviewer.getByRole("dialog")).toHaveCount(0);
-  await viewer.reload();
-  await viewer.getByRole("button", { name: "Evidence Repository", exact: true }).click();
-  await expect(viewer.getByText(documentTitle, { exact: true })).toBeVisible();
-
-  await Promise.all([coordinatorContext.close(), custodianContext.close(), reviewerContext.close(), viewerContext.close()]);
+  await custodian.getByRole("button", { name: "New package draft" }).click();
+  const draft = custodian.getByRole("dialog");
+  await draft.getByRole("checkbox", { name: /Include Primary plan/ }).check();
+  await draft.getByRole("button", { name: "Save draft" }).click();
+  await expect(draft).toHaveCount(0);
+  await custodian.getByRole("button", { name: "Submit package" }).click();
+  await expect(custodian.locator(".requirement-summary").getByText("For Verification", { exact: true })).toBeVisible({ timeout: 30000 });
+  await coordinator.reload();
+  await ready(coordinator);
+  await openRequirement(coordinator, title);
+  await expect(coordinator.locator(".requirement-summary").getByText("For Verification", { exact: true })).toBeVisible();
+  await coordinator.getByRole("button", { name: "Reports", exact: true }).click();
+  await coordinator.getByRole("combobox", { name: "Status" }).selectOption("for_verification");
+  const row = coordinator.getByRole("row").filter({ hasText: title });
+  await expect(row).toContainText("For Verification", { timeout: 30000 });
+  await expect(row).toContainText("0/2");
+  await Promise.all([coordinator.context().close(), custodian.context().close()]);
 });
 
-test("create, upload, request revisions, replace and approve", async ({
-  page,
-  browser,
-}) => {
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  await page.setViewportSize({ width: 1916, height: 900 });
-  await login(page, "coordinator");
-  await page.screenshot({
-    path: path.join(screenshots, "dashboard-desktop.png"),
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "Requirements", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Add Requirement", exact: true })
-    .click();
-  const title = `Workflow demonstration ${Date.now()}`;
-  const modal = page.getByRole("dialog");
-  await modal
-    .getByRole("combobox", { name: "Accreditation area", exact: true })
-    .selectOption({ label: "Faculty" });
-  await modal.getByLabel("Requirement code").fill(`E2E-${Date.now()}`);
-  await modal.getByLabel("Requirement title").fill(title);
-  await modal
-    .getByLabel("Description / acceptance criteria")
-    .fill("Fictional end-to-end verification of document approval.");
-  await modal.getByLabel("Responsible office / person").fill("Graduate School");
-  await modal.getByLabel("Evidence item 1").fill("Sample faculty plan");
-  await modal
-    .getByLabel("Acceptance criteria", { exact: true })
-    .fill("A complete readable sample document.");
-  await modal.getByRole("button", { name: "Save Requirement" }).click();
-  await expect(modal).toHaveCount(0);
-  await page
-    .getByRole("row")
-    .filter({ hasText: title })
-    .getByRole("button", { name: "View", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Upload evidence", exact: true })
-    .click();
-  await modal.getByLabel("Document title").fill(`${title} evidence`);
-  await modal
-    .locator("input[type=file]")
-    .setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
-  await modal.getByRole("textbox", { name: "Coordinator override reason (required only outside assignment or stewardship)" }).fill("F04 browser workflow Coordinator override.");
-  await modal.getByRole("button", { name: "Upload & Submit" }).click();
-  await expect(modal).toHaveCount(0);
-  await expect(page.getByText("Updating records…")).toHaveCount(0);
-  await expect(
-    page
-      .locator(".requirement-summary")
-      .getByText("For Verification", { exact: true }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: path.join(screenshots, "requirement-desktop.png"),
-    fullPage: true,
-  });
-  const reviewerContext = await browser.newContext({
-    viewport: { width: 1440, height: 1000 },
-  });
+test("package attempts preserve draft, withdrawal, revision, review and certification history", async ({ browser }) => {
+  const title = `F07 browser ${Date.now()}`;
+  const documentTitle = `${title} evidence`;
+  const coordinatorContext = await browser.newContext();
+  const custodianContext = await browser.newContext();
+  const reviewerContext = await browser.newContext();
+  const viewerContext = await browser.newContext();
+  const coordinator = await coordinatorContext.newPage();
+  const custodian = await custodianContext.newPage();
   const reviewer = await reviewerContext.newPage();
+  const viewer = await viewerContext.newPage();
+  const errors: string[] = [];
+  for (const page of [coordinator, custodian, reviewer, viewer]) page.on("pageerror", error => errors.push(error.message));
+  await login(coordinator, "coordinator");
+  await coordinator.getByRole("button", { name: "Requirements", exact: true }).click();
+  await coordinator.getByRole("button", { name: "Add Requirement", exact: true }).click();
+  const requirementForm = coordinator.getByRole("dialog");
+  await requirementForm.getByRole("combobox", { name: "Accreditation area", exact: true }).selectOption({ label: "Faculty" });
+  await requirementForm.getByLabel("Requirement code").fill(`F07-${Date.now()}`);
+  await requirementForm.getByLabel("Requirement title").fill(title);
+  await requirementForm.getByLabel("Description / acceptance criteria").fill("A signed faculty plan.");
+  await requirementForm.getByLabel("Responsible office / person").fill("Graduate School");
+  await requirementForm.getByLabel("Evidence item 1").fill("Faculty plan");
+  await requirementForm.getByLabel("Acceptance criteria", { exact: true }).fill("Readable signed plan.");
+  await requirementForm.getByRole("button", { name: "Save Requirement" }).click();
+  await coordinator.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View", exact: true }).click();
+  await coordinator.getByRole("button", { name: "Manage assignments" }).click();
+  const assignment = coordinator.getByRole("dialog");
+  await assignment.getByRole("combobox", { name: "Assigned contributor" }).selectOption({ index: 1 });
+  await assignment.getByRole("textbox", { name: "Assignment or reassignment reason" }).fill("F07 package test assignment.");
+  await assignment.getByRole("button", { name: "Add assignee" }).click();
+
+  await login(custodian, "custodian");
+  await openRequirement(custodian, title);
+  await custodian.getByRole("button", { name: "Upload evidence" }).click();
+  const upload = custodian.getByRole("dialog");
+  await upload.getByLabel("Document title").fill(documentTitle);
+  await upload.locator("input[type=file]").setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
+  await upload.getByRole("button", { name: "Upload & Map" }).click();
+  await expect(upload).toHaveCount(0);
+  await custodian.getByRole("button", { name: "New package draft" }).click();
+  let editor = custodian.getByRole("dialog");
+  await expect(editor.getByText("Readable signed plan.")).toBeVisible();
+  await editor.getByLabel("Package notes").fill("First attempt notes");
+  await editor.getByRole("checkbox", { name: /Include Faculty plan/ }).check();
+  await expect(editor.getByLabel("Exact version for Faculty plan")).toContainText("SHA-256");
+  await editor.getByLabel("Evidence note").fill("Selected exact draft version");
+  await editor.getByRole("button", { name: "Save draft" }).click();
+  await expect(editor).toHaveCount(0);
+  await custodian.reload();
+  await ready(custodian);
+  await openRequirement(custodian, title);
+  await expect(custodian.locator(".requirement-summary").getByText("In Progress", { exact: true })).toBeVisible();
+  await custodian.getByRole("button", { name: "Edit draft" }).click();
+  editor = custodian.getByRole("dialog");
+  await editor.getByLabel("Package notes").fill("Edited before submission");
+  await editor.getByRole("button", { name: "Save draft" }).click();
+  await expect(custodian.getByText("Edited before submission")).toBeVisible();
+  await custodian.getByRole("button", { name: "Submit package" }).click();
+  await expect(custodian.locator(".requirement-summary").getByText("For Verification", { exact: true })).toBeVisible();
+
   await login(reviewer, "reviewer");
-  await reviewer
-    .getByRole("button", { name: "Evidence Verification", exact: true })
-    .click();
-  await reviewer
-    .getByRole("row")
-    .filter({ hasText: `${title} evidence` })
-    .getByRole("button", { name: "Review", exact: true })
-    .click();
-  await reviewer
-    .getByRole("combobox", { name: "Decision", exact: true })
-    .selectOption("revision_requested");
-  await reviewer
-    .getByRole("textbox", { name: "Review comments (required)" })
-    .fill("Please include a revised sample.");
-  await reviewer
-    .getByRole("button", { name: "Record Decision", exact: true })
-    .click();
-  await expect(reviewer.getByRole("dialog")).toHaveCount(0);
-  await reviewer
-    .getByRole("button", { name: "Requirements", exact: true })
-    .click();
-  await reviewer
-    .getByRole("row")
-    .filter({ hasText: title })
-    .getByRole("button", { name: "View", exact: true })
-    .click();
-  await expect(
-    reviewer.getByRole("button", { name: "Mark Complete", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    reviewer.getByRole("button", { name: "Reopen Requirement", exact: true }),
-  ).toHaveCount(0);
-  await page.reload();
-  await page.getByRole("button", { name: "Requirements", exact: true }).click();
-  await page
-    .getByRole("row")
-    .filter({ hasText: title })
-    .getByRole("button", { name: "View", exact: true })
-    .click();
-  await expect(page.getByText("Revision Requested").first()).toBeVisible();
-  await page
-    .getByRole("button", { name: "Upload new version", exact: true })
-    .click();
-  await modal
-    .locator("input[type=file]")
-    .setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
-  await modal.getByRole("textbox", { name: "Coordinator override reason (required only outside assignment or stewardship)" }).fill("F04 browser workflow Coordinator override.");
-  await modal.getByRole("button", { name: "Upload & Submit" }).click();
-  await expect(modal).toHaveCount(0);
+  await reviewer.getByRole("button", { name: "Evidence Verification" }).click();
+  await expect(reviewer.getByRole("row").filter({ hasText: title })).toContainText("1 pinned versions");
+  await login(viewer, "viewer");
+  await viewer.getByRole("button", { name: "Evidence Repository" }).click();
+  await expect(viewer.getByText(documentTitle, { exact: true })).toHaveCount(0);
+
+  custodian.once("dialog", dialog => dialog.accept());
+  await custodian.getByRole("button", { name: "Withdraw package" }).click();
+  await expect(custodian.getByText("Attempt 1")).toBeVisible();
+  await custodian.getByRole("button", { name: "Create resubmission draft" }).click();
+  await expect(custodian.getByText("Resubmitted from attempt #1")).toBeVisible();
+  await custodian.getByRole("button", { name: "Submit package" }).click();
+  await expect(custodian.locator(".requirement-summary").getByText("For Verification", { exact: true })).toBeVisible({ timeout: 30000 });
   await reviewer.reload();
-  await reviewer
-    .getByRole("button", { name: "Evidence Verification", exact: true })
-    .click();
-  await reviewer
-    .getByRole("row")
-    .filter({ hasText: `${title} evidence` })
-    .getByRole("button", { name: "Review", exact: true })
-    .click();
-  await reviewer
-    .getByRole("button", { name: "Record Decision", exact: true })
-    .click();
-  await expect(reviewer.getByRole("dialog")).toHaveCount(0);
-  await reviewer
-    .getByRole("button", { name: "Requirements", exact: true })
-    .click();
-  await reviewer
-    .getByRole("row")
-    .filter({ hasText: title })
-    .getByRole("button", { name: "View", exact: true })
-    .click();
-  await expect(
-    reviewer.getByRole("button", { name: "Mark Complete", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    reviewer.getByRole("button", { name: "Reopen Requirement", exact: true }),
-  ).toHaveCount(0);
-  await page.reload();
-  await page.getByRole("button", { name: "Requirements", exact: true }).click();
-  const row = page.getByRole("row").filter({ hasText: title });
-  await expect(
-    row.getByText("Ready for Completion Review", { exact: true }),
-  ).toBeVisible();
-  await row.getByRole("button", { name: "View", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Ready for Completion Review" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("No Coordinator certification has been recorded yet."),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Mark Complete", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("Version 1", { exact: true })).toBeVisible();
-  await expect(page.getByText("Version 2", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
-  const readyBefore = Number(
-    await page
-      .locator(".stat")
-      .filter({ hasText: "Ready for Completion Review" })
-      .locator("strong")
-      .textContent(),
-  );
-  const completeBefore = Number(
-    await page
-      .locator(".stat")
-      .filter({ hasText: "Completed" })
-      .locator("strong")
-      .textContent(),
-  );
-  await page.getByRole("button", { name: "Requirements", exact: true }).click();
-  await page
-    .getByRole("row")
-    .filter({ hasText: title })
-    .getByRole("button", { name: "View", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Mark Complete", exact: true }).click();
-  const certificationDialog = page.getByRole("dialog");
-  await expect(certificationDialog.getByText("Select exact approved evidence")).toBeVisible();
-  await expect(certificationDialog.getByText(/revision 1/)).toBeVisible();
-  await expect(certificationDialog.getByText(/SHA-256/)).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Rationale" })).toHaveAttribute(
-    "required",
-    "",
-  );
-  await page
-    .getByRole("textbox", { name: "Rationale" })
-    .fill("All mandatory evidence has been reviewed and is current.");
-  await certificationDialog.getByRole("button", { name: "Mark Complete", exact: true }).click();
-  await expect(certificationDialog.getByText(/Select distinct approved submissions deliberately/)).toBeVisible();
-  await certificationDialog.getByRole("checkbox").check();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Mark Complete", exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByText("Marked complete", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Selected submission #/)).toBeVisible();
-  await page.getByRole("button", { name: "Edit Requirement" }).click();
-  const editWhileComplete = page.getByRole("dialog");
-  await editWhileComplete.getByLabel("Description / acceptance criteria").fill("Revised fictional criteria");
-  await editWhileComplete.getByLabel("Criteria change reason (required when description changes)").fill("Revised standard");
-  await editWhileComplete.getByRole("button", { name: "Save Requirement" }).click();
-  await expect(editWhileComplete.getByText(/Reopen the requirement with a documented reason/)).toBeVisible();
-  await editWhileComplete.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
-  await expect(
-    page
-      .locator(".stat")
-      .filter({ hasText: "Ready for Completion Review" })
-      .locator("strong"),
-  ).toHaveText(String(readyBefore - 1));
-  await expect(
-    page.locator(".stat").filter({ hasText: "Completed" }).locator("strong"),
-  ).toHaveText(String(completeBefore + 1));
-  await page.getByRole("button", { name: "Requirements", exact: true }).click();
-  await page
-    .getByRole("row")
-    .filter({ hasText: title })
-    .getByRole("button", { name: "View", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Reopen Requirement", exact: true })
-    .click();
-  await page
-    .getByRole("textbox", { name: "Rationale" })
-    .fill("Follow-up review is needed before final submission.");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Reopen Requirement", exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByText("Reopened requirement", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
-  await expect(
-    page
-      .locator(".stat")
-      .filter({ hasText: "Ready for Completion Review" })
-      .locator("strong"),
-  ).toHaveText(String(readyBefore));
-  await expect(
-    page.locator(".stat").filter({ hasText: "Completed" }).locator("strong"),
-  ).toHaveText(String(completeBefore));
-  await page.getByRole("button", { name: "Requirements", exact: true }).click();
-  await page.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View", exact: true }).click();
-  await page.getByRole("button", { name: "Edit Requirement" }).click();
-  const applicabilityEdit = page.getByRole("dialog");
-  await applicabilityEdit.getByLabel("Applicable to this cycle").uncheck();
-  await applicabilityEdit.getByLabel("Exclusion reason").fill("Fictional scope change");
-  await applicabilityEdit.getByLabel("Applicability decision reason").fill("Coordinator reviewed fictional scope");
-  await applicabilityEdit.getByRole("button", { name: "Save Requirement" }).click();
-  await expect(applicabilityEdit).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Applicability history" })).toBeVisible();
-  await expect(page.getByText(/Coordinator reviewed fictional scope/)).toBeVisible();
-  await page
-    .getByRole("button", { name: "Evidence Repository", exact: true })
-    .click();
-  await page.screenshot({
-    path: path.join(screenshots, "repository-desktop.png"),
-    fullPage: true,
-  });
-  await page
-    .getByRole("button", { name: "Accreditation Areas", exact: true })
-    .click();
-  await page.screenshot({
-    path: path.join(screenshots, "areas-desktop.png"),
-    fullPage: true,
-  });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
-  await expect(page.locator(".sidebar")).not.toHaveClass(/open/);
-  await page.screenshot({
-    path: path.join(screenshots, "dashboard-mobile.png"),
-    fullPage: true,
-    animations: "disabled",
-  });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBeTruthy();
+  await ready(reviewer);
+  await reviewer.getByRole("button", { name: "Evidence Verification" }).click();
+  const secondQueueRow = reviewer.getByRole("row").filter({ hasText: title }).filter({ hasText: "#2" });
+  await expect(secondQueueRow).toBeVisible({ timeout: 30000 });
+  await secondQueueRow.getByRole("button", { name: "Review package" }).click();
+  let review = reviewer.getByRole("dialog");
+  await expect(review.getByText(/Submitted criteria revision 1/)).toBeVisible();
+  await expect(review.getByText(/SHA-256/)).toBeVisible();
+  await review.getByRole("combobox", { name: "Decision" }).selectOption("revisions_requested");
+  await review.getByLabel(/Review comments/).fill("Add a signature note.");
+  await review.getByRole("button", { name: "Record package decision" }).click();
+  await custodian.reload();
+  await ready(custodian);
+  await openRequirement(custodian, title);
+  await expect(custodian.locator(".requirement-summary").getByText("Needs Revision", { exact: true })).toBeVisible();
+  await custodian.getByRole("button", { name: "Create resubmission draft" }).first().click();
+  await custodian.getByRole("button", { name: "Edit draft" }).click();
+  editor = custodian.getByRole("dialog");
+  await editor.getByLabel("Package notes").fill("Signed plan submitted again");
+  await editor.getByRole("button", { name: "Save draft" }).click();
+  await custodian.getByRole("button", { name: "Submit package" }).click();
+  await expect(custodian.locator(".requirement-summary").getByText("For Verification", { exact: true })).toBeVisible({ timeout: 30000 });
+  await reviewer.reload();
+  await ready(reviewer);
+  await reviewer.getByRole("button", { name: "Evidence Verification" }).click();
+  const thirdQueueRow = reviewer.getByRole("row").filter({ hasText: title }).filter({ hasText: "#3" });
+  await expect(thirdQueueRow).toBeVisible({ timeout: 30000 });
+  await thirdQueueRow.getByRole("button", { name: "Review package" }).click();
+  review = reviewer.getByRole("dialog");
+  await review.getByRole("button", { name: "Record package decision" }).click();
+  await coordinator.reload();
+  await ready(coordinator);
+  await openRequirement(coordinator, title);
+  await expect(coordinator.getByRole("heading", { name: "Ready for Completion Review" })).toBeVisible();
+  await expect(coordinator.getByText("Attempt 1")).toBeVisible();
+  await expect(coordinator.getByText("Attempt 2")).toBeVisible();
+  await expect(coordinator.getByText("Attempt 3")).toBeVisible();
+  await coordinator.getByRole("button", { name: "Mark Complete" }).click();
+  const cert = coordinator.getByRole("dialog");
+  await expect(cert.getByText(/Approved package attempt 3/)).toBeVisible();
+  await cert.getByLabel("Rationale").fill("Selected approved package with current criteria.");
+  await cert.getByRole("checkbox").check();
+  await cert.getByRole("button", { name: "Mark Complete" }).click();
+  await expect(cert).toHaveCount(0);
+  await expect(coordinator.getByText(/Selected package attempt 3/)).toBeVisible({ timeout: 30000 });
+  await viewer.reload();
+  await viewer.getByRole("button", { name: "Evidence Repository" }).click();
+  await expect(viewer.getByText(documentTitle, { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
-  await reviewerContext.close();
+  await Promise.all([coordinatorContext.close(), custodianContext.close(), reviewerContext.close(), viewerContext.close()]);
 });

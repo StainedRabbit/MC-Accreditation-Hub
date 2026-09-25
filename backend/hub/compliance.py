@@ -31,7 +31,19 @@ def item_state(item):
 
 def certification_has_support(certification):
     return bool(certification and certification.outcome == 'complete' and
-                certification.criteria_snapshot is not None and certification.evidence.exists())
+                certification.criteria_snapshot is not None and
+                (certification.evidence.exists() or certification.packages.exists()))
+
+
+def package_is_ready(package, requirement):
+    if package.status != 'approved' or package.criteria_revision != requirement.criteria_revision:
+        return False
+    items = list(package.items.all())
+    required = {item.id for item in requirement.items.all() if item.mandatory}
+    if not required.issubset({entry.mapping.item_id for entry in items}):
+        return False
+    as_of = timezone.localtime(requirement.area.cycle.closed_at).date() if requirement.area.cycle.status == 'closed' and requirement.area.cycle.closed_at else timezone.localdate()
+    return all(not entry.version.valid_until or entry.version.valid_until >= as_of for entry in items)
 
 
 def requirement_result(requirement):
@@ -41,22 +53,31 @@ def requirement_result(requirement):
     approved = states.count('approved')
     latest_certification = next(iter(requirement.certifications.all()), None)
     evidence_ready = bool(required) and approved == len(required)
+    packages = list(requirement.packages.all())
+    latest_nonwithdrawn = next((package for package in packages if package.status != 'withdrawn'), None)
+    package_ready = any(package_is_ready(package, requirement) for package in packages)
+    if package_ready:
+        approved = len(required)
     if not requirement.active:
         status = 'draft'
     elif not requirement.applicable:
         status = 'excluded'
     elif certification_has_support(latest_certification):
         status = 'complete'
-    elif evidence_ready:
+    elif any(package.status == 'submitted' for package in packages) or (not packages and 'pending' in states):
+        status = 'for_verification'
+    elif latest_nonwithdrawn and latest_nonwithdrawn.status == 'revisions_requested':
+        status = 'needs_revision'
+    elif not packages and any(state in ('revision_requested', 'rejected', 'outdated', 'expired') for state in states):
+        status = 'needs_revision'
+    elif package_ready or (not packages and evidence_ready):
         status = 'ready_for_completion_review'
-    elif states and all(s == 'missing' for s in states):
-        status = 'missing'
-    elif any(s in ['revision_requested', 'rejected', 'expired', 'outdated', 'missing'] for s in states):
-        status = 'for_compliance'
+    elif any(package.status == 'draft' for package in packages) or (not packages and any(item.mappings.all() for item in items)) or (latest_certification and latest_certification.outcome == 'reopened'):
+        status = 'in_progress'
     else:
-        status = 'pending'
+        status = 'missing'
     return {'status': status, 'approved_items': approved, 'required_items': len(required),
-            'ready_for_completion_review': evidence_ready and status != 'complete',
+            'ready_for_completion_review': status == 'ready_for_completion_review',
             'legacy_certification': bool(latest_certification and latest_certification.outcome == 'complete' and not certification_has_support(latest_certification)),
             'latest_certification': latest_certification}
 
@@ -65,14 +86,16 @@ def summary(requirements):
     requirements = list(requirements)
     results = [requirement_result(r) for r in requirements if r.active and r.applicable]
     total = len(results)
-    counts = {s: sum(r['status'] == s for r in results) for s in ['complete', 'ready_for_completion_review', 'pending', 'for_compliance', 'missing']}
+    counts = {s: sum(r['status'] == s for r in results) for s in ['complete', 'for_verification', 'needs_revision', 'ready_for_completion_review', 'in_progress', 'missing']}
     return {**counts, 'total': total, 'percentage': round(100 * counts['complete'] / total, 2) if total else None,
             'excluded': sum(r.active and not r.applicable for r in requirements),
-            'formula': '100 × complete applicable requirements / total applicable requirements', 'formula_version': 2}
+            'formula': '100 × complete applicable requirements / total applicable requirements', 'formula_version': 3}
 
 
 def with_evidence(queryset):
     return queryset.select_related('area', 'area__cycle').prefetch_related(
         'items__mappings__submissions__version', 'items__mappings__submissions__decision',
         'certifications__coordinator', 'certifications__evidence__submission',
-        'applicability_decisions__coordinator')
+        'certifications__packages__package', 'applicability_decisions__coordinator',
+        'packages__owner', 'packages__decision__reviewer',
+        'packages__items__mapping__item', 'packages__items__mapping__document', 'packages__items__version')

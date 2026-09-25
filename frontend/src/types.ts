@@ -24,8 +24,9 @@ export type Summary = {
   total: number;
   complete: number;
   ready_for_completion_review: number;
-  pending: number;
-  for_compliance: number;
+  for_verification: number;
+  needs_revision: number;
+  in_progress: number;
   missing: number;
   excluded: number;
   percentage: number | null;
@@ -52,6 +53,7 @@ export type Submission = {
   version: number;
   version_number: number;
   criteria_revision: number;
+  legacy_submission_mode: boolean;
   document_title: string;
   document: string;
   item_label: string;
@@ -105,6 +107,9 @@ export type Requirement = {
   can_complete?: boolean;
   can_reopen?: boolean;
   certifications?: Certification[];
+  packages?: PackageAttempt[];
+  package_choices?: PackageChoice[];
+  package_certification_candidates?: PackageAttempt[];
   applicability_history?: ApplicabilityDecision[];
   certification_candidates?: CertificationEvidence[];
   items?: Item[];
@@ -128,6 +133,22 @@ export type Certification = {
   legacy: boolean;
   criteria_snapshot: { revision: number; code: string; title: string; cycle: number; area: number; instrument: string; description: string; items: Array<{ id: number; label: string; criteria: string; mandatory: boolean }> } | null;
   evidence: CertificationEvidence[];
+  packages: Array<{ package: number; attempt: number; owner: number; criteria_revision: number; items: PackageItem[] }>;
+};
+export type PackageItem = {
+  mapping: number; item: number; item_label: string; document: string; document_title: string;
+  version: number; version_number: number; original_name: string; checksum: string;
+  valid_until: string | null; note: string;
+};
+export type PackageChoice = Omit<PackageItem, "document" | "note">;
+export type PackageAttempt = {
+  id: number; requirement: number; requirement_title: string; number: number; owner: string; owner_id: number;
+  source_attempt: number | null; source_attempt_number: number | null; status: "draft" | "submitted" | "approved" | "revisions_requested" | "withdrawn";
+  requires_override: boolean;
+  notes: string; criteria_revision: number | null; criteria_snapshot: Certification["criteria_snapshot"];
+  withdrawal_reason: string; created_at: string; submitted_at: string | null; resolved_at: string | null;
+  items: PackageItem[]; decision: Decision | null; can_edit: boolean; can_submit: boolean;
+  can_withdraw: boolean; can_review: boolean; can_resubmit: boolean;
 };
 export type CertificationEvidence = {
   submission: number; item: number; item_label: string; document: string; document_title: string;
