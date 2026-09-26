@@ -590,6 +590,47 @@ class WorkflowTests(WorkflowFixture, TestCase):
                                                               'requirement': self.requirement.id}, format='multipart').status_code, 404)
         self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'No'}, format='json').status_code, 403)
 
+    def test_upload_content_validation_follows_scope_and_steward_checks(self):
+        from .files import validate_upload
+        teammate = self.user('custodian', self.area, 'unassigned-teammate')
+
+        def create_payload():
+            return {'file': pdf_file(), 'title': 'Synthetic evidence', 'area': self.area.id,
+                    'requirement': self.requirement.id}
+
+        with patch('hub.views.validate_upload', wraps=validate_upload) as validate:
+            self.client.force_authenticate(self.viewer)
+            self.assertEqual(self.client.post('/api/documents/', create_payload(), format='multipart').status_code, 404)
+            self.client.force_authenticate(self.outsider)
+            self.assertEqual(self.client.post('/api/documents/', create_payload(), format='multipart').status_code, 404)
+            self.client.force_authenticate(teammate)
+            self.assertEqual(self.client.post('/api/documents/', create_payload(), format='multipart').status_code, 403)
+            self.client.force_authenticate(self.coordinator)
+            self.assertEqual(self.client.post('/api/documents/', create_payload(), format='multipart').status_code, 400)
+            validate.assert_not_called()
+
+        document = self.upload()
+        version_url = f'/api/documents/{document["id"]}/versions/'
+        with patch('hub.views.validate_upload', wraps=validate_upload) as validate:
+            self.client.force_authenticate(self.outsider)
+            self.assertEqual(self.client.post(version_url, {'file': pdf_file()}, format='multipart').status_code, 404)
+            self.client.force_authenticate(teammate)
+            self.assertEqual(self.client.post(version_url, {'file': pdf_file()}, format='multipart').status_code, 403)
+            self.client.force_authenticate(self.coordinator)
+            self.assertEqual(self.client.post(version_url, {'file': pdf_file()}, format='multipart').status_code, 400)
+            self.cycle.status = 'closed'
+            self.cycle.save(update_fields=['status'])
+            self.client.force_authenticate(self.custodian)
+            self.assertEqual(self.client.post(version_url, {'file': pdf_file()}, format='multipart').status_code, 400)
+            validate.assert_not_called()
+
+        self.cycle.status = 'active'
+        self.cycle.save(update_fields=['status'])
+        with patch('hub.views.validate_upload', wraps=validate_upload) as validate:
+            self.client.force_authenticate(self.custodian)
+            self.assertEqual(self.client.post(version_url, {'file': pdf_file()}, format='multipart').status_code, 201)
+            validate.assert_called_once()
+
     def test_login_csrf_and_session(self):
         client = APIClient(enforce_csrf_checks=True)
         credentials = {'username': self.custodian.email, 'password': 'Test-password-1234'}

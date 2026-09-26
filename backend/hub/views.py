@@ -547,6 +547,23 @@ class DocumentsView(APIView):
 
 def upload_document(request, document_id=None):
     data = payload(UploadInput, request).validated_data
+    # Reject unauthorized work before application file-content validation.
+    # The checks inside the transaction still govern concurrent changes.
+    if document_id:
+        candidate = get_object_or_404(Document.objects.filter(area__in=areas_for(request.user, WRITE_ROLES)), pk=document_id)
+        require_area(request.user, candidate.area, WRITE_ROLES)
+        if candidate.area.cycle.status != 'active':
+            raise ValidationError('This cycle is not active. Closed and draft cycles are read-only.')
+        require_document_steward_or_coordinator_override(
+            request.user, candidate, data.get('override_reason'), 'version replacement')
+    else:
+        if not data.get('title') or not data.get('area') or not data.get('requirement'):
+            raise ValidationError('A document title, owning area, and requirement are required.')
+        area = get_object_or_404(areas_for(request.user, WRITE_ROLES), pk=data['area'])
+        requirement = get_object_or_404(Requirement.objects.filter(area=area), pk=data['requirement'])
+        if area.cycle.status != 'active':
+            raise ValidationError('This cycle is not active. Closed and draft cycles are read-only.')
+        require_assignee_or_coordinator_override(request.user, requirement, data.get('override_reason'), 'upload')
     name, content_type, contents, checksum = validate_upload(data['file'])
     storage_path = None
     try:

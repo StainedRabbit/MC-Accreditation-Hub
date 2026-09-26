@@ -184,6 +184,8 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 **Recommended option:** A for the initial accepted scope, unless PPTX is required by the Academic Owner. It retains existing validators; it is not an approval of the current limit. **Required approver:** Academic Owner; School IT; Security/Records Owner. **Production-acceptance impact:** Must agree formats/units and measured request/storage bounds before real uploads. IT must supply request-size, account/cycle storage and upload-rate limits from capacity evidence; no new numeric quota is invented here. All options require scope checks before costly parsing and preservation of referenced history.
 
+**Repository-only safeguard:** Application file-content validation now follows a preliminary assignment, scope, stewardship/override, and active-cycle check. The same rules are checked again during the write transaction. This technical ordering is independent of the D10 format/size choice and does not approve uploads of real evidence. The proxy request-size, upload rate/quota, and final format/size choices remain pending with the named owners.
+
 ### D11 — Malware scanning and quarantine
 
 **Status:** Pending Decision. **Finding:** F21. **Decision to make:** What protects users from malicious content in otherwise valid files?

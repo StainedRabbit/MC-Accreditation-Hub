@@ -88,7 +88,7 @@ No user can review their own upload or submission. Django scopes list, detail, s
 
 A new draft version does not affect an approved submission. Submitting a newer replacement makes its mapping pending. The previous approval remains historical. Expiry is inclusive of the valid-until date, evaluated in Asia/Manila. Closed cycles use their closure date.
 
-Files are limited to 25 MB and PDF, DOCX, XLSX, PNG, JPEG. Validation checks actual format, parses PDFs/images, bounds Office archive expansion, and rejects encrypted PDFs and macro-bearing Office files. Files use random storage names and protected attachment downloads. Format validation is not malware scanning.
+Files are limited to 25 MB and PDF, DOCX, XLSX, PNG, JPEG. Upload endpoints check the current assignment, scope, stewardship or reasoned override, and active cycle before application file-content validation; they recheck authority under the write transaction. Validation checks actual format, parses PDFs/images, bounds Office archive expansion, and rejects encrypted PDFs and macro-bearing Office files. Files use random storage names and protected attachment downloads. Format validation is not malware scanning. D10 still requires school approval of formats, size, and resource limits before real evidence use.
 
 ## Cycles and administration
 
