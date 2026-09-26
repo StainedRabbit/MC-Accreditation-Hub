@@ -1,11 +1,12 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
+  outputDir: process.env.E2E_OUTPUT_DIR || "./test-results",
   workers: 1,
   timeout: 240000,
   expect: { timeout: 20000 },
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: process.env.E2E_BASE_URL || "http://127.0.0.1:5173",
     actionTimeout: 30000,
     headless: true,
     screenshot: "only-on-failure",

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve("..");
-const password = fs.readFileSync(path.join(root, ".local/demo-credentials.txt"), "utf8")
+const password = process.env.E2E_SYNTHETIC_PASSWORD || fs.readFileSync(path.join(root, ".local/demo-credentials.txt"), "utf8")
   .match(/Password for these fictional accounts: (.+)/)![1].trim();
 
 async function signIn(page: Page, role: string) {

@@ -140,7 +140,16 @@ npm.cmd run build --prefix frontend
 
 Backend tests run against a separate PostgreSQL test database. They cover authorization, protected downloads, approval/revision workflow, version history, expiry, exclusions, closed cycles, CSRF, file validation, and competing review transactions.
 
-Browser tests require running frontend/backend services, the demo seed, and `.local/sample-evidence.pdf`. Generate that fixture with:
+For an isolated synthetic browser run on this computer, start only the repository-local PostgreSQL cluster at `127.0.0.1:55432`, install the existing frontend dependencies, then run from the project root:
+
+```powershell
+$env:PLAYWRIGHT_CHROMIUM_EXECUTABLE='C:\Program Files\Google\Chrome\Application\chrome.exe'
+python -B scripts/run_isolated_browser.py
+```
+
+The runner verifies that PostgreSQL uses `.local/postgres`, creates a randomly named temporary database and private media directory, seeds only fictional accounts, starts Django and Vite on temporary loopback ports, runs the existing browser suite followed by the F25 account-changing tests, and removes the database, media, and browser artifacts afterward. To run just the new tests, pass `isolated-session.spec.ts`. Recovery remains disabled and the runner does not use ambient PostgreSQL or email passwords. This is a local development check, not a school HTTPS/proxy or database-outage rehearsal.
+
+Direct `npm.cmd run test:e2e --prefix frontend` still uses already running frontend/backend services and the persistent demo database. It requires the demo seed and `.local/sample-evidence.pdf`; generate that fixture with:
 
 ```powershell
 python -c "from pypdf import PdfWriter; w=PdfWriter(); w.add_blank_page(width=595,height=842); w.write('.local/sample-evidence.pdf')"
@@ -149,7 +158,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-If using an existing compatible Chromium installation, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path. Tests add clearly named fictional demonstration requirements and evidence to the demo cycle. They retain the history so it can be inspected. Screenshots are saved in `.local/screenshots/`.
+If using an existing compatible Chromium installation, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path. Direct runs retain their fictional workflow history; the isolated runner discards it. Playwright failure artifacts from direct runs go to the ignored `frontend/test-results/` directory.
 
 ## School-server deployment and recovery
 

@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve("..");
-const password = fs.readFileSync(path.join(root, ".local/demo-credentials.txt"), "utf8")
+const password = process.env.E2E_SYNTHETIC_PASSWORD || fs.readFileSync(path.join(root, ".local/demo-credentials.txt"), "utf8")
   .match(/Password for these fictional accounts: (.+)/)![1].trim();
+const samplePdf = process.env.E2E_SAMPLE_PDF || path.join(root, ".local/sample-evidence.pdf");
 
 async function login(page: Page, role: string) {
   await page.goto("/");
@@ -69,7 +70,7 @@ test("submitted package outranks missing evidence in the report", async ({ brows
   await custodian.getByRole("button", { name: "Upload evidence" }).first().click();
   const upload = custodian.getByRole("dialog");
   await upload.getByLabel("Document title").fill(`${title} evidence`);
-  await upload.locator("input[type=file]").setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
+  await upload.locator("input[type=file]").setInputFiles(samplePdf);
   await upload.getByRole("button", { name: "Upload & Map" }).click();
   await expect(upload).toHaveCount(0);
   await custodian.getByRole("button", { name: "New package draft" }).click();
@@ -128,7 +129,7 @@ test("package attempts preserve draft, withdrawal, revision, review and certific
   await custodian.getByRole("button", { name: "Upload evidence" }).click();
   const upload = custodian.getByRole("dialog");
   await upload.getByLabel("Document title").fill(documentTitle);
-  await upload.locator("input[type=file]").setInputFiles(path.join(root, ".local/sample-evidence.pdf"));
+  await upload.locator("input[type=file]").setInputFiles(samplePdf);
   await upload.getByRole("button", { name: "Upload & Map" }).click();
   await expect(upload).toHaveCount(0);
   await custodian.getByRole("button", { name: "New package draft" }).click();
