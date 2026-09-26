@@ -298,6 +298,8 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 **Recommended option:** A when IT can operate it reliably; B is equally viable if an existing school platform meets the same acceptance evidence. **Required approver:** School IT; Security/Records Owner. **Production-acceptance impact:** IT must record backup/operator ownership, destinations, retention, encryption/key custody, RPO/RTO, alerts and rehearsal frequency; no values are approved here. Actual isolated restoration of an exact approved file plus review/certification history is mandatory under either option. Reconciliation reports must not automatically delete referenced bytes/history.
 
+**Still required from School IT:** (1) the named backup operator and either repository tooling or the school backup platform, with a separate least-privilege backup database role; (2) the primary backup destination and a protected copy in a distinct failure domain; (3) encryption method and key ownership, storage, recovery and rotation; (4) retention and legal-hold handling; (5) approved RPO and RTO; (6) backup, replication, storage-integrity and service-failure alerts with an incident owner; and (7) the frequency, operator and evidence standard for isolated restore rehearsals. The repository now provides locked/atomic backup publication, release/schema manifest fields, a read-only storage reconciliation command, a strict release gate, and local synthetic tests/rehearsal. These technical changes do not select Option A, approve destinations or keys, prove a school target restore, or resolve D19.
+
 ### D20 — Pilot capacity, service ownership and operational gates
 
 **Status:** Pending Decision. **Findings:** F15, F28. **Decision to make:** Which launch scale and minimum service controls must be proven?
@@ -333,7 +335,7 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 ## Approved Technical Fixes That Can Start Now
 
-This section classifies work already supported by the plan/review that needs no new policy choice. “Approved Technical Fixes” does **not** record institutional approval or permission to change deployment files during this documentation-only task. Both fixes are not started; they can be the subject of the next explicitly scoped technical checkpoint. All policy decisions above remain **Pending Decision**.
+This section classifies work already supported by the plan/review that needs no new policy choice. “Approved Technical Fixes” does **not** record institutional approval or target acceptance. F10 and F12 repository fixes were completed in `f9c7b56`; fresh Linux operator checks remain outstanding. All policy decisions above remain **Pending Decision**.
 
 | Finding / fix | Bounded technical change | Verification required | Approval/acceptance boundary |
 |---|---|---|---|

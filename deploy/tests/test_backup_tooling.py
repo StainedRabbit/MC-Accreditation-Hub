@@ -23,6 +23,9 @@ SCRIPTS = REPO / "deploy" / "scripts"
 spec = importlib.util.spec_from_file_location("backup_payload", SCRIPTS / "verify-backup-payload.py")
 payload = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(payload)
+gate_spec = importlib.util.spec_from_file_location("release_gate", SCRIPTS / "release-gate.py")
+release_gate = importlib.util.module_from_spec(gate_spec)
+gate_spec.loader.exec_module(release_gate)
 ROOT_NAME = ".mc-hub-20260917T000000Z.working"
 BASH = os.environ.get("BACKUP_TEST_BASH") or shutil.which("bash")
 
@@ -79,6 +82,33 @@ class PayloadTests(unittest.TestCase):
         destination.mkdir(parents=True)
         return bundle, destination
 
+    def v2_archive(self, unsafe_evidence=False):
+        self.files['schema.sql'] = b'CREATE TABLE synthetic_only (id integer);\n'
+        evidence_bytes = io.BytesIO()
+        with tarfile.open(fileobj=evidence_bytes, mode='w:gz') as evidence:
+            item = tarfile.TarInfo('./fictional.txt')
+            item.size = 9
+            if unsafe_evidence:
+                item.type = tarfile.SYMTYPE
+                item.linkname = '/outside'
+                item.size = 0
+                evidence.addfile(item)
+            else:
+                evidence.addfile(item, io.BytesIO(b'fictional'))
+        self.files['evidence.tar.gz'] = evidence_bytes.getvalue()
+        schema_hash = hashlib.sha256(self.files['schema.sql']).hexdigest()
+        self.files['manifest.txt'] = (
+            'format_version=2\ncreated_utc=2026-09-17T00:00:00Z\n'
+            'source_database=synthetic\nrelease_commit=' + 'a' * 40 +
+            '\nschema_sha256=' + schema_hash + '\n').encode('ascii')
+        self.files['SHA256SUMS'] = ''.join(
+            hashlib.sha256(self.files[name]).hexdigest() + '  ' + name + '\n'
+            for name in sorted(payload.HASHED_FILES_V2)).encode('ascii')
+        bundle, destination = self.archive(root='.mc-hub-20260917T000000Z-ABCDEFGH')
+        Path(str(bundle) + '.sha256').write_text(
+            hashlib.sha256(bundle.read_bytes()).hexdigest() + '  ' + bundle.name + '\n', encoding='ascii')
+        return bundle, destination
+
     def test_portable_payload_and_restrictive_permissions(self):
         result = payload.verify_payload(*self.archive())
         self.assertEqual(result.parent, self.base / "different-host" / "restore")
@@ -133,7 +163,7 @@ class PayloadTests(unittest.TestCase):
                 destination.rmdir()
 
     def test_missing_payload_files_fail(self):
-        for name in payload.PAYLOAD_FILES:
+        for name in payload.LEGACY_PAYLOAD_FILES:
             with self.subTest(file=name):
                 bundle, destination = self.archive(omitted=[name])
                 with self.assertRaisesRegex(ValueError, "missing"):
@@ -172,6 +202,41 @@ class PayloadTests(unittest.TestCase):
         with self.assertRaises(tarfile.TarError):
             payload.verify_payload(bundle, destination)
 
+    def test_v2_release_schema_sidecar_and_evidence_archive(self):
+        bundle, destination = self.v2_archive()
+        verified = payload.verify_payload(bundle, destination)
+        self.assertEqual((verified / 'schema.sql').read_bytes(), self.files['schema.sql'])
+        shutil.rmtree(destination)
+        destination.mkdir()
+        Path(str(bundle) + '.sha256').unlink()
+        with self.assertRaisesRegex(ValueError, 'sidecar'):
+            payload.verify_payload(bundle, destination)
+        self.assertEqual(list(destination.iterdir()), [])
+
+    def test_v2_unsafe_evidence_member_is_rejected(self):
+        bundle, destination = self.v2_archive(unsafe_evidence=True)
+        with self.assertRaisesRegex(ValueError, 'Evidence archive'):
+            payload.verify_payload(bundle, destination)
+
+
+class ReleaseGateTests(unittest.TestCase):
+    def test_warnings_require_explicit_acceptance_and_errors_always_fail(self):
+        class Message:
+            def __init__(self, level, identifier):
+                self.level, self.id, self.msg = level, identifier, "synthetic deployment check"
+        warning = Message(30, "security.W021")
+        error = Message(40, "security.E001")
+        self.assertFalse(release_gate.evaluate_messages([warning], set(), ""))
+        self.assertFalse(release_gate.evaluate_messages([warning], {warning.id}, ""))
+        self.assertTrue(release_gate.evaluate_messages([warning], {warning.id}, "recorded test reason"))
+        self.assertFalse(release_gate.evaluate_messages([error], {error.id}, "recorded test reason"))
+
+    def test_pending_migrations_are_identified_for_a_failing_gate(self):
+        class Migration:
+            app_label = 'hub'
+            name = '0008_synthetic'
+        self.assertEqual(release_gate.pending_labels([(Migration(), False)]), ['hub.0008_synthetic'])
+
 
 @unittest.skipUnless(BASH, "Bash required for isolated shell integration")
 class ShellTests(unittest.TestCase):
@@ -189,7 +254,8 @@ class ShellTests(unittest.TestCase):
         self.env["PATH"] = str(self.bin) + os.pathsep + self.env["PATH"]
         self.env["FIXTURE_ROOT"] = shell_path(self.base)
         self.env["FIXTURE_PYTHON"] = shell_path(sys.executable)
-        self.stub("pg_dump", 'for arg in "$@"; do case "$arg" in --file=*) printf synthetic-dump > "${arg#--file=}";; esac; done')
+        self.env["MC_RELEASE_COMMIT"] = "a" * 40
+        self.stub("pg_dump", 'for arg in "$@"; do case "$arg" in --file=*) printf synthetic-dump > "${arg#--file=}";; esac; done; if [[ "${FIXTURE_FAIL_DUMP:-0}" == 1 ]]; then exit 77; fi')
         self.stub("pg_restore", 'test "$#" = 2 && test "$1" = --list && test -f "$2"; printf list-only >> "$FIXTURE_ROOT/pg-restore-called"')
         self.stub("npm", 'printf "npm %s\\n" "$*" >> "$FIXTURE_ROOT/release-calls"')
         self.stub("curl", 'printf \'{"status":"ok"}\'')
@@ -253,8 +319,27 @@ class ShellTests(unittest.TestCase):
         self.assertEqual((result / "database.dump").read_bytes(), b"synthetic-dump")
         self.assertEqual((result / "environment.env").read_bytes(), self.config.read_bytes())
         entries = (result / "SHA256SUMS").read_text().splitlines()
-        self.assertEqual({line[66:] for line in entries}, payload.HASHED_FILES)
+        self.assertEqual({line[66:] for line in entries}, payload.HASHED_FILES_V2)
         self.assertEqual((self.base / "pg-restore-called").read_text(), "list-only")
+        manifest = dict(line.split("=", 1) for line in (result / "manifest.txt").read_text().splitlines())
+        self.assertEqual(manifest['format_version'], '2')
+        self.assertEqual(manifest['release_commit'], 'a' * 40)
+        self.assertEqual(manifest['schema_sha256'], hashlib.sha256((result / 'schema.sql').read_bytes()).hexdigest())
+
+    def test_overlapping_backup_and_interrupted_dump_publish_nothing(self):
+        backup_root = self.base / 'backups'
+        backup_root.mkdir()
+        lock = backup_root / '.backup.lock'
+        lock.mkdir()
+        self.run_shell('"$1"', shell_path(SCRIPTS / 'backup.sh'), success=False)
+        self.assertTrue(lock.is_dir())
+        self.assertEqual(list(backup_root.glob('*.tar.gz')), [])
+        lock.rmdir()
+        self.env['FIXTURE_FAIL_DUMP'] = '1'
+        self.run_shell('"$1"', shell_path(SCRIPTS / 'backup.sh'), success=False)
+        self.assertFalse(lock.exists())
+        self.assertEqual(list(backup_root.iterdir()), [])
+        self.env.pop('FIXTURE_FAIL_DUMP')
 
     def test_failed_verification_cleans_new_destination_and_never_calls_pg_restore(self):
         bundle = self.base / "broken.tar.gz"
@@ -286,8 +371,19 @@ class ShellTests(unittest.TestCase):
         self.env["VIRTUAL_ENV"] = shell_path(self.base / "venv")
         self.run_shell('"$1" "$2"', shell_path(SCRIPTS / "release-check.sh"), shell_path(app))
         self.assertEqual((self.base / "release-calls").read_text().splitlines(),
-                         ["python backend/manage.py check --deploy", "python backend/manage.py migrate --plan",
+                         ["python deploy/scripts/release-gate.py " + shell_path(app),
                           "npm ci", "npm run build"])
+
+    def test_release_checker_stops_when_gate_fails(self):
+        app = self.base / 'synthetic-app'
+        app.mkdir()
+        (self.base / 'venv' / 'bin').mkdir(parents=True)
+        self.stub('python', 'echo "unaccepted warning or pending migration" >&2; exit 1')
+        shutil.copyfile(self.bin / 'python', self.base / 'venv' / 'bin' / 'python')
+        (self.base / 'venv' / 'bin' / 'python').chmod(0o700)
+        self.env['VIRTUAL_ENV'] = shell_path(self.base / 'venv')
+        self.run_shell('"$1" "$2"', shell_path(SCRIPTS / 'release-check.sh'), shell_path(app), success=False)
+        self.assertFalse((self.base / 'release-calls').exists())
 
 
 if __name__ == "__main__":

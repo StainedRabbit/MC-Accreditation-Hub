@@ -1,4 +1,5 @@
 import io
+import json
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -8,6 +9,7 @@ from django.db import close_old_connections
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
@@ -1006,3 +1008,24 @@ class RestrictedTestBoundaryTests(TestCase):
         with patch('hub.test_boundary.RestrictedTestBoundaryMiddleware._allowed', side_effect=DatabaseError):
             self.assertEqual(self.client_from().post('/api/auth/login/',
                              {'username': 'absent', 'password': 'incorrect'}).status_code, 503)
+
+
+class StorageReconciliationTests(WorkflowFixture, TestCase):
+    def report(self):
+        return json.loads(call_command('reconcile_storage', stdout=io.StringIO()))
+
+    def test_missing_mismatched_and_orphaned_files_are_only_reported(self):
+        document = self.upload()
+        version = DocumentVersion.objects.get(pk=document['versions'][0]['id'])
+        path = Path(self.media.name) / str(version.storage_key)
+        self.assertEqual(self.report()['counts'], {'missing': 0, 'mismatched': 0, 'orphaned': 0})
+        path.write_bytes(b'fictional corrupt content')
+        self.assertEqual(self.report()['mismatched'], [str(version.storage_key)])
+        path.unlink()
+        orphan = Path(self.media.name) / 'orphan-synthetic.txt'
+        orphan.write_bytes(b'fictional orphan')
+        result = self.report()
+        self.assertEqual(result['missing'], [str(version.storage_key)])
+        self.assertEqual(result['orphaned'], [orphan.name])
+        self.assertTrue(orphan.exists())
+        self.assertTrue(DocumentVersion.objects.filter(pk=version.pk).exists())
