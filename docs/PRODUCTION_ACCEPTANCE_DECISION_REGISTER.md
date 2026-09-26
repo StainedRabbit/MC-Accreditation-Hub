@@ -38,7 +38,7 @@ An approved option resolves a choice, not the underlying implementation or accep
 | D18 | What network/proxy/admin exposure model will IT operate? | F09, F28 | Provisional Project Owner Decision — School IT confirmation pending |
 | D19 | Who owns recurring backups, recovery and operational records? | F11, F20, F28 | Pending Decision |
 | D20 | What pilot capacity and operating controls must be proven? | F15, F28 | Pending Decision |
-| D21 | What population does a filtered readiness report measure? | F14, F16 | Pending Decision |
+| D21 | What population does a filtered readiness report measure? | F14, F16 | Provisional Project Owner Decision — formal approval pending |
 | D22 | Where and how will acceptance evidence be collected? | F11, F25, F28 | Pending Decision |
 
 F10/F12 are policy-independent technical fixes listed separately below. F22's decision context is covered by D05/D07. F16's stale-response defect is not an option to accept misleading reports: D21 determines report semantics, while correctness must be repaired whichever option is chosen. Similarly, D03 does not permit search to match inaccessible versions under any option.
@@ -315,7 +315,7 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 ### D21 — Filtered report population and readiness evidence
 
-**Status:** Pending Decision. **Findings:** F14, F16. **Decision to make:** Does status filtering change the readiness denominator or only the rows displayed?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Selected option:** B for the repository implementation. **Findings:** F14, F16. **Decision to ratify:** Status filtering changes displayed rows only; readiness remains based on the selected authorized cycle/area.
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -323,6 +323,8 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 | B. Keep readiness for the selected cycle/area; status filters only table rows | Headline denominator stays fixed for the authorized cycle/area, while rows narrow by status; display filtered row count separately. | Yes: separate summary/row populations, provenance and stale-state fixes. |
 
 **Recommended option:** B for readiness reports because a Complete-only filter should not obscure missing work in the headline. **Required approver:** Academic Owner; Project Owner. **Production-acceptance impact:** Decide before reports become readiness evidence. All options must prevent old responses being printed under new cycle/filter headings, preserve formula-safe CSV and compare dashboard/report counts using the same defined population. Mislabelled or stale reports are not an acceptable option.
+
+**Provisional implementation:** JSON, CSV and print identify the cycle/instrument, authorized scope, selected filters, readiness numerator/denominator and exclusions, formula version, calculation time/timezone, and displayed row count. Status filters do not alter the readiness population. Search, detail and report responses are discarded after a cycle, filter or account change; stale or failed reports cannot be printed or exported through the UI. This is a Project Owner working choice, not Academic Owner approval or school acceptance.
 
 ### D22 — Acceptance environment, evidence and sign-off
 

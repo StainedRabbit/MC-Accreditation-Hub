@@ -15,6 +15,7 @@ export type Cycle = {
   id: number;
   title: string;
   program: string;
+  instrument: string;
   status: string;
   is_demo: boolean;
   closed_at: string | null;
@@ -32,6 +33,7 @@ export type Summary = {
   excluded: number;
   percentage: number | null;
   formula: string;
+  formula_version: number;
 };
 export type Area = Summary & {
   id: number;
@@ -202,8 +204,16 @@ export type SearchResults = {
   documents: Array<{ id: string; title: string; category: string; area: string }>;
 };
 export type ComplianceReport = Summary & {
+  numerator: number;
+  denominator: number;
+  filtered_row_count: number;
+  population_label: string;
   calculated_at: string;
+  timezone: string;
   scope: string;
+  cycle: { id: number; title: string; instrument: string } | null;
+  authorized_areas: Array<{ id: number; cycle_id: number; code: string; title: string }>;
+  selected_filters: { cycle_id: number | null; area_id: number | null; area: string | null; status: string | null };
   rows: Array<{
     id: number;
     code: string;

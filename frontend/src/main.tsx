@@ -84,6 +84,8 @@ const dateTime = (value: string) =>
     hour: "numeric",
     minute: "2-digit",
   });
+const reportDateTime = (value: string) =>
+  new Date(value).toLocaleString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const percent = (value: number | null) =>
   value === null ? "N/A" : `${value}%`;
 const initials = (name: string) =>
@@ -360,6 +362,7 @@ function App() {
   const [reportArea, setReportArea] = useState(""),
     [reportStatus, setReportStatus] = useState(""),
     [report, setReport] = useState<ComplianceReport | null>(null),
+    [reportKey, setReportKey] = useState(""),
     [reportLoading, setReportLoading] = useState(false),
     [reportError, setReportError] = useState("");
   const [detail, setDetail] = useState<Requirement | null>(null),
@@ -385,8 +388,40 @@ function App() {
       outcome: "complete" | "reopened";
     } | null>(null);
   const requestGeneration = useRef(0);
+  const searchGeneration = useRef(0);
+  const reportGeneration = useRef(0);
+  const detailGeneration = useRef(0);
+  const contextRef = useRef({ cycle, userId: user?.id ?? null });
+  contextRef.current = { cycle, userId: user?.id ?? null };
+  const selectedReportKey = JSON.stringify([user?.id ?? null, cycle, reportArea, reportStatus]);
+  const reportReady = Boolean(report && !reportLoading && !reportError && reportKey === selectedReportKey &&
+    report.selected_filters.cycle_id === Number(cycle) &&
+    report.selected_filters.area_id === (reportArea ? Number(reportArea) : null) &&
+    report.selected_filters.status === (reportStatus || null));
+  function invalidateSearch() {
+    searchGeneration.current += 1;
+    setSearchResults(null);
+    setSearchError("");
+    setSearchLoading(false);
+  }
+  function invalidateReport() {
+    reportGeneration.current += 1;
+    setReport(null);
+    setReportKey("");
+    setReportError("");
+    setReportLoading(false);
+  }
+  function invalidateDetails() {
+    detailGeneration.current += 1;
+    setDetail(null);
+    setDocDetail(null);
+  }
   function clearWorkspace() {
     requestGeneration.current += 1;
+    contextRef.current = { cycle: "", userId: null };
+    invalidateSearch();
+    invalidateReport();
+    invalidateDetails();
     setCycle("");
     setCycles([]);
     setAreas([]);
@@ -395,8 +430,6 @@ function App() {
     setSubmissions([]);
     setPackages([]);
     setSummary(null);
-    setDetail(null);
-    setDocDetail(null);
     setUpload(null);
     setReview(null);
     setPackageEditor(null);
@@ -411,10 +444,6 @@ function App() {
     setLoading(false);
     setError("");
     setNotice("");
-    setSearchResults(null);
-    setSearchError("");
-    setReport(null);
-    setReportError("");
   }
   useEffect(() => {
     api<User>("auth/me/")
@@ -501,10 +530,13 @@ function App() {
   }, [cycle, user]);
   const selectedCycle = cycles.find((c) => String(c.id) === cycle);
   function navigate(next: string) {
+    if (next !== page) {
+      invalidateSearch();
+      invalidateReport();
+    }
+    invalidateDetails();
     setPage(next);
     setMobile(false);
-    setDetail(null);
-    setDocDetail(null);
     setCertification(null);
     setSearch("");
     setAreaFilter("");
@@ -513,56 +545,85 @@ function App() {
   }
   async function runSearch(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!cycle || !user) return;
+    const generation = ++searchGeneration.current;
+    const key = { cycle, userId: user.id };
     setSearchLoading(true);
     setSearchError("");
+    setSearchResults(null);
     try {
-      setSearchResults(
-        await api<SearchResults>(
-          `search/?cycle=${cycle}&q=${encodeURIComponent(searchTerm)}`,
-        ),
-      );
+      const result = await api<SearchResults>(`search/?cycle=${cycle}&q=${encodeURIComponent(searchTerm)}`);
+      if (generation === searchGeneration.current && contextRef.current.cycle === key.cycle && contextRef.current.userId === key.userId)
+        setSearchResults(result);
     } catch (e) {
-      setSearchError((e as Error).message);
-      setSearchResults(null);
+      if (generation === searchGeneration.current) setSearchError((e as Error).message);
     } finally {
-      setSearchLoading(false);
+      if (generation === searchGeneration.current) setSearchLoading(false);
     }
   }
   async function loadReport() {
-    if (!cycle) return;
+    if (!cycle || !user) return;
+    const generation = ++reportGeneration.current;
+    const key = JSON.stringify([user.id, cycle, reportArea, reportStatus]);
     setReportLoading(true);
     setReportError("");
+    setReport(null);
+    setReportKey("");
     try {
       const params = new URLSearchParams({ cycle });
       if (reportArea) params.set("area", reportArea);
       if (reportStatus) params.set("status", reportStatus);
-      setReport(await api<ComplianceReport>(`reports/compliance/?${params}`));
+      const result = await api<ComplianceReport>(`reports/compliance/?${params}`);
+      if (generation === reportGeneration.current &&
+          contextRef.current.cycle === cycle && contextRef.current.userId === user.id) {
+        setReport(result);
+        setReportKey(key);
+      }
     } catch (e) {
-      setReportError((e as Error).message);
+      if (generation === reportGeneration.current) {
+        setReportError((e as Error).message);
+        setReport(null);
+      }
     } finally {
-      setReportLoading(false);
+      if (generation === reportGeneration.current) setReportLoading(false);
     }
   }
   useEffect(() => {
     if (page === "reports" && cycle) void loadReport();
-  }, [page, cycle, reportArea, reportStatus]);
+  }, [page, cycle, reportArea, reportStatus, user?.id]);
+  useEffect(() => {
+    if (reportArea && !areas.some((area) => String(area.id) === reportArea)) {
+      invalidateReport();
+      setReportArea("");
+    }
+  }, [areas, reportArea]);
   async function openRequirement(id: number) {
+    const generation = ++detailGeneration.current;
+    const key = { cycle, userId: user?.id ?? null };
+    setError("");
     try {
-      setDetail(await api<Requirement>(`requirements/${id}/`));
+      const fresh = await api<Requirement>(`requirements/${id}/`);
+      if (generation !== detailGeneration.current || contextRef.current.cycle !== key.cycle || contextRef.current.userId !== key.userId) return;
+      setDetail(fresh);
       setPage("requirements");
       setDocDetail(null);
       setCertification(null);
     } catch (e) {
-      setError((e as Error).message);
+      if (generation === detailGeneration.current) setError((e as Error).message);
     }
   }
   async function openDocument(id: string) {
+    const generation = ++detailGeneration.current;
+    const key = { cycle, userId: user?.id ?? null };
+    setError("");
     try {
-      setDocDetail(await api<Document>(`documents/${id}/`));
+      const fresh = await api<Document>(`documents/${id}/`);
+      if (generation !== detailGeneration.current || contextRef.current.cycle !== key.cycle || contextRef.current.userId !== key.userId) return;
+      setDocDetail(fresh);
       setPage("documents");
       setDetail(null);
     } catch (e) {
-      setError((e as Error).message);
+      if (generation === detailGeneration.current) setError((e as Error).message);
     }
   }
   async function changed(message: string) {
@@ -763,9 +824,22 @@ function App() {
               aria-label="Accreditation cycle"
               value={cycle}
               onChange={(e) => {
-                setDetail(null);
-                setDocDetail(null);
-                setCycle(e.target.value);
+                const nextCycle = e.target.value;
+                contextRef.current = { cycle: nextCycle, userId: user.id };
+                requestGeneration.current += 1;
+                invalidateSearch();
+                invalidateReport();
+                invalidateDetails();
+                setAreas([]);
+                setRequirements([]);
+                setDocuments([]);
+                setSubmissions([]);
+                setPackages([]);
+                setSummary(null);
+                setError("");
+                setReportArea("");
+                setAreaFilter("");
+                setCycle(nextCycle);
               }}
             >
               {cycles.map((c) => (
@@ -1654,7 +1728,7 @@ function App() {
                     <input
                       aria-label="Search all authorized records"
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onChange={(e) => { invalidateSearch(); setSearchTerm(e.target.value); }}
                       placeholder="Requirement, evidence title, area, office..."
                       required
                     />
@@ -1700,21 +1774,21 @@ function App() {
                   <p>Printable readiness report for {selectedCycle?.title || "your selected cycle"}.</p>
                 </div>
                 <div className="actions no-print">
-                  <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}&download=csv`}>
+                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}&download=csv`}>
                     <Download size={16} /> Export CSV
-                  </a>
-                  <button className="primary" onClick={() => window.print()}><Printer size={16} /> Print report</button>
+                  </a> : <button className="secondary" type="button" disabled><Download size={16} /> Export CSV</button>}
+                  <button className="primary" disabled={!reportReady} onClick={() => { if (reportReady) window.print(); }}><Printer size={16} /> Print report</button>
                 </div>
               </div>
               <section className="panel report-controls no-print">
                 <label>Area
-                  <select value={reportArea} onChange={(e) => setReportArea(e.target.value)}>
+                  <select value={reportArea} onChange={(e) => { invalidateReport(); setReportArea(e.target.value); }}>
                     <option value="">All authorized areas</option>
                     {areas.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}
                   </select>
                 </label>
                 <label>Status
-                  <select value={reportStatus} onChange={(e) => setReportStatus(e.target.value)}>
+                  <select value={reportStatus} onChange={(e) => { invalidateReport(); setReportStatus(e.target.value); }}>
                     <option value="">All statuses</option>
                     {["complete", "for_verification", "needs_revision", "ready_for_completion_review", "in_progress", "missing", "draft", "excluded"].map((status) => <option key={status} value={status}>{labels[status]}</option>)}
                   </select>
@@ -1722,22 +1796,32 @@ function App() {
               </section>
               <ErrorBox error={reportError} />
               {reportLoading && <div className="loading-line">Updating report…</div>}
-              {report && <section className="report-print">
+              {reportReady && report && <section className="report-print">
+                <section className="panel report-provenance">
+                  <h2>{report.cycle?.title || "All authorized cycles"}</h2>
+                  <p><strong>Instrument:</strong> {report.cycle?.instrument || "Multiple cycles"}</p>
+                  <p><strong>Readiness population:</strong> {report.population_label}</p>
+                  <p><strong>Authorized scope:</strong> {report.scope} — {report.authorized_areas.map((area) => `${area.code} ${area.title}`).join("; ") || "No authorized areas"}</p>
+                  <p><strong>Selected filters:</strong> Area: {report.selected_filters.area || "All authorized areas"}; status: {report.selected_filters.status ? labels[report.selected_filters.status] || report.selected_filters.status : "All statuses"}</p>
+                  <p><strong>Readiness:</strong> {report.numerator} complete / {report.denominator} active applicable; {report.excluded} excluded. {report.filtered_row_count} displayed rows.</p>
+                  <p><strong>Formula:</strong> {report.formula} (version {report.formula_version})</p>
+                  <p><strong>Calculated:</strong> {reportDateTime(report.calculated_at)} ({report.timezone})</p>
+                </section>
                 <div className="report-summary">
-                  <div className="panel"><strong>{percent(report.percentage)}</strong><span>Compliance</span></div>
+                  <div className="panel"><strong>{percent(report.percentage)}</strong><span>Readiness for selected cycle/area</span></div>
                   <div className="panel"><strong>{report.complete}</strong><span>Completed</span></div>
                   <div className="panel"><strong>{report.total}</strong><span>Applicable requirements</span></div>
                   <div className="panel"><strong>{report.ready_for_completion_review}</strong><span>Ready for review</span></div>
                 </div>
                 <section className="panel table-wrap">
-                  <div className="report-meta"><span>{report.scope}</span><span>Calculated {dateTime(report.calculated_at)}</span></div>
+                  <div className="report-meta"><span>{report.filtered_row_count} displayed rows</span><span>Calculated {reportDateTime(report.calculated_at)} ({report.timezone})</span></div>
                   <table>
                     <thead><tr><th>Area</th><th>Code</th><th>Requirement</th><th>Responsible</th><th>Evidence</th><th>Status</th><th>Deadline</th></tr></thead>
                     <tbody>{report.rows.map((row) => <tr key={row.id}><td>{row.area}</td><td>{row.code}</td><td><strong>{row.title}</strong></td><td>{row.responsible}</td><td>{row.approved_items}/{row.required_items}</td><td><Badge status={row.status} /></td><td>{date(row.deadline)}</td></tr>)}</tbody>
                   </table>
                   {!report.rows.length && <div className="empty">No requirements match this report filter.</div>}
                 </section>
-                <p className="report-formula">{report.formula}. Internal preparation measure only.</p>
+                <p className="report-formula">Internal preparation measure only. Status filters change displayed rows, not the readiness denominator.</p>
               </section>}
             </>
           )}

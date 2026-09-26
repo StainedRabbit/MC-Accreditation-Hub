@@ -1,4 +1,5 @@
 import io
+import csv
 import json
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -1157,3 +1158,62 @@ class AuditHistoryTests(WorkflowFixture, TestCase):
         recipient_page = self.client.get('/api/audit/', {'area': self.other_area.pk, 'action': 'version_downloaded'})
         self.assertEqual(len(recipient_page.data['results']), 1)
         self.assertEqual(recipient_page.data['results'][0]['detail']['source_area_id'], self.area.pk)
+
+
+class ReportProvenanceTests(WorkflowFixture, TestCase):
+    def test_status_filter_keeps_cycle_area_readiness_and_records_population(self):
+        document = self.upload()
+        self.assertEqual(self.decide(self.submit(document)).status_code, 201)
+        self.assertEqual(self.certify().status_code, 201)
+        Requirement.objects.create(area=self.other_area, code='MISSING', title='Fictional missing',
+                                   responsible='School', active=True, created_by=self.coordinator)
+        Requirement.objects.create(area=self.area, code='EXCLUDED', title='Fictional excluded',
+                                   responsible='School', active=True, applicable=False,
+                                   exclusion_reason='Synthetic scope decision', created_by=self.coordinator)
+        self.client.force_authenticate(self.coordinator)
+        dashboard = self.client.get('/api/compliance/', {'cycle': self.cycle.id}).data
+        report = self.client.get('/api/reports/compliance/',
+                                 {'cycle': self.cycle.id, 'status': 'complete'}).data
+        for field in ('total', 'complete', 'excluded', 'percentage', 'formula', 'formula_version'):
+            self.assertEqual(report[field], dashboard[field])
+        self.assertEqual((report['numerator'], report['denominator'], report['filtered_row_count']), (1, 2, 1))
+        self.assertEqual(report['selected_filters']['status'], 'complete')
+        self.assertEqual(report['cycle']['instrument'], self.cycle.instrument)
+        self.assertEqual(report['timezone'], 'Asia/Manila')
+        self.assertIn('status filters change rows only', report['population_label'])
+        self.assertEqual({a['id'] for a in report['authorized_areas']}, {self.area.id, self.other_area.id})
+        self.assertEqual(len(report['rows']), 1)
+        area_report = self.client.get('/api/reports/compliance/',
+                                      {'cycle': self.cycle.id, 'area': self.other_area.id, 'status': 'complete'}).data
+        self.assertEqual((area_report['numerator'], area_report['denominator'], area_report['filtered_row_count']), (0, 1, 0))
+        self.assertEqual(area_report['selected_filters']['area'], self.other_area.title)
+
+    def test_csv_has_provenance_and_neutralizes_metadata_and_rows(self):
+        self.cycle.instrument = '=unsafe-instrument'
+        self.cycle.save(update_fields=['instrument'])
+        self.area.title = '+unsafe-area'
+        self.area.save(update_fields=['title'])
+        self.requirement.title = '=unsafe-title'
+        self.requirement.save(update_fields=['title'])
+        self.client.force_authenticate(self.coordinator)
+        response = self.client.get('/api/reports/compliance/',
+                                   {'cycle': self.cycle.id, 'area': self.area.id, 'status': 'missing', 'download': 'csv'})
+        self.assertEqual(response.status_code, 200)
+        csv_rows = list(csv.reader(io.StringIO(response.content.decode('utf-8'))))
+        metadata = {row[0]: row[1] for row in csv_rows if len(row) == 2}
+        for key in ('Cycle', 'Instrument', 'Authorized scope', 'Authorized areas', 'Area filter',
+                    'Status filter', 'Readiness population', 'Numerator (complete)',
+                    'Denominator (active applicable)', 'Excluded (active not applicable)',
+                    'Filtered row count', 'Formula', 'Formula version', 'Calculated at', 'Timezone'):
+            self.assertIn(key, metadata)
+        self.assertEqual(metadata['Instrument'], "'=unsafe-instrument")
+        self.assertEqual(metadata['Area filter'], "'+unsafe-area")
+        self.assertEqual(metadata['Timezone'], 'Asia/Manila')
+        self.assertTrue(any("'=unsafe-title" in row for row in csv_rows))
+
+    def test_report_rejects_inaccessible_cycle_or_area(self):
+        private_cycle = Cycle.objects.create(title='Fictional private cycle', status='active')
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.client.get('/api/reports/compliance/', {'cycle': private_cycle.id}).status_code, 404)
+        self.assertEqual(self.client.get('/api/reports/compliance/',
+                                         {'cycle': self.cycle.id, 'area': self.other_area.id}).status_code, 404)

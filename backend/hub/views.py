@@ -1076,32 +1076,57 @@ REPORT_STATUSES = {'complete', 'for_verification', 'needs_revision', 'ready_for_
 
 
 def report_rows(request):
-    qs = scoped_requirements(request.user)
     cycle_id = query_id(request, 'cycle')
-    if cycle_id:
-        qs = qs.filter(area__cycle_id=cycle_id)
     area_id = query_id(request, 'area')
-    if area_id:
-        qs = qs.filter(area_id=area_id)
     requested_status = request.query_params.get('status', '')
     if requested_status and requested_status not in REPORT_STATUSES:
         raise ValidationError({'status': 'Choose a valid requirement status.'})
+    authorized = areas_for(request.user)
+    if cycle_id:
+        authorized = authorized.filter(cycle_id=cycle_id)
+        cycle = get_object_or_404(Cycle.objects.filter(areas__in=authorized).distinct(), pk=cycle_id)
+    else:
+        cycle = None
+    scope_areas = list(authorized.order_by('cycle_id', 'code', 'id').values('id', 'cycle_id', 'code', 'title'))
+    if area_id and not any(str(area['id']) == area_id for area in scope_areas):
+        raise Http404
+    qs = scoped_requirements(request.user)
+    if cycle_id:
+        qs = qs.filter(area__cycle_id=cycle_id)
+    if area_id:
+        qs = qs.filter(area_id=area_id)
+    population = list(qs.order_by('area__title', 'code'))
     rows = []
-    for requirement in qs.order_by('area__title', 'code'):
+    for requirement in population:
         result = requirement_result(requirement)
         if requested_status and result['status'] != requested_status:
             continue
         rows.append((requirement, result))
-    return rows
+    return cycle, scope_areas, area_id, requested_status, population, rows
 
 
 def report_data(request):
-    rows = report_rows(request)
-    requirements = [requirement for requirement, _ in rows]
+    cycle, scope_areas, area_id, requested_status, population, rows = report_rows(request)
+    readiness = summary(population)
     return {
-        **summary(requirements),
+        **readiness,
+        'numerator': readiness['complete'], 'denominator': readiness['total'],
+        'filtered_row_count': len(rows),
+        'population_label': ('Readiness for all active applicable requirements in the selected authorized area; '
+                             'status filters change rows only.' if area_id else
+                             'Readiness for all active applicable requirements in the selected authorized cycle; '
+                             'status filters change rows only.' if cycle else
+                             'Readiness for all active applicable requirements across authorized cycles; '
+                             'status filters change rows only.'),
         'calculated_at': timezone.now(),
+        'timezone': settings.TIME_ZONE,
         'scope': 'Your authorized areas',
+        'authorized_areas': scope_areas,
+        'cycle': {'id': cycle.id, 'title': cycle.title, 'instrument': cycle.instrument} if cycle else None,
+        'selected_filters': {'cycle_id': cycle.id if cycle else None,
+                             'area_id': int(area_id) if area_id else None,
+                             'area': next((area['title'] for area in scope_areas if str(area['id']) == area_id), None),
+                             'status': requested_status or None},
         'rows': [{'id': requirement.id, 'code': requirement.code, 'title': requirement.title,
                   'area': requirement.area.title, 'responsible': requirement.responsible,
                   'deadline': requirement.deadline, 'status': result['status'],
@@ -1124,9 +1149,28 @@ class ComplianceReportView(APIView):
         response['Content-Disposition'] = 'attachment; filename="mc-accreditation-compliance.csv"'
         writer = csv.writer(response)
         writer.writerow(['MC Accreditation Hub compliance report'])
-        writer.writerow(['Scope', data['scope']])
-        writer.writerow(['Compliance percentage', '' if data['percentage'] is None else data['percentage']])
-        writer.writerow(['Completed requirements', data['complete']])
+        metadata = [
+            ('Cycle ID', data['cycle']['id'] if data['cycle'] else 'All authorized cycles'),
+            ('Cycle', data['cycle']['title'] if data['cycle'] else 'All authorized cycles'),
+            ('Instrument', data['cycle']['instrument'] if data['cycle'] else 'Multiple cycles'),
+            ('Authorized scope', data['scope']),
+            ('Authorized areas', '; '.join(f"{a['cycle_id']}:{a['code']} {a['title']}" for a in data['authorized_areas'])),
+            ('Area filter ID', data['selected_filters']['area_id'] or 'All authorized areas'),
+            ('Area filter', data['selected_filters']['area'] or 'All authorized areas'),
+            ('Status filter', data['selected_filters']['status'] or 'All statuses'),
+            ('Readiness population', data['population_label']),
+            ('Numerator (complete)', data['numerator']),
+            ('Denominator (active applicable)', data['denominator']),
+            ('Excluded (active not applicable)', data['excluded']),
+            ('Readiness percentage', 'N/A' if data['percentage'] is None else data['percentage']),
+            ('Filtered row count', data['filtered_row_count']),
+            ('Formula', data['formula']),
+            ('Formula version', data['formula_version']),
+            ('Calculated at', data['calculated_at'].isoformat()),
+            ('Timezone', data['timezone']),
+        ]
+        for label, value in metadata:
+            writer.writerow([csv_cell(label), csv_cell(value)])
         writer.writerow([])
         writer.writerow(['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status'])
         for row in data['rows']:
