@@ -1,5 +1,6 @@
 from pathlib import Path
 import csv
+from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth import update_session_auth_hash
@@ -1206,9 +1207,19 @@ class SearchView(APIView):
         term = query_text(request)
         if not term:
             raise ValidationError({'q': 'Enter a search term.'})
+        kind = request.query_params.get('kind', 'both')
+        if kind not in ('both', 'requirements', 'documents'):
+            raise ValidationError({'kind': 'Use both, requirements, or documents.'})
+        requirement_after = query_id(request, 'requirements_after')
+        document_after = request.query_params.get('documents_after')
+        if document_after is not None:
+            try:
+                document_after = UUID(document_after)
+            except (ValueError, AttributeError):
+                raise ValidationError({'documents_after': 'Use a valid document cursor.'})
         cycle_id = query_id(request, 'cycle')
         requirement_qs = scoped_requirements(request.user)
-        document_qs = documents_for(request.user).select_related('area', 'area__cycle').prefetch_related('versions')
+        document_qs = documents_for(request.user).select_related('area', 'area__cycle')
         if cycle_id:
             requirement_qs = requirement_qs.filter(area__cycle_id=cycle_id)
             document_qs = document_qs.filter(
@@ -1218,17 +1229,27 @@ class SearchView(APIView):
             ).distinct()
         requirement_qs = requirement_qs.filter(
             Q(code__icontains=term) | Q(title__icontains=term) | Q(description__icontains=term) |
-            Q(responsible__icontains=term) | Q(area__title__icontains=term)).order_by('area__title', 'code')[:50]
+            Q(responsible__icontains=term) | Q(area__title__icontains=term))
+        if requirement_after:
+            requirement_qs = requirement_qs.filter(pk__gt=requirement_after)
         visible_filename_versions = visible_versions_for(request.user).filter(original_name__icontains=term)
         document_qs = document_qs.filter(
             Q(title__icontains=term) | Q(category__icontains=term) | Q(area__title__icontains=term) |
             Q(custodian__first_name__icontains=term) | Q(custodian__last_name__icontains=term) |
-            Q(versions__in=visible_filename_versions)).distinct().order_by('title')[:50]
+            Q(versions__in=visible_filename_versions)).distinct()
+        if document_after:
+            document_qs = document_qs.filter(pk__gt=document_after)
+        requirements = list(requirement_qs.order_by('pk')[:51]) if kind != 'documents' else []
+        documents = list(document_qs.order_by('pk')[:51]) if kind != 'requirements' else []
+        next_requirements = requirements[49].pk if len(requirements) > 50 else None
+        next_documents = str(documents[49].pk) if len(documents) > 50 else None
         return Response({
             'requirements': [{'id': req.id, 'code': req.code, 'title': req.title, 'area': req.area.title,
-                              'status': requirement_result(req)['status']} for req in requirement_qs],
+                              'status': requirement_result(req)['status']} for req in requirements[:50]],
             'documents': [{'id': str(doc.id), 'title': doc.title, 'category': doc.category,
-                           'area': doc.area.title} for doc in document_qs],
+                           'area': doc.area.title} for doc in documents[:50]],
+            'next_requirements': next_requirements,
+            'next_documents': next_documents,
         })
 
 

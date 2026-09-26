@@ -315,6 +315,8 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 **Recommended option:** A, with measured limits rather than invented sizing promises. **Required approver:** School IT; Project Owner; Security/Records Owner for logs. **Production-acceptance impact:** No accepted capacity or reliable operations can be claimed from a successful frontend build/DB-only health probe. Record target OS/runtimes/PostgreSQL, resources, storage modes/durability, operators and rollback method. Pending migrations and unaccepted warnings must fail release gates; preload advisories need a recorded decision, not automatic enablement.
 
+**Local F15 retrieval safeguard:** Search now exposes separate cursors for requirement and document results beyond the first 50, and reapplies visibility on each page. This reversible synthetic-data change does not choose a D20 capacity option or settle list/history pagination, query cost, concurrency, resource thresholds, monitoring, or target load testing. D20 remains Pending Decision.
+
 ### D21 — Filtered report population and readiness evidence
 
 **Status:** Provisional Project Owner Decision — formal approval pending. **Selected option:** B for the repository implementation. **Findings:** F14, F16. **Decision to ratify:** Status filtering changes displayed rows only; readiness remains based on the selected authorized cycle/area.

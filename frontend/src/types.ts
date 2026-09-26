@@ -202,6 +202,8 @@ export type AuditPage = { results: Audit[]; next_before: number | null };
 export type SearchResults = {
   requirements: Array<{ id: number; code: string; title: string; area: string; status: string }>;
   documents: Array<{ id: string; title: string; category: string; area: string }>;
+  next_requirements?: number | null;
+  next_documents?: string | null;
 };
 export type ComplianceReport = Summary & {
   numerator: number;

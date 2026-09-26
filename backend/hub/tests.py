@@ -289,7 +289,8 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.client.force_authenticate(self.outsider)
         hidden_search = self.client.get('/api/search/', {'q': 'Faculty'})
         self.assertEqual(hidden_search.status_code, 200)
-        self.assertEqual(hidden_search.data, {'requirements': [], 'documents': []})
+        self.assertEqual(hidden_search.data, {'requirements': [], 'documents': [],
+                                              'next_requirements': None, 'next_documents': None})
         self.assertEqual(self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id}).data['total'], 0)
 
     def test_csv_neutralizes_spreadsheet_formula_values(self):
@@ -1213,6 +1214,57 @@ class AuditHistoryTests(WorkflowFixture, TestCase):
         recipient_page = self.client.get('/api/audit/', {'area': self.other_area.pk, 'action': 'version_downloaded'})
         self.assertEqual(len(recipient_page.data['results']), 1)
         self.assertEqual(recipient_page.data['results'][0]['detail']['source_area_id'], self.area.pk)
+
+
+class SearchContinuationTests(WorkflowFixture, TestCase):
+    def test_search_pages_keep_scope_and_recheck_revoked_grants(self):
+        requirements = [Requirement(area=self.area, code=f'SYN-{number:03d}',
+                                    title='Synthetic page record', responsible='Fictional office',
+                                    active=True, created_by=self.coordinator) for number in range(51)]
+        Requirement.objects.bulk_create(requirements)
+        Requirement.objects.create(area=self.other_area, code='SYN-HIDDEN',
+                                   title='Synthetic page record', responsible='Fictional office',
+                                   active=True, created_by=self.coordinator)
+        documents = [Document(area=self.area, title=f'Synthetic page document {number}',
+                              custodian=self.custodian, steward=self.custodian) for number in range(51)]
+        Document.objects.bulk_create(documents)
+        DocumentVersion.objects.bulk_create([
+            DocumentVersion(document=document, number=1, original_name='synthetic.pdf',
+                            content_type='application/pdf', size=1, checksum='0' * 64,
+                            uploaded_by=self.custodian) for document in documents
+        ])
+        hidden = Document.objects.create(area=self.other_area, title='Synthetic page hidden',
+                                         custodian=self.outsider, steward=self.outsider)
+        DocumentVersion.objects.create(document=hidden, number=1, original_name='synthetic.pdf',
+                                       content_type='application/pdf', size=1, checksum='0' * 64,
+                                       uploaded_by=self.outsider)
+        self.client.force_authenticate(self.custodian)
+        first = self.client.get('/api/search/', {'cycle': self.cycle.id, 'q': 'Synthetic page'})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual((len(first.data['requirements']), len(first.data['documents'])), (50, 50))
+        self.assertTrue(first.data['next_requirements'])
+        self.assertTrue(first.data['next_documents'])
+        later_requirements = self.client.get('/api/search/', {
+            'cycle': self.cycle.id, 'q': 'Synthetic page', 'kind': 'requirements',
+            'requirements_after': first.data['next_requirements']})
+        later_documents = self.client.get('/api/search/', {
+            'cycle': self.cycle.id, 'q': 'Synthetic page', 'kind': 'documents',
+            'documents_after': first.data['next_documents']})
+        self.assertEqual(later_requirements.status_code, 200)
+        self.assertEqual(later_documents.status_code, 200)
+        self.assertEqual(len(later_requirements.data['requirements']), 1)
+        self.assertEqual(len(later_documents.data['documents']), 1)
+        self.assertEqual(later_requirements.data['documents'], [])
+        self.assertEqual(later_documents.data['requirements'], [])
+        self.assertFalse(later_requirements.data['next_requirements'])
+        self.assertFalse(later_documents.data['next_documents'])
+        self.assertEqual(len({record['id'] for record in first.data['requirements'] + later_requirements.data['requirements']}), 51)
+        self.assertEqual(len({record['id'] for record in first.data['documents'] + later_documents.data['documents']}), 51)
+        self.assertEqual(self.client.get('/api/search/', {'q': 'Synthetic', 'documents_after': 'invalid'}).status_code, 400)
+        RoleAssignment.objects.filter(user=self.custodian, role='custodian', area=self.area).delete()
+        self.assertEqual(self.client.get('/api/search/', {
+            'cycle': self.cycle.id, 'q': 'Synthetic page', 'kind': 'documents',
+            'documents_after': first.data['next_documents']}).data['documents'], [])
 
 
 class ReportProvenanceTests(WorkflowFixture, TestCase):

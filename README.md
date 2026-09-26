@@ -166,7 +166,7 @@ The repository now includes a school-owned Linux reference deployment using Ngin
 
 Back up PostgreSQL and private files as one protected set, replicate it to a separately approved failure domain, and prove an isolated restoration before accepting real evidence. The deployment and restoration artifacts are ready for school IT; no school-server deployment or recovery rehearsal has been claimed from this local workspace. Database administrators can alter database rows; the application audit trail is append-only through the application, not a cryptographic tamper-proof log.
 
-Search checks only scoped requirement and document metadata. Compliance Reports provide scoped filters, printable output, and a CSV download. CSV fields that begin with spreadsheet formula characters are neutralized before export.
+Search checks only scoped requirement and document metadata and offers separate Load more controls after the first 50 matches of each type. Compliance Reports provide scoped filters, printable output, and a CSV download. CSV fields that begin with spreadsheet formula characters are neutralized before export.
 
 Notifications, advanced analytics, two-factor authentication, and a separate readiness score are not included in this increment. Their nonfunctional navigation/controls are intentionally absent.
 

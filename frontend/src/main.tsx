@@ -561,6 +561,33 @@ function App() {
       if (generation === searchGeneration.current) setSearchLoading(false);
     }
   }
+  async function loadMoreSearch(kind: "requirements" | "documents") {
+    if (!cycle || !user || !searchResults || searchLoading) return;
+    const cursor = kind === "requirements" ? searchResults.next_requirements : searchResults.next_documents;
+    if (!cursor) return;
+    const generation = ++searchGeneration.current;
+    const key = { cycle, userId: user.id };
+    setSearchLoading(true);
+    setSearchError("");
+    try {
+      const params = new URLSearchParams({ cycle, q: searchTerm, kind,
+        [kind === "requirements" ? "requirements_after" : "documents_after"]: String(cursor) });
+      const result = await api<SearchResults>(`search/?${params}`);
+      if (generation === searchGeneration.current && contextRef.current.cycle === key.cycle && contextRef.current.userId === key.userId) {
+        setSearchResults((previous) => previous ? ({
+          ...previous,
+          requirements: kind === "requirements" ? [...previous.requirements, ...result.requirements] : previous.requirements,
+          documents: kind === "documents" ? [...previous.documents, ...result.documents] : previous.documents,
+          next_requirements: kind === "requirements" ? result.next_requirements : previous.next_requirements,
+          next_documents: kind === "documents" ? result.next_documents : previous.next_documents,
+        }) : null);
+      }
+    } catch (error) {
+      if (generation === searchGeneration.current) setSearchError((error as Error).message);
+    } finally {
+      if (generation === searchGeneration.current) setSearchLoading(false);
+    }
+  }
   async function loadReport() {
     if (!cycle || !user) return;
     const generation = ++reportGeneration.current;
@@ -1749,6 +1776,8 @@ function App() {
                         <Badge status={result.status} />
                       </button>
                     )) : <div className="empty">No matching requirements in your authorized scope.</div>}
+                    {searchResults.next_requirements && <button className="secondary" disabled={searchLoading}
+                      onClick={() => void loadMoreSearch("requirements")}>Load more requirements</button>}
                   </section>
                   <section className="panel">
                     <h2>Evidence documents</h2>
@@ -1758,6 +1787,8 @@ function App() {
                         <ArrowRight size={18} />
                       </button>
                     )) : <div className="empty">No matching documents in your authorized scope.</div>}
+                    {searchResults.next_documents && <button className="secondary" disabled={searchLoading}
+                      onClick={() => void loadMoreSearch("documents")}>Load more documents</button>}
                   </section>
                 </div>
               )}
