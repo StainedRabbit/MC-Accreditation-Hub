@@ -1,19 +1,34 @@
 import io
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 from django.db import close_old_connections
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.core import mail
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from rest_framework.test import APIClient
 from pypdf import PdfWriter
 from .models import *
+
+
+RECOVERY_TEST_SETTINGS = {
+    'PASSWORD_RESET_ENABLED': True,
+    'EMAIL_BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+    'EMAIL_HOST': 'smtp.school.edu',
+    'EMAIL_PORT': 587,
+    'EMAIL_HOST_USER': 'recovery-service',
+    'EMAIL_HOST_PASSWORD': 'fixture-only-placeholder',
+    'EMAIL_USE_TLS': True,
+    'EMAIL_USE_SSL': False,
+    'EMAIL_TIMEOUT': 10,
+    'DEFAULT_FROM_EMAIL': 'recovery@school.edu',
+    'PASSWORD_RESET_FRONTEND_URL': 'https://hub.school.edu/',
+}
 
 
 def pdf_file(name='evidence.pdf'):
@@ -595,19 +610,74 @@ class WorkflowTests(WorkflowFixture, TestCase):
         disabled = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
         self.assertEqual(disabled.status_code, 200)
         self.assertIn('not configured', disabled.data['detail'])
+        self.assertNotIn('sent', disabled.data['detail'])
 
-    @override_settings(PASSWORD_RESET_ENABLED=True, EMAIL_HOST='smtp.example.invalid', DEFAULT_FROM_EMAIL='noreply@example.invalid', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-    def test_password_recovery_is_one_time_when_delivery_is_configured(self):
-        # The endpoint remains non-enumerating once institutional delivery is enabled.
-        response = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(len(mail.outbox), 1)
+        uid = urlsafe_base64_encode(force_bytes(self.custodian.pk))
+        token = default_token_generator.make_token(self.custodian)
+        self.assertEqual(self.client.post('/api/auth/password-reset-confirm/', {
+            'uid': uid, 'token': token, 'new_password': 'Recovered-password-1234'}, format='json').status_code, 400)
+
+    def test_password_recovery_rejects_non_smtp_and_incomplete_configuration(self):
+        for change in ({'EMAIL_BACKEND': 'django.core.mail.backends.console.EmailBackend'},
+                       {'EMAIL_BACKEND': 'django.core.mail.backends.dummy.EmailBackend'},
+                       {'EMAIL_HOST_PASSWORD': ''}, {'EMAIL_HOST': ''},
+                       {'PASSWORD_RESET_FRONTEND_URL': 'http://hub.school.edu/'},
+                       {'EMAIL_USE_TLS': False}):
+            with self.subTest(change=list(change)):
+                with override_settings(**(RECOVERY_TEST_SETTINGS | change)):
+                    with patch('hub.views.EmailMessage.send') as send:
+                        response = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
+                    self.assertIn('not configured', response.data['detail'])
+                    send.assert_not_called()
+
+    @override_settings(**RECOVERY_TEST_SETTINGS)
+    def test_password_recovery_generic_response_and_fragment_link(self):
+        with patch('hub.views.EmailMessage.send', autospec=True, return_value=1) as send:
+            found = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
+            missing = self.client.post('/api/auth/password-reset/', {'email': 'unknown@school.edu'}, format='json')
+        self.assertEqual(found.status_code, 200)
+        self.assertEqual(found.data, missing.data)
+        self.assertNotIn('sent', found.data['detail'])
+        self.assertEqual(send.call_count, 1)
+        body = send.call_args.args[0].body
+        self.assertTrue('/#reset=1&uid=' in body)
+        self.assertNotIn('?reset=', body)
+        self.assertNotIn('token=', body.split('#', 1)[0])
+
+    @override_settings(**RECOVERY_TEST_SETTINGS)
+    def test_password_recovery_smtp_failure_is_non_enumerating(self):
+        for result in (0, RuntimeError('Synthetic SMTP failure')):
+            with self.subTest(result=type(result).__name__):
+                with patch('hub.views.EmailMessage.send', autospec=True,
+                           side_effect=result if isinstance(result, Exception) else None,
+                           return_value=result if not isinstance(result, Exception) else None):
+                    found = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
+                    missing = self.client.post('/api/auth/password-reset/', {'email': 'unknown@school.edu'}, format='json')
+                self.assertEqual(found.status_code, 200)
+                self.assertEqual(found.data, missing.data)
+                self.assertNotIn('sent', found.data['detail'])
+
+    @override_settings(**RECOVERY_TEST_SETTINGS)
+    def test_password_recovery_token_reuse_and_expiry(self):
+        with patch('hub.views.EmailMessage.send', autospec=True, return_value=1):
+            response = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
+        self.assertEqual(response.status_code, 200)
         uid = urlsafe_base64_encode(force_bytes(self.custodian.pk))
         token = default_token_generator.make_token(self.custodian)
         confirmed = self.client.post('/api/auth/password-reset-confirm/', {'uid': uid, 'token': token, 'new_password': 'Recovered-password-1234'}, format='json')
         self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        self.assertEqual(self.client.post('/api/auth/password-reset-confirm/', {
+            'uid': uid, 'token': token, 'new_password': 'Another-password-1234'}, format='json').status_code, 400)
         self.assertTrue(User.objects.get(pk=self.custodian.pk).check_password('Recovered-password-1234'))
         self.assertTrue(AuditEvent.objects.filter(action='password_reset', actor=self.custodian).exists())
+        issued = datetime(2026, 1, 1)
+        with override_settings(PASSWORD_RESET_TIMEOUT=1):
+            with patch.object(default_token_generator, '_now', return_value=issued):
+                expired_token = default_token_generator.make_token(User.objects.get(pk=self.custodian.pk))
+            with patch.object(default_token_generator, '_now', return_value=issued + timedelta(seconds=2)):
+                expired = self.client.post('/api/auth/password-reset-confirm/', {
+                    'uid': uid, 'token': expired_token, 'new_password': 'Another-password-1234'}, format='json')
+        self.assertEqual(expired.status_code, 400)
 
     def test_cycle_close_reopen_is_scoped_logged_and_restores_authorized_writes(self):
         area_coordinator = self.user('coordinator', self.area, 'area-coordinator')

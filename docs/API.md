@@ -10,8 +10,8 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpo
 | GET `auth/me/` | `{id, name, username, is_staff, assignments:[{role,cycle_id,area_id}]}` |
 | POST `auth/logout/` | Ends session |
 | POST `auth/password-change/` | Authenticated `{current_password,new_password}`; keeps the current session valid and records an audit event |
-| POST `auth/password-reset/` | `{email}`; sends a non-enumerating recovery email only when institutional delivery is configured, otherwise returns the administrator-recovery instruction |
-| POST `auth/password-reset-confirm/` | `{uid,token,new_password}`; consumes a valid one-time recovery token |
+| POST `auth/password-reset/` | `{email}`; disabled or invalid configuration returns administrator-recovery guidance; enabled requests give the same account-neutral response for unknown accounts and SMTP failures, without claiming delivery |
+| POST `auth/password-reset-confirm/` | `{uid,token,new_password}` in the POST body; requires enabled recovery and consumes a valid one-time token |
 | GET `cycles/` | Accessible cycles only |
 | POST `cycles/{id}/close/` | Scoped Coordinator only `{rationale}`; changes an active cycle to closed and logs each authorized area |
 | POST `cycles/{id}/reopen/` | Scoped Coordinator only `{rationale}`; restores a closed cycle to active and logs each authorized area |
@@ -68,4 +68,4 @@ For preserved item-level requirements, repeated submission of the same mapping/v
 
 Errors use 400 for validation/invalid transitions, 403 for missing sessions or denied actions, 404 for inaccessible records, and 429 for login throttling. Hidden records are never returned by list endpoints. Unknown HTTP operations return 405. This first increment returns unpaginated scoped collections; add pagination before scaling to large institutional datasets.
 
-Password recovery remains disabled unless `PASSWORD_RESET_ENABLED=1`, `DEFAULT_FROM_EMAIL`, and `EMAIL_HOST` are configured. The recovery link is built from `PASSWORD_RESET_FRONTEND_URL`; configure it with the production HTTPS application URL before enabling delivery.
+Password recovery remains disabled unless `PASSWORD_RESET_ENABLED=1`, the exact SMTP email backend, authenticated encrypted SMTP settings, sender, and a public HTTPS `PASSWORD_RESET_FRONTEND_URL` are configured. Console, dummy, incomplete, and example configurations fail closed. The emailed link carries UID and token in a URL fragment; the browser removes that fragment from history before displaying the reset form and submits the token in a POST body. The reference Nginx access log omits query strings; request-body logging must remain disabled. School IT must verify actual delivery and logging before enabling recovery. Administrator-assisted recovery remains the pilot path; this local configuration gate is provisional under D17.

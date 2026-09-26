@@ -150,7 +150,13 @@ function Login({
     [busy, setBusy] = useState(false),
     [show, setShow] = useState(false),
     [recovery, setRecovery] = useState(false);
-  const resetParams = new URLSearchParams(window.location.search);
+  const [resetLink, setResetLink] = useState(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    if (params.get("reset") !== "1") return null;
+    const link = { uid: params.get("uid"), token: params.get("token") };
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    return link;
+  });
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -246,7 +252,7 @@ function Login({
           <button type="button" className="link recovery-link" onClick={() => setRecovery(true)}>Forgot your password?</button>
         </form>
         <small>Institution-Owned System · Mabini Colleges, Inc.</small>
-        {(recovery || resetParams.get("reset")) && <PasswordRecovery close={() => { setRecovery(false); window.history.replaceState({}, "", window.location.pathname); }} uid={resetParams.get("uid")} token={resetParams.get("token")} />}
+        {(recovery || resetLink) && <PasswordRecovery close={() => { setRecovery(false); setResetLink(null); }} uid={resetLink?.uid || null} token={resetLink?.token || null} />}
       </section>
     </main>
   );

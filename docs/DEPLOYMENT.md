@@ -44,7 +44,7 @@ Before installing a fresh Linux checkout, run `python3 -B -m unittest discover -
 
 - Nginx serves the built React application and collected static files; it proxies only `/api/` to Gunicorn at `127.0.0.1:8001`.
 - `/api/health/` is an unauthenticated readiness probe that performs `SELECT 1` and returns only `{"status":"ok"}` or a 503 status. It exposes no user, cycle, or evidence data.
-- Use `journalctl -u mc-accreditation-hub` and the Nginx error log for incident investigation. Do not place credentials, evidence content, or reset tokens in ticket comments or logs.
-- Password reset remains disabled until school SMTP and the public HTTPS URL are configured and tested.
+- Use `journalctl -u mc-accreditation-hub` and the Nginx error log for incident investigation. Do not place credentials, evidence content, reset links, or request bodies in ticket comments or logs. The reference Nginx access-log format records `$uri` without query strings; keep request-body logging disabled, and review all school-managed proxy/application log formats before enabling recovery. New reset links use fragments, which browsers do not send in HTTP requests.
+- Password reset remains disabled until School IT confirms authenticated encrypted SMTP delivery, the public HTTPS URL, and deployed log handling. Administrator-assisted recovery is the current pilot path; see the [account recovery procedure](../README.md#account-recovery). No delivery or production acceptance is claimed by the local tests.
 
 See [backup and restore](RESTORE.md) for the paired data-recovery procedure.

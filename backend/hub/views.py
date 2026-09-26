@@ -4,9 +4,12 @@ from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.tokens import default_token_generator
-from django.contrib.auth.forms import PasswordResetForm
+from django.contrib.auth.password_validation import validate_password
 from django.utils.encoding import force_str
-from django.utils.http import urlsafe_base64_decode
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
 from django.db import transaction, connection, DatabaseError
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
@@ -25,6 +28,7 @@ from .access import *
 from .compliance import *
 from .serializers import *
 from .files import validate_upload
+from .recovery import recovery_configured
 
 
 def audit(user, area, action, record, **detail):
@@ -123,36 +127,48 @@ class PasswordResetRequestView(APIView):
 
     def post(self, request):
         data = payload(PasswordResetRequestInput, request).validated_data
-        if not settings.PASSWORD_RESET_ENABLED or not settings.DEFAULT_FROM_EMAIL or not settings.EMAIL_HOST:
+        if not recovery_configured():
             return Response({'detail': 'Password recovery email is not configured. Contact an administrator for recovery.'})
-        form = PasswordResetForm({'email': data['email']})
-        form.is_valid()
-        form.save(
-            request=request, use_https=request.is_secure(),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            email_template_name='hub/password_reset_email.txt',
-            subject_template_name='hub/password_reset_subject.txt',
-            extra_email_context={'reset_url': settings.PASSWORD_RESET_FRONTEND_URL.rstrip('/') + '/?reset=1'},
-        )
-        return Response({'detail': 'If an active account uses that email address, a password recovery link has been sent.'})
+        user = User.objects.filter(email__iexact=data['email'], is_active=True).first()
+        if user and user.has_usable_password():
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            # Fragments are not sent in HTTP requests or included in standard proxy access logs.
+            reset_url = settings.PASSWORD_RESET_FRONTEND_URL.rstrip('/') + '/#reset=1&uid=' + uid + '&token=' + token
+            message = EmailMessage(
+                render_to_string('hub/password_reset_subject.txt').strip(),
+                render_to_string('hub/password_reset_email.txt', {'reset_url': reset_url}),
+                settings.DEFAULT_FROM_EMAIL, [user.email],
+            )
+            try:
+                message.send(fail_silently=False)
+            except Exception:
+                # Do not log the exception: mail transports can include message data.
+                pass
+        return Response({'detail': 'If an active account matches, follow the recovery instructions if they arrive. Otherwise contact an administrator.'})
 
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        if not settings.PASSWORD_RESET_ENABLED:
+        if not recovery_configured():
             raise ValidationError('Password recovery email is not configured. Contact an administrator for recovery.')
         data = payload(PasswordResetConfirmInput, request).validated_data
         try:
-            user = User.objects.get(pk=force_str(urlsafe_base64_decode(data['uid'])))
-        except (User.DoesNotExist, ValueError, TypeError, OverflowError):
+            user_id = int(force_str(urlsafe_base64_decode(data['uid'])))
+            if user_id < 1:
+                raise ValueError('Invalid user ID')
+        except (ValueError, TypeError, OverflowError):
             raise ValidationError('This password recovery link is invalid or has expired.')
-        if not user.is_active or not default_token_generator.check_token(user, data['token']):
-            raise ValidationError('This password recovery link is invalid or has expired.')
-        user.set_password(data['new_password'])
-        user.save(update_fields=['password'])
-        audit(user, None, 'password_reset', user.username)
+        with transaction.atomic():
+            user = User.objects.select_for_update().filter(pk=user_id, is_active=True).first()
+            if not user or not default_token_generator.check_token(user, data['token']):
+                raise ValidationError('This password recovery link is invalid or has expired.')
+            validate_password(data['new_password'], user)
+            user.set_password(data['new_password'])
+            user.save(update_fields=['password'])
+            audit(user, None, 'password_reset', user.username)
         return Response({'detail': 'Password reset. You can now sign in.'})
 
 

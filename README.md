@@ -97,18 +97,25 @@ Only run `close_cycle` for the intended cycle ID when operating directly from th
 
 ## Account recovery
 
-Signed-in users can change their own password from Account security in the sidebar. Password recovery email is disabled by default, so the login screen tells pilot users to contact an administrator instead of falsely claiming a message was sent. Before enabling it in a school environment, configure SMTP and these environment values:
+Signed-in users can change their own password from Account security in the sidebar. **Administrator-assisted recovery is the pilot path.** The user contacts an authorized school administrator through the established school channel. The administrator verifies identity through the school's approved process, resets the account through account administration, communicates the new credential through an approved private channel, and instructs the user to change it after sign-in. School IT must approve and test that procedure; this repository does not claim that institutional procedure has been completed.
+
+Self-service recovery email remains disabled by default. A disabled or incomplete configuration tells users to contact an administrator. School IT must confirm an authenticated encrypted institutional SMTP service and public HTTPS URL before considering enablement. The required settings are:
 
 ```text
 PASSWORD_RESET_ENABLED=1
+DJANGO_EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
 DEFAULT_FROM_EMAIL=accreditation@example.edu
 EMAIL_HOST=smtp.example.edu
+EMAIL_PORT=587
 EMAIL_HOST_USER=...
 EMAIL_HOST_PASSWORD=...
+EMAIL_USE_TLS=1
+EMAIL_USE_SSL=0
+EMAIL_TIMEOUT=10
 PASSWORD_RESET_FRONTEND_URL=https://accreditation.example.edu/
 ```
 
-Use the production HTTPS URL for `PASSWORD_RESET_FRONTEND_URL`. The server sends a one-time link; it does not disclose whether an email address belongs to an active account.
+These are examples, not verified school settings. The endpoint rejects console/dummy backends, placeholders, missing credentials, unencrypted SMTP, and non-HTTPS reset URLs. It gives the same account-neutral response whether an address exists or SMTP fails, without claiming delivery. Reset links put the token in the URL fragment, which is removed from browser history on opening; the fragment is not sent to the web server. School IT must still verify actual delivery and the deployed logging policy before enabling the flag. Do not put reset links, credentials, or request bodies in logs or tickets.
 
 ## Verification
 

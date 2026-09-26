@@ -257,14 +257,14 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 ### D17 — Account recovery at launch
 
-**Status:** Pending Decision. **Findings:** F08, F25. **Decision to make:** What supported recovery channel will users have?
+**Status:** Provisional Project Owner Decision — School IT and Security/Records Owner confirmation pending. **Selected option:** A for the pilot. **Findings:** F08, F25. **Decision to make:** What supported recovery channel will users have?
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
 | A. Keep email recovery disabled; provide verified administrator-assisted recovery | Retains disabled endpoint messaging; IT defines identity verification, who may reset, secure delivery and audit of recovery. | No enablement code required; administration/audit deficiencies may require fixes and procedure tests. |
 | B. Enable institutionally managed SMTP recovery after remediation | Select actual SMTP backend, reject console/dummy production delivery, protect tokens from logs, rate-limit and prove real delivery/one-time use/expiry. IT supplies approved sender/URL/credentials securely. | Yes: configuration guard, safe logging/throttle/test fixes; IT configuration required. |
 
-**Recommended option:** A until B is demonstrated. **Required approver:** School IT; Security/Records Owner. **Production-acceptance impact:** Email recovery must not be enabled from the current example alone. A can satisfy the recovery gate with an approved tested procedure; B blocks acceptance until SMTP/token confidentiality and real-session/token tests pass. No credentials belong in this register.
+**Provisional implementation:** Administrator-assisted recovery remains the pilot path. The self-service endpoint requires authenticated encrypted SMTP, a valid sender and public HTTPS URL, and rejects console/dummy/example configuration. Its response does not claim delivery or identify accounts, including after a delivery failure. Reset links use URL fragments and the reference Nginx access log omits query strings; School IT must verify every deployed proxy and application logging layer. **Required approver:** School IT; Security/Records Owner. **Production-acceptance impact:** The current local tests mock SMTP and do not prove institutional delivery, the administrator identity-verification procedure, or target log handling. Option B remains unavailable until School IT confirms those controls and the applicable F09 protections. No credentials belong in this register.
 
 ### D18 — Network exposure, trusted proxies and administration
 
