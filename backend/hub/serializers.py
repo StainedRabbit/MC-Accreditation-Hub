@@ -5,12 +5,14 @@ from .models import Requirement, EvidenceItem
 
 class ItemInput(serializers.Serializer):
     label = serializers.CharField(max_length=180)
-    criteria = serializers.CharField(required=False, allow_blank=True, default='')
+    criteria = serializers.CharField(required=False, allow_blank=True, default='', max_length=4000)
     mandatory = serializers.BooleanField(default=True)
 
 
 class RequirementInput(serializers.ModelSerializer):
     items = ItemInput(many=True, required=False)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=4000)
+    exclusion_reason = serializers.CharField(required=False, allow_blank=True, max_length=4000)
     applicability_reason = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=4000)
     change_reason = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=4000)
 
@@ -20,6 +22,8 @@ class RequirementInput(serializers.ModelSerializer):
         validators = []
 
     def validate(self, attrs):
+        if len(attrs.get('items', [])) > 50:
+            raise serializers.ValidationError({'items': 'Use 50 evidence items or fewer.'})
         instance = self.instance
         applicable = attrs.get('applicable', instance.applicable if instance else True)
         reason = attrs.get('exclusion_reason', instance.exclusion_reason if instance else '')
@@ -108,7 +112,7 @@ class StewardshipInput(serializers.Serializer):
 class ReviewInput(serializers.Serializer):
     submission = serializers.IntegerField()
     outcome = serializers.ChoiceField(choices=['approved', 'revision_requested', 'rejected'])
-    comment = serializers.CharField(required=False, allow_blank=True, default='')
+    comment = serializers.CharField(required=False, allow_blank=True, default='', max_length=4000)
 
     def validate(self, attrs):
         if attrs['outcome'] != 'approved' and not attrs['comment'].strip():

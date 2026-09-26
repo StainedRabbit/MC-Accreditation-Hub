@@ -4,15 +4,27 @@ First working increment for the Graduate School of Mabini Colleges, Inc. React +
 
 ## Local preview on this computer
 
-Open **http://127.0.0.1:5173** after starting the services. The isolated development PostgreSQL cluster is under `.local/postgres`, bound to `127.0.0.1:55432`. It does not use the existing PostgreSQL service or its databases.
+Open **http://127.0.0.1:5173** after starting the services. The isolated development PostgreSQL cluster is under `.local/postgres`, bound to `127.0.0.1:55432`. It does not use the existing PostgreSQL service or its databases. Use fictional data and local-only accounts; do not upload institutional evidence.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1
+cd 'C:\Projects\My Projects\Graduate School Accreditation Hub'
+& 'C:\Program Files\PostgreSQL\18\bin\postgres.exe' -D '.local\postgres' -p 55432 -h 127.0.0.1
 ```
+
+Leave that PostgreSQL window open. In a second PowerShell window, activate the project environment and run:
+
+```powershell
+cd 'C:\Projects\My Projects\Graduate School Accreditation Hub'
+$env:PGHOST='127.0.0.1'; $env:PGPORT='55432'; $env:PASSWORD_RESET_ENABLED='0'
+py backend/manage.py migrate
+py backend/manage.py runserver 127.0.0.1:8000
+```
+
+In a third PowerShell window, run `npm.cmd run dev --prefix frontend -- --host 127.0.0.1` from the project root. These commands are for this computer's isolated local cluster; use the Fresh installation steps below on other machines. `scripts/start-local.ps1` now fails explicitly because the previous launcher contained only comments and started nothing.
 
 Use `.local/demo-credentials.txt` for the generated local passwords. Demo users are `demo.coordinator`, `demo.custodian`, `demo.reviewer`, `demo.viewer`, and `demo.administrator`. The administrator manages accounts at `/api/admin/`, and deliberately has no implicit accreditation access. Other demo users have sample scope assignments. All seeded records are fictional.
 
-Logs live in `.local/django-error.log` and `.local/vite.log`. Run the startup script only when the services are stopped; it does not replace processes already using the ports.
+The three terminal windows show service output directly. Stop each service with **Ctrl+C** after testing.
 
 ## Fresh installation
 

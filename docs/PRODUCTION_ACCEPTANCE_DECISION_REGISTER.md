@@ -39,7 +39,7 @@ An approved option resolves a choice, not the underlying implementation or accep
 | D19 | Who owns recurring backups, recovery and operational records? | F11, F20, F28 | Pending Decision |
 | D20 | What pilot capacity and operating controls must be proven? | F15, F28 | Pending Decision |
 | D21 | What population does a filtered readiness report measure? | F14, F16 | Provisional Project Owner Decision — formal approval pending |
-| D22 | Where and how will acceptance evidence be collected? | F11, F25, F28 | Pending Decision |
+| D22 | Where and how will acceptance evidence be collected? | F11, F25, F28 | Provisional Project Owner Decision — local synthetic stage only; School IT confirmation pending |
 
 F10/F12 are policy-independent technical fixes listed separately below. F22's decision context is covered by D05/D07. F16's stale-response defect is not an option to accept misleading reports: D21 determines report semantics, while correctness must be repaired whichever option is chosen. Similarly, D03 does not permit search to match inaccessible versions under any option.
 
@@ -328,7 +328,7 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 ### D22 — Acceptance environment, evidence and sign-off
 
-**Status:** Pending Decision. **Findings:** F11, F25, F28. **Decision to make:** Which isolated environment and responsible reviewers will prove the selected release?
+**Status:** Provisional Project Owner Decision — local synthetic stage only; School IT confirmation pending. **Selected provisional option:** B for reproducible isolated development checks first. **Findings:** F11, F25, F28. **Decision to ratify:** Which target environment, responsible reviewers, and evidence record will prove a later release?
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -336,6 +336,8 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 | B. Reproducible isolated development acceptance first, followed by IT target verification | Local synthetic workflows/restore prove readiness for handoff; production acceptance waits for actual target HTTPS/storage/permissions/recovery checks. | Test/fixture changes may be required; target checks remain mandatory. |
 
 **Recommended option:** A. **Required approver:** School IT; Academic Owner for workflow outcomes; Project Owner for release scope. **Production-acceptance impact:** Historical tests and checksum/archive listing cannot replace current workflow and actual restore evidence. D16 defines required behavior; D18–D20 define the target and operational criteria. No checklist box, participant result, privacy/legal approval or production sign-off is completed by this register.
+
+**Restricted test assumption:** Option B permits local synthetic checks while School IT has not provided D18–D20 target values. It does not approve institutional evidence, a school-server deployment, the target acceptance environment, or a production release. School IT must identify and verify the target OS/runtime, internal proxy and admin networks, TLS and logs, shared throttling, private evidence and backup targets, restore/release operators, capacity envelope, and review record before target acceptance. Academic Owner and Project Owner must approve workflow and release scope against D16.
 
 ## Approved Technical Fixes That Can Start Now
 

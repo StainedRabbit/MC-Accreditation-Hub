@@ -44,7 +44,7 @@ def payload(serializer_class, request, **kwargs):
 
 def query_id(request, name):
     value = request.query_params.get(name)
-    if value is not None and (not value.isdigit() or int(value) < 1 or len(value) > 12):
+    if value is not None and (len(value) > 12 or not value.isascii() or not value.isdecimal() or int(value) < 1):
         raise ValidationError({name: 'Use a positive numeric identifier.'})
     return value
 
@@ -99,8 +99,11 @@ class LoginView(APIView):
         password = request.data.get('password', '')
         if not isinstance(identifier, str) or not isinstance(password, str):
             raise ValidationError('Enter a username and password.')
-        account = User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier)).first()
-        user = authenticate(request, username=account.username if account else identifier, password=password)
+        accounts = (list(User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier))
+                         .distinct()[:2]) if 0 < len(identifier) <= 254 and len(password) <= 4096 else [])
+        # Fail closed on username/email or case-folding collisions; never choose an arbitrary account.
+        account = accounts[0] if len(accounts) == 1 else None
+        user = authenticate(request, username=account.username, password=password) if account else None
         if user is None:
             audit(None, None, 'login_failed', 'authentication')
             raise PermissionDenied('Invalid username or password.')
@@ -138,7 +141,8 @@ class PasswordResetRequestView(APIView):
         audit(None, None, 'recovery_requested', 'password-recovery')
         if not recovery_configured():
             return Response({'detail': 'Password recovery email is not configured. Contact an administrator for recovery.'})
-        user = User.objects.filter(email__iexact=data['email'], is_active=True).first()
+        matching_users = list(User.objects.filter(email__iexact=data['email'], is_active=True)[:2])
+        user = matching_users[0] if len(matching_users) == 1 else None
         if user and user.has_usable_password():
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
@@ -447,7 +451,7 @@ class RequirementsView(APIView):
             qs = qs.filter(area__cycle_id=request.query_params['cycle'])
         if query_id(request, 'area'):
             qs = qs.filter(area_id=request.query_params['area'])
-        q = request.query_params.get('search', '')
+        q = query_text(request, 'search')
         qs = qs.filter(Q(title__icontains=q) | Q(code__icontains=q) | Q(description__icontains=q) | Q(responsible__icontains=q))
         records = [req_data(r, request.user) for r in qs]
         status = request.query_params.get('status')
@@ -526,7 +530,7 @@ class DocumentsView(APIView):
                 Q(versions__in=visible_versions_for(request.user).filter(
                     submissions__mapping__item__requirement__area__cycle_id=cycle_id))
             ).distinct()
-        q = request.query_params.get('search', '')
+        q = query_text(request, 'search')
         visible_mapping_matches = visible_mappings_for(request.user).filter(
             item__requirement__title__icontains=q
         )

@@ -5,8 +5,17 @@ export async function api<T>(
 ): Promise<T> {
   const method = options.method || "GET";
   if (method !== "GET") {
-    const res = await fetch("/api/auth/csrf/", { credentials: "same-origin" });
-    csrf = (await res.json()).csrfToken;
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/csrf/", { credentials: "same-origin" });
+    } catch {
+      throw new Error("Unable to reach the server to prepare this request.");
+    }
+    if (!res.ok) throw new Error("Unable to prepare this request. Please try again.");
+    const bootstrap = await res.json().catch(() => null);
+    if (!bootstrap || typeof bootstrap.csrfToken !== "string" || !bootstrap.csrfToken)
+      throw new Error("Unable to prepare this request. Please try again.");
+    csrf = bootstrap.csrfToken;
   }
   const res = await fetch(`/api/${path}`, {
     ...options,

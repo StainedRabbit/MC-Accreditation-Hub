@@ -1217,3 +1217,36 @@ class ReportProvenanceTests(WorkflowFixture, TestCase):
         self.assertEqual(self.client.get('/api/reports/compliance/', {'cycle': private_cycle.id}).status_code, 404)
         self.assertEqual(self.client.get('/api/reports/compliance/',
                                          {'cycle': self.cycle.id, 'area': self.other_area.id}).status_code, 404)
+
+
+class InputBoundaryTests(WorkflowFixture, TestCase):
+    def test_invalid_identifiers_and_oversized_search_return_400(self):
+        for value in ('²', '٢', '9' * 4301, '0', '-1'):
+            with self.subTest(kind='identifier', length=len(value)):
+                self.assertEqual(self.client.get('/api/requirements/', {'cycle': value}).status_code, 400)
+                self.assertEqual(self.client.get('/api/reports/compliance/', {'area': value}).status_code, 400)
+        for endpoint in ('/api/requirements/', '/api/documents/'):
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(self.client.get(endpoint, {'search': 'x' * 121}).status_code, 400)
+
+    def test_ambiguous_login_fails_closed(self):
+        User.objects.create_user(username=self.custodian.email, email='second@test.invalid', password='Synthetic-password-1234')
+        self.client.force_authenticate(user=None)
+        login = self.client.post('/api/auth/login/', {'username': self.custodian.email,
+                                                      'password': 'Test-password-1234'}, format='json')
+        self.assertEqual(login.status_code, 403)
+        self.assertEqual(login.data['detail'], 'Invalid username or password.')
+        oversized = self.client.post('/api/auth/login/', {'username': self.custodian.username,
+                                                            'password': 'x' * 4097}, format='json')
+        self.assertEqual(oversized.status_code, 403)
+
+    def test_large_requirement_fields_and_item_count_are_rejected(self):
+        before = Requirement.objects.count()
+        base = {'area': self.area.id, 'code': 'BOUND', 'title': 'Synthetic boundary',
+                'responsible': 'School', 'active': True, 'items': [{'label': 'Required'}]}
+        for change in ({'description': 'x' * 4001}, {'items': [{'label': 'Item'}] * 51},
+                       {'items': [{'label': 'Required', 'criteria': 'x' * 4001}]}):
+            with self.subTest(fields=list(change)):
+                response = self.client.post('/api/requirements/', base | change, format='json')
+                self.assertEqual(response.status_code, 400)
+        self.assertEqual(Requirement.objects.count(), before)
