@@ -14,6 +14,13 @@ class User(AbstractUser):
         constraints = [models.UniqueConstraint(Lower('email'), name='user_email_ci')]
 
 
+class AuthRateBucket(models.Model):
+    """PostgreSQL-backed test throttling shared by every application worker."""
+    key = models.CharField(max_length=64, unique=True)
+    window_start = models.DateTimeField()
+    count = models.PositiveIntegerField(default=0)
+
+
 class Cycle(models.Model):
     title = models.CharField(max_length=180)
     program = models.CharField(max_length=180, default='Graduate School')

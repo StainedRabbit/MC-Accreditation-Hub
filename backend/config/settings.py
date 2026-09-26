@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / '.env')
@@ -10,7 +11,8 @@ ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split('
 INSTALLED_APPS = ['django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
                   'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
                   'rest_framework', 'hub']
-MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
+MIDDLEWARE = ['hub.test_boundary.RestrictedTestBoundaryMiddleware',
+              'django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
               'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware',
               'django.contrib.auth.middleware.AuthenticationMiddleware', 'django.contrib.messages.middleware.MessageMiddleware',
               'django.middleware.clickjacking.XFrameOptionsMiddleware']
@@ -47,7 +49,13 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'
 SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+RESTRICTED_TEST_MODE = os.getenv('RESTRICTED_TEST_MODE', '0') == '1'
+TEST_TRUSTED_PROXY_NETWORKS = os.getenv('TEST_TRUSTED_PROXY_NETWORKS', '')
+TEST_ADMIN_NETWORKS = os.getenv('TEST_ADMIN_NETWORKS', '')
+TEST_AUTH_LIMIT_PER_MINUTE = int(os.getenv('TEST_AUTH_LIMIT_PER_MINUTE', '10'))
+if RESTRICTED_TEST_MODE and (DEBUG or '*' in ALLOWED_HOSTS):
+    raise ImproperlyConfigured('Restricted test mode requires DEBUG=0 and explicit allowed hosts.')
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if RESTRICTED_TEST_MODE else None
 SECURE_SSL_REDIRECT = os.getenv('DJANGO_SECURE_SSL_REDIRECT', '0') == '1'
 SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_SECURE_HSTS_SECONDS', '0'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0

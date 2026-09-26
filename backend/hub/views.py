@@ -89,6 +89,9 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
 
+    def get_throttles(self):
+        return [] if settings.RESTRICTED_TEST_MODE else super().get_throttles()
+
     def post(self, request):
         identifier = request.data.get('username', '')
         password = request.data.get('password', '')

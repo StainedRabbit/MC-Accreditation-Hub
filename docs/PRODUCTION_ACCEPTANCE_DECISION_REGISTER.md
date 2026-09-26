@@ -2,9 +2,9 @@
 
 Prepared: 2026-09-17
 
-Status: **D01–D06 are Provisional Project Owner Decision — formal approval pending. All other decisions remain Pending Decision.**
+Status: **D01–D07, D17 and the restricted-test D18 choice are provisional Project Owner decisions. Other decisions remain pending. No formal School IT approval is recorded.**
 
-Formal approver names, approval dates and sign-off evidence: **Not recorded**. D01–D06's selected options are recorded below as provisional Project Owner direction only.
+Formal approver names, approval dates and sign-off evidence: **Not recorded**. Selected options are provisional Project Owner direction only.
 
 ## Purpose and authority
 
@@ -12,7 +12,7 @@ This register translates the P0 blockers and conditional acceptance decisions in
 
 Recommendations are proposals, not approved school policy. The Project Owner coordinates scope and delivery; the Academic Owner approves academic workflow and instrument requirements; School IT approves operating environments and release evidence; the Security/Records Owner approves evidence visibility, sensitivity, retention and security controls. Where multiple approvers are listed, each must approve their part. These are required approval roles proposed by this register, not claims about named officials or an established school approval process.
 
-An approved option resolves a choice, not the underlying implementation or acceptance test. Findings remain open until the selected behavior is implemented and verified, or an explicit scope amendment defines an acceptable substitute. Real institutional uploads and production acceptance remain blocked by the review's unresolved gates. No application, deployment, database or infrastructure change is authorized by this documentation-only checkpoint.
+An approved option resolves a choice, not the underlying implementation or acceptance test. Findings remain open until the selected behavior is implemented and verified, or an explicit scope amendment defines an acceptable substitute. Real institutional uploads and production acceptance remain blocked by the review's unresolved gates. The local restricted-test code does not record School IT approval or authorize a public deployment.
 
 ## Decision index
 
@@ -34,8 +34,8 @@ An approved option resolves a choice, not the underlying implementation or accep
 | D14 | Is archive distinct from closure, draft and non-applicability? | F27, F23 | Pending Decision |
 | D15 | Which account/cycle/area administration tools are required at launch? | F27, F13, F09 | Pending Decision |
 | D16 | Which revised requirements constitute the acceptance baseline? | F27, F01–F07 | Pending Decision |
-| D17 | Is recovery administrator-assisted or institutionally emailed? | F08, F25 | Pending Decision |
-| D18 | What network/proxy/admin exposure model will IT operate? | F09, F28 | Pending Decision |
+| D17 | Is recovery administrator-assisted or institutionally emailed? | F08, F25 | Provisional Project Owner Decision — School IT confirmation pending |
+| D18 | What network/proxy/admin exposure model will IT operate? | F09, F28 | Provisional Project Owner Decision — School IT confirmation pending |
 | D19 | Who owns recurring backups, recovery and operational records? | F11, F20, F28 | Pending Decision |
 | D20 | What pilot capacity and operating controls must be proven? | F15, F28 | Pending Decision |
 | D21 | What population does a filtered readiness report measure? | F14, F16 | Pending Decision |
@@ -268,7 +268,7 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 ### D18 — Network exposure, trusted proxies and administration
 
-**Status:** Pending Decision. **Findings:** F09, F28. **Decision to make:** Which network/proxy boundary will IT support, and where may administration be reached?
+**Status:** Provisional Project Owner Decision — based on the project presentation; School IT confirmation pending. **Selected test option:** A, restricted to an internal test network. **Findings:** F09, F28. **Decision to make for any later release:** Which network/proxy boundary will IT support, and where may administration be reached?
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -276,16 +276,16 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 | B. School remote-access boundary plus documented proxy chain | Supports approved remote users; IT specifies every trusted hop and admin management network. Header sanitation/rate limiting is verified end to end. | Yes: authentication fixes and topology-specific configuration/tests. |
 | C. Public application login with separately restricted administration | Expands exposure and requires explicit IT/security acceptance, consistent multi-worker abuse controls and monitoring. No public evidence access is introduced. | Yes: authentication fixes, hardened exposure configuration and tests. |
 
-**Recommended option:** A for a controlled initial pilot, subject to actual access needs. **Required approver:** School IT; Security/Records Owner. **Approval evidence:** Not recorded; no option or topology is approved. **Production-acceptance impact:** F09 remains blocking until spoof-resistant forwarding and consistent limits cover application/admin login and enabled recovery. Approve HSTS subdomain inclusion independently of duration/preload; none is inferred from selecting HTTPS. This is not authority to deploy or provision a network.
+**Provisional test assumptions:** A school-owned on-premises test host, authorized users on an internal test network only, one school-managed Nginx proxy, private loopback Gunicorn and PostgreSQL, an explicit management CIDR list for Django admin, and synthetic accounts/evidence. The repo supplies a fail-closed test template; it does not configure a school host or authorize public exposure. **Required approver:** School IT; Security/Records Owner. **Approval evidence:** Not recorded. **Production-acceptance impact:** The test settings are not production policy. School IT must approve actual network values and verify the target before any wider release. Approve HSTS subdomain inclusion independently of duration/preload.
 
-**Exact School IT inputs needed before F09 implementation:**
+**Exact School IT values to verify before enabling the test host:**
 
 1. The ordered client-to-Django proxy chain: every reverse proxy/load balancer, each trusted hop and its source addresses, which hop terminates TLS, and which hop replaces or strips inbound `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, and `Forwarded` headers. Identify how Gunicorn is prevented from accepting direct untrusted traffic.
 2. The public versus internal exposure boundary: approved hostname/DNS and HTTPS ownership, which application and API routes are reachable from school networks, remote access, or the public internet, and the corresponding approved hosts/CSRF origins. State the pilot population and whether self-service recovery remains disabled.
 3. The permitted source networks for `/api/admin/`, the access mechanism and enforcement point (proxy, firewall, or both), and whether direct Django/admin access is possible from any other path.
 4. The shared rate-limit storage available to all Gunicorn workers and any proxy instances, its operator/availability expectations, and the approved limit/key policy for application login, recovery request/confirmation, and Django admin login, including how shared school-network clients are treated.
 
-The current reference Nginx configuration appends to `X-Forwarded-For`, Django has no confirmed trusted-hop count, the login throttle uses worker-local default cache, and recovery/admin lack matching limits. These remain unmodified pending the approved design. Record the selected option, named approvers, approval evidence, and actual values here before implementation; a recommendation is not approval.
+**Provisional implementation:** The separate test Nginx template replaces incoming forwarding headers with one client address. Django accepts them only from `TEST_TRUSTED_PROXY_NETWORKS`; missing or broad `/0` trust denies requests. `TEST_ADMIN_NETWORKS` is required for admin and defaults to inaccessible. PostgreSQL-backed rate buckets apply the same configured per-minute limit to login, recovery request/confirmation, and admin login across Gunicorn workers. Password recovery remains disabled by default. The existing general deployment reference is not changed into an approved production design. Record actual addresses, hostnames, TLS ownership, selected limit policy, named approvers, and target verification evidence here after School IT review; no value is inferred from the presentation.
 
 ### D19 — Backup, recovery and records of operation
 

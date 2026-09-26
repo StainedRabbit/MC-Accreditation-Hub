@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from django.db import close_old_connections
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils.http import urlsafe_base64_encode
@@ -950,3 +950,59 @@ class PackageConcurrencyTests(WorkflowFixture, TransactionTestCase):
                        pool.submit(decide, self.coordinator.id, 'revisions_requested')]
             self.assertEqual(sorted(f.result() for f in futures), [201, 400])
         self.assertEqual(PackageDecision.objects.filter(package_id=draft['id']).count(), 1)
+
+
+@override_settings(RESTRICTED_TEST_MODE=True, TEST_TRUSTED_PROXY_NETWORKS='127.0.0.1/32',
+                   TEST_ADMIN_NETWORKS='10.20.0.0/16', TEST_AUTH_LIMIT_PER_MINUTE=2)
+class RestrictedTestBoundaryTests(TestCase):
+    def client_from(self, address='10.20.1.5', **headers):
+        return Client(**({'REMOTE_ADDR': '127.0.0.1', 'HTTP_X_FORWARDED_FOR': address,
+                          'HTTP_X_FORWARDED_PROTO': 'https'} | headers))
+
+    def test_spoofed_forwarding_and_untrusted_peer_are_denied(self):
+        self.assertEqual(self.client_from('9.9.9.9, 10.20.1.5').get('/api/health/').status_code, 400)
+        self.assertEqual(self.client_from('10.20.1.5', HTTP_X_FORWARDED_PROTO='https,http').get('/api/health/').status_code, 400)
+        self.assertEqual(self.client_from('10.20.1.5', HTTP_FORWARDED='for=9.9.9.9').get('/api/health/').status_code, 200)
+        self.assertEqual(Client(REMOTE_ADDR='10.20.1.5', HTTP_X_FORWARDED_FOR='10.20.1.5',
+                                HTTP_X_FORWARDED_PROTO='https').get('/api/health/').status_code, 403)
+        with override_settings(TEST_TRUSTED_PROXY_NETWORKS=''):
+            self.assertEqual(self.client_from().get('/api/health/').status_code, 403)
+        with override_settings(TEST_TRUSTED_PROXY_NETWORKS='0.0.0.0/0'):
+            self.assertEqual(self.client_from().get('/api/health/').status_code, 403)
+
+    def test_admin_allowlist_defaults_closed(self):
+        self.assertEqual(self.client_from('10.20.1.5').get('/api/admin/login/').status_code, 200)
+        self.assertEqual(self.client_from('10.21.1.5').get('/api/admin/login/').status_code, 404)
+        with override_settings(TEST_ADMIN_NETWORKS=''):
+            self.assertEqual(self.client_from().get('/api/admin/login/').status_code, 404)
+        with override_settings(TEST_ADMIN_NETWORKS='0.0.0.0/0'):
+            self.assertEqual(self.client_from().get('/api/admin/login/').status_code, 404)
+
+    def test_database_limit_shared_across_clients_for_all_auth_routes(self):
+        first = self.client_from()
+        second = self.client_from()
+        routes = [('/api/auth/login/', {'username': 'absent', 'password': 'incorrect'}),
+                  ('/api/auth/password-reset/', {'email': 'absent@school.edu'}),
+                  ('/api/admin/login/', {'username': 'absent', 'password': 'incorrect'})]
+        for route, body in routes:
+            with self.subTest(route=route):
+                self.assertNotEqual(first.post(route, body).status_code, 429)
+                self.assertNotEqual(second.post(route, body).status_code, 429)
+                self.assertEqual(self.client_from().post(route, body).status_code, 429)
+        self.assertEqual(AuthRateBucket.objects.count(), 3)
+        self.assertNotEqual(self.client_from('10.20.1.6').post('/api/auth/login/',
+                            {'username': 'absent', 'password': 'incorrect'}).status_code, 429)
+
+    def test_recovery_confirmation_uses_shared_recovery_limit(self):
+        client = self.client_from()
+        self.assertNotEqual(client.post('/api/auth/password-reset/', {'email': 'absent@school.edu'}).status_code, 429)
+        self.assertNotEqual(client.post('/api/auth/password-reset-confirm/',
+                            {'uid': 'bad', 'token': 'bad', 'new_password': 'Synthetic-passphrase-1234'}).status_code, 429)
+        self.assertEqual(self.client_from().post('/api/auth/password-reset/',
+                         {'email': 'absent@school.edu'}).status_code, 429)
+
+    def test_unavailable_shared_limit_storage_fails_closed(self):
+        from django.db import DatabaseError
+        with patch('hub.test_boundary.RestrictedTestBoundaryMiddleware._allowed', side_effect=DatabaseError):
+            self.assertEqual(self.client_from().post('/api/auth/login/',
+                             {'username': 'absent', 'password': 'incorrect'}).status_code, 503)
