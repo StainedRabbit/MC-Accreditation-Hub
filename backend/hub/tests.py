@@ -1099,6 +1099,40 @@ class StorageReconciliationTests(WorkflowFixture, TestCase):
 
 
 class AuditHistoryTests(WorkflowFixture, TestCase):
+    def test_filtered_audit_pages_start_fresh_and_recheck_grants(self):
+        for number in range(5):
+            write_audit(self.coordinator, self.area, 'synthetic_review', f'fictional alpha {number}')
+        for number in range(3):
+            write_audit(self.coordinator, self.area, 'synthetic_review', f'fictional beta {number}')
+        write_audit(self.coordinator, self.other_area, 'synthetic_review', 'fictional alpha hidden')
+        scoped = self.user('coordinator', self.area, 'audit-page-reader')
+        self.client.force_authenticate(scoped)
+        alpha_ids = []
+        before = None
+        for _ in range(4):
+            params = {'search': 'fictional alpha', 'action': 'synthetic_review', 'limit': 2}
+            if before:
+                params['before'] = before
+            response = self.client.get('/api/audit/', params)
+            self.assertEqual(response.status_code, 200)
+            alpha_ids.extend(row['id'] for row in response.data['results'])
+            before = response.data['next_before']
+            if not before:
+                break
+        self.assertIsNone(before)
+        self.assertEqual(len(alpha_ids), 5)
+        self.assertEqual(len(set(alpha_ids)), 5)
+        fresh_beta = self.client.get('/api/audit/', {'search': 'fictional beta',
+                                                    'action': 'synthetic_review', 'limit': 2})
+        self.assertEqual(fresh_beta.status_code, 200)
+        self.assertEqual(len(fresh_beta.data['results']), 2)
+        self.assertIsNotNone(fresh_beta.data['next_before'])
+        RoleAssignment.objects.filter(user=scoped, role='coordinator', area=self.area).delete()
+        denied_next = self.client.get('/api/audit/', {'search': 'fictional beta',
+            'action': 'synthetic_review', 'limit': 2, 'before': fresh_beta.data['next_before']})
+        self.assertEqual(denied_next.status_code, 200)
+        self.assertEqual(denied_next.data['results'], [])
+
     def test_scoped_academic_access_revocation_and_pagination(self):
         for number in range(5):
             write_audit(self.coordinator, self.area, 'synthetic_review', f'record:{number}', reason='fixture')

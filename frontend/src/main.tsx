@@ -292,11 +292,22 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
   const [next, setNext] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [filtersDirty, setFiltersDirty] = useState(false);
   const generation = useRef(0);
+  function invalidateAuditSearch() {
+    generation.current += 1;
+    setEvents([]);
+    setNext(null);
+    setError("");
+    setLoading(false);
+    setFiltersDirty(true);
+  }
   async function load(before?: number) {
+    if (before && filtersDirty) return;
     const current = ++generation.current;
     setLoading(true);
     setError("");
+    setFiltersDirty(false);
     const params = new URLSearchParams({ kind, limit: "50" });
     if (kind === "academic" && cycle) params.set("cycle", cycle);
     if (search.trim()) params.set("search", search.trim());
@@ -313,15 +324,19 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
       if (current === generation.current) setLoading(false);
     }
   }
-  useEffect(() => { void load(); return () => { generation.current += 1; }; }, [kind, cycle]);
+  useEffect(() => {
+    invalidateAuditSearch();
+    void load();
+    return () => { generation.current += 1; };
+  }, [kind, cycle]);
   return <>
     <div className="page-heading"><div><h1>Audit Trail</h1><p>Authorized history with older events available</p></div></div>
     <div className="panel">
-      {security && <label>History type <select value={kind} onChange={(e) => setKind(e.target.value as "academic" | "security")}>
+      {security && <label>History type <select value={kind} onChange={(e) => { invalidateAuditSearch(); setKind(e.target.value as "academic" | "security"); }}>
         <option value="security">Security and account</option><option value="academic">Scoped academic</option>
       </select></label>}
-      <label>Search <input value={search} onChange={(e) => setSearch(e.target.value)} maxLength={120} /></label>
-      <label>Action <input value={action} onChange={(e) => setAction(e.target.value)} maxLength={80} /></label>
+      <label>Search <input value={search} onChange={(e) => { invalidateAuditSearch(); setSearch(e.target.value); }} maxLength={120} /></label>
+      <label>Action <input value={action} onChange={(e) => { invalidateAuditSearch(); setAction(e.target.value); }} maxLength={80} /></label>
       <button type="button" onClick={() => void load()} disabled={loading}>Filter</button>
       {error && <p role="alert">{error}</p>}
     </div>
@@ -329,8 +344,8 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
       <tbody>{events.map((e) => <tr key={e.id}><td>{e.actor}</td><td>{e.action.replaceAll("_", " ")}</td>
         <td>{e.record}</td><td>{e.area_id ?? "Institution"}</td><td><pre>{JSON.stringify(e.detail)}</pre></td>
         <td>{e.request_id}</td><td>{new Date(e.created_at).toLocaleString("en-PH")}</td></tr>)}</tbody></table>
-      {!events.length && !loading && <div className="empty">No audit events in this authorized scope.</div>}
-      {next && <button type="button" onClick={() => void load(next)} disabled={loading}>Load older events</button>}
+      {!events.length && !loading && <div className="empty">{filtersDirty ? "Apply filters to view audit events." : "No audit events in this authorized scope."}</div>}
+      {next && !filtersDirty && <button type="button" onClick={() => void load(next)} disabled={loading}>Load older events</button>}
     </div>
   </>;
 }
@@ -1856,7 +1871,7 @@ function App() {
               </section>}
             </>
           )}
-          {page === "audit" && <AuditTrail cycle={cycle} security={user.can_view_security_audit} />}
+          {page === "audit" && <AuditTrail key={`${user.id}:${cycle}`} cycle={cycle} security={user.can_view_security_audit} />}
           <footer className="content-footer">
             MC Accreditation Hub · Graduate School of Mabini Colleges, Inc.
           </footer>

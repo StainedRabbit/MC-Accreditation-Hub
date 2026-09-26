@@ -317,6 +317,8 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 **Local F15 retrieval safeguard:** Search now exposes separate cursors for requirement and document results beyond the first 50, and reapplies visibility on each page. This reversible synthetic-data change does not choose a D20 capacity option or settle list/history pagination, query cost, concurrency, resource thresholds, monitoring, or target load testing. D20 remains Pending Decision.
 
+**Further local retrieval correction:** The Audit Trail UI now invalidates its search cursor on text/action, history type, cycle, or account changes and ignores delayed pages from the prior selection. The API continues to enforce current grants on every page. This does not approve D20 capacity or operations, nor does it complete target load and release checks.
+
 ### D21 — Filtered report population and readiness evidence
 
 **Status:** Provisional Project Owner Decision — formal approval pending. **Selected option:** B for the repository implementation. **Findings:** F14, F16. **Decision to ratify:** Status filtering changes displayed rows only; readiness remains based on the selected authorized cycle/area.
