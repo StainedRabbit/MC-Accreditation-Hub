@@ -29,10 +29,11 @@ from .compliance import *
 from .serializers import *
 from .files import validate_upload
 from .recovery import recovery_configured
+from .audit import write_audit
 
 
 def audit(user, area, action, record, **detail):
-    AuditEvent.objects.create(actor=user, area=area, action=action, record=str(record), detail=detail)
+    write_audit(user, area, action, record, **detail)
 
 
 def payload(serializer_class, request, **kwargs):
@@ -57,7 +58,8 @@ def query_text(request, name='q'):
 
 def user_data(user):
     return {'id': user.id, 'name': user.get_full_name() or user.username, 'username': user.username,
-            'is_staff': user.is_staff, 'assignments': list(user.assignments.values('role', 'cycle_id', 'area_id'))}
+            'is_staff': user.is_staff, 'assignments': list(user.assignments.values('role', 'cycle_id', 'area_id')),
+            'can_view_security_audit': user.has_perm('hub.view_security_audit')}
 
 
 class CsrfView(APIView):
@@ -100,6 +102,7 @@ class LoginView(APIView):
         account = User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier)).first()
         user = authenticate(request, username=account.username if account else identifier, password=password)
         if user is None:
+            audit(None, None, 'login_failed', 'authentication')
             raise PermissionDenied('Invalid username or password.')
         login(request, user)
         request.session.set_expiry(8 * 60 * 60 if request.data.get('remember') is True else 0)
@@ -109,6 +112,8 @@ class LoginView(APIView):
 
 class LogoutView(APIView):
     def post(self, request):
+        user = request.user
+        audit(user, None, 'logout', f'user:{user.pk}')
         logout(request)
         return Response({'detail': 'Signed out.'})
 
@@ -130,6 +135,7 @@ class PasswordResetRequestView(APIView):
 
     def post(self, request):
         data = payload(PasswordResetRequestInput, request).validated_data
+        audit(None, None, 'recovery_requested', 'password-recovery')
         if not recovery_configured():
             return Response({'detail': 'Password recovery email is not configured. Contact an administrator for recovery.'})
         user = User.objects.filter(email__iexact=data['email'], is_active=True).first()
@@ -144,7 +150,9 @@ class PasswordResetRequestView(APIView):
                 settings.DEFAULT_FROM_EMAIL, [user.email],
             )
             try:
-                message.send(fail_silently=False)
+                delivered = message.send(fail_silently=False)
+                if delivered == 1:
+                    audit(user, None, 'recovery_email_accepted', f'user:{user.pk}')
             except Exception:
                 # Do not log the exception: mail transports can include message data.
                 pass
@@ -155,6 +163,7 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        audit(None, None, 'recovery_confirmation_attempted', 'password-recovery')
         if not recovery_configured():
             raise ValidationError('Password recovery email is not configured. Contact an administrator for recovery.')
         data = payload(PasswordResetConfirmInput, request).validated_data
@@ -591,7 +600,18 @@ class DownloadView(APIView):
         path = settings.PRIVATE_MEDIA_ROOT / str(version.storage_key)
         if not path.is_file():
             raise Http404('Stored file unavailable.')
-        audit(request.user, version.document.area, 'version_downloaded', version.document.title, version=pk)
+        source_area = version.document.area
+        audit(request.user, source_area, 'version_downloaded', f'version:{pk}',
+              version=pk, source_area_id=source_area.id)
+        # Historical cross-area mappings can make this exact version available
+        # in a recipient area. Record a scoped counterpart for its Coordinator.
+        recipient_ids = set(Submission.objects.filter(version=version).values_list(
+            'mapping__item__requirement__area_id', flat=True))
+        recipient_ids.update(PackageItem.objects.filter(version=version).values_list(
+            'mapping__item__requirement__area_id', flat=True))
+        for recipient in areas_for(request.user).filter(id__in=recipient_ids).exclude(pk=source_area.pk):
+            audit(request.user, recipient, 'version_downloaded', f'version:{pk}',
+                  version=pk, source_area_id=source_area.id)
         response = FileResponse(path.open('rb'), as_attachment=True, filename=version.original_name, content_type=version.content_type)
         response['Cache-Control'] = 'private, no-store'
         response['X-Content-Type-Options'] = 'nosniff'
@@ -1149,9 +1169,24 @@ class SearchView(APIView):
 
 class AuditView(APIView):
     def get(self, request):
-        qs = AuditEvent.objects.filter(area__in=areas_for(request.user, ['coordinator', 'viewer'])).select_related('actor')
+        kind = request.query_params.get('kind', 'academic')
+        if kind == 'security':
+            if not request.user.has_perm('hub.view_security_audit'):
+                raise PermissionDenied('Security audit access is required.')
+            qs = AuditEvent.objects.filter(area__isnull=True)
+        elif kind == 'academic':
+            qs = AuditEvent.objects.filter(area__in=areas_for(request.user, ['coordinator']))
+        else:
+            raise ValidationError({'kind': 'Use academic or security.'})
+        qs = qs.select_related('actor', 'area')
         if query_id(request, 'cycle'):
             qs = qs.filter(area__cycle_id=request.query_params['cycle'])
+        if query_id(request, 'area'):
+            qs = qs.filter(area_id=request.query_params['area'])
+        if query_id(request, 'actor'):
+            qs = qs.filter(actor_id=request.query_params['actor'])
+        if query_id(request, 'before'):
+            qs = qs.filter(pk__lt=request.query_params['before'])
         term = query_text(request, 'search')
         if term:
             qs = qs.filter(Q(record__icontains=term) | Q(action__icontains=term) |
@@ -1162,5 +1197,14 @@ class AuditView(APIView):
             if len(action) > 80:
                 raise ValidationError({'action': 'Use 80 characters or fewer.'})
             qs = qs.filter(action=action)
-        return Response([{'id': e.id, 'actor': e.actor.get_full_name() or e.actor.username if e.actor else 'System',
-            'action': e.action, 'record': e.record, 'detail': e.detail, 'created_at': e.created_at} for e in qs[:200]])
+        raw_limit = request.query_params.get('limit', '50')
+        if not raw_limit.isdigit() or not 1 <= int(raw_limit) <= 100:
+            raise ValidationError({'limit': 'Use a page size from 1 to 100.'})
+        limit = int(raw_limit)
+        page = list(qs.order_by('-id')[:limit + 1])
+        more = len(page) > limit
+        page = page[:limit]
+        return Response({'results': [{'id': e.id, 'actor': e.actor.get_full_name() or e.actor.username if e.actor else 'System',
+            'actor_id': e.actor_id, 'action': e.action, 'record': e.record, 'detail': e.detail,
+            'area_id': e.area_id, 'request_id': e.request_id, 'created_at': e.created_at} for e in page],
+            'next_before': page[-1].id if more else None})

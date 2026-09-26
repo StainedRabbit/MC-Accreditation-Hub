@@ -8,6 +8,7 @@ export type User = {
   name: string;
   username: string;
   is_staff: boolean;
+  can_view_security_audit: boolean;
   assignments: Assignment[];
 };
 export type Cycle = {
@@ -189,8 +190,13 @@ export type Audit = {
   actor: string;
   action: string;
   record: string;
+  detail: Record<string, unknown>;
+  area_id: number | null;
+  actor_id: number | null;
+  request_id: string;
   created_at: string;
 };
+export type AuditPage = { results: Audit[]; next_before: number | null };
 export type SearchResults = {
   requirements: Array<{ id: number; code: string; title: string; area: string; status: string }>;
   documents: Array<{ id: string; title: string; category: string; area: string }>;

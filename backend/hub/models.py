@@ -335,3 +335,4 @@ class AuditEvent(ImmutableRecord):
 
     class Meta:
         ordering = ['-id']
+        permissions = [('view_security_audit', 'Can view institution security audit events')]

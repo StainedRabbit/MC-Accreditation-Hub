@@ -1,13 +1,13 @@
 # First-increment API contract
 
-All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpoints except CSRF/login require a session. Unsafe requests require `X-CSRFToken`. Retrieve a fresh token after login because Django rotates it.
+All paths below are prefixed by `/api/`. JSON unless uploading a file. Health, CSRF, login, and recovery requests are unauthenticated; other application endpoints require a session. Login and session-authenticated unsafe requests require `X-CSRFToken`. Retrieve a fresh token after login because Django rotates it.
 
 | Method/path | Contract |
 |---|---|
 | GET `health/` | Unauthenticated readiness probe; returns only `{status:"ok"}` after a database query, otherwise HTTP 503 |
 | GET `auth/csrf/` | Sets CSRF cookie and returns `{csrfToken}` |
 | POST `auth/login/` | `{username, password, remember?: boolean}`; accepts username or email, returns current user and assignments |
-| GET `auth/me/` | `{id, name, username, is_staff, assignments:[{role,cycle_id,area_id}]}` |
+| GET `auth/me/` | `{id, name, username, is_staff, can_view_security_audit, assignments:[{role,cycle_id,area_id}]}` |
 | POST `auth/logout/` | Ends session |
 | POST `auth/password-change/` | Authenticated `{current_password,new_password}`; keeps the current session valid and records an audit event |
 | POST `auth/password-reset/` | `{email}`; disabled or invalid configuration returns administrator-recovery guidance; enabled requests give the same account-neutral response for unknown accounts and SMTP failures, without claiming delivery |
@@ -39,7 +39,8 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. All endpo
 | GET/POST `submissions/` | Preserved item-level submission history (`?cycle=id`) / `{mapping,version,override_reason?}` only for migrated legacy requirements not yet converted to package mode. New requirements use package attempts. |
 | GET/POST `review-decisions/` | List scoped decisions / `{submission,outcome,comment}` |
 | GET `compliance/?cycle=id` | `{total,complete,for_verification,needs_revision,ready_for_completion_review,in_progress,missing,excluded,percentage,formula,formula_version:3,calculated_at,scope}` |
-| GET `audit/?cycle=id&search=text&action=name` | Last 200 scoped audit events, optionally filtered by record/actor/action |
+| GET `audit/?kind=academic&cycle=id&area=id&actor=id&search=text&action=name&limit=50&before=id` | Coordinator-only academic audit in current explicit scope; newest first, up to 100 per page, with `results` and `next_before` cursor |
+| GET `audit/?kind=security&actor=id&search=text&action=name&limit=50&before=id` | Separately permitted institution-wide area-less account, grant, login/logout and recovery history; no evidence-file authority |
 | GET `search/?cycle=id&q=text` | Scoped requirement and document metadata search (maximum 50 each) |
 | GET `reports/compliance/?cycle=id&area=id&status=value` | Scoped printable compliance report data; add `download=csv` for a formula-safe CSV export |
 
@@ -66,6 +67,8 @@ A draft version upload or later expiry does not silently remove a pinned complet
 
 For preserved item-level requirements, repeated submission of the same mapping/version is rejected, replacements require a higher document version, and competing decisions use cycle/mapping locks. Package actions use cycle and requirement locks plus a database uniqueness constraint for the one-submitted-attempt rule; review decisions are one-to-one, and terminal attempts and their pinned items are immutable.
 
-Errors use 400 for validation/invalid transitions, 403 for missing sessions or denied actions, 404 for inaccessible records, and 429 for authentication throttling. In restricted test mode, PostgreSQL-backed per-client limits cover application login, recovery request/confirmation, and Django admin login; unconfigured proxy trust denies requests and an unconfigured management allowlist hides admin. Hidden records are never returned by list endpoints. Unknown HTTP operations return 405. This first increment returns unpaginated scoped collections; add pagination before scaling to large institutional datasets.
+Errors use 400 for validation/invalid transitions, 403 for missing sessions or denied actions, 404 for inaccessible records, and 429 for authentication throttling. In restricted test mode, PostgreSQL-backed per-client limits cover application login, recovery request/confirmation, and Django admin login; unconfigured proxy trust denies requests and an unconfigured management allowlist hides admin. Hidden records are never returned by list endpoints. Unknown HTTP operations return 405. Audit is paginated; other scoped collections remain unpaginated and need pagination before scaling to large institutional datasets.
+
+Audit responses contain `id`, `actor`, `actor_id`, `action`, `record`, `detail`, `area_id`, `request_id`, and `created_at`. `next_before` is null at the oldest page; pass it as `before` to continue. `kind=academic` is restricted to explicit current Coordinator scope; Viewers and product Administrators do not gain raw academic history from their labels. `kind=security` requires the separately assigned Django `hub.view_security_audit` permission and includes area-less events; it does not grant evidence download. Filters apply before pagination. The event store remains append-only. New detail writes redact sensitive keys, and request bodies, reset tokens, session credentials and file contents are never copied into audit events. D09 Option A is provisional pending Security/Records Owner, School IT, and Academic Owner approval; D12 retention and disposal remain undecided.
 
 Password recovery remains disabled unless `PASSWORD_RESET_ENABLED=1`, the exact SMTP email backend, authenticated encrypted SMTP settings, sender, and a public HTTPS `PASSWORD_RESET_FRONTEND_URL` are configured. Console, dummy, incomplete, and example configurations fail closed. The emailed link carries UID and token in a URL fragment; the browser removes that fragment from history before displaying the reset form and submits the token in a POST body. The reference Nginx access log omits query strings; request-body logging must remain disabled. School IT must verify actual delivery and logging before enabling recovery. Administrator-assisted recovery remains the pilot path; this local configuration gate is provisional under D17.

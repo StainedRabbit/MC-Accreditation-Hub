@@ -26,7 +26,7 @@ An approved option resolves a choice, not the underlying implementation or accep
 | D06 | What requires reopening or a new criteria/applicability decision? | F06, F05 | Provisional Project Owner Decision — formal approval pending |
 | D07 | Are submissions requirement packages or individual mapped versions? | F07, F04, F22 | Provisional Project Owner Decision — formal approval pending |
 | D08 | What does evidence validity/expiry affect? | F06, F07, F27 | Pending Decision |
-| D09 | Who may inspect academic and security audit history? | F13 | Pending Decision |
+| D09 | Who may inspect academic and security audit history? | F13 | Provisional Project Owner Decision — formal approval pending |
 | D10 | Which file formats, size units and resource limits are accepted? | F19 | Pending Decision |
 | D11 | How are real files scanned/quarantined? | F21, F19 | Pending Decision |
 | D12 | Which records may be accepted, retained and eventually disposed of? | F21, F13, F20 | Pending Decision |
@@ -161,7 +161,7 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 
 ### D09 — Audit access, content and completeness
 
-**Status:** Pending Decision. **Finding:** F13. **Decision to make:** Who can inspect security/account events and detailed academic decision history, including cross-area events?
+**Status:** Provisional Project Owner Decision — formal approval pending. **Finding:** F13. **Selected provisional option:** A. A separately assigned `view_security_audit` capability permits institution-wide account, grant and authentication history, without evidence-file permission. Coordinators retrieve detailed academic events only within current explicit area/cycle grants; revocation removes future access. The product Administrator label alone confers neither security-audit nor academic-evidence access. Security/Records Owner, School IT, and Academic Owner approval of these boundaries and event fields remains required.
 
 | Option | Effect on the existing system | Code changes required? |
 |---|---|---|
@@ -169,6 +169,8 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 | B. Give scoped Coordinators and Viewers full academic audit detail; security staff use a separate complete log path | Keeps broad scoped academic visibility, but creates a documented complete security audit channel outside ordinary area filters, with authorized retrieval/retention. | Yes for event completeness and academic details; external log tooling/configuration depends on IT. |
 
 **Recommended option:** A. **Required approver:** Security/Records Owner; School IT; Academic Owner for academic history. **Production-acceptance impact:** Must prove access-administration/security-event accountability before acceptance. Confirm fields, retention, who can search/export older records and how a shared download appears without leaking another area's evidence. Rich UI filters may follow later only if complete authorized retrieval already works.
+
+**Implementation scope:** The API offers separately authorized paginated academic and security feeds, including area-less account/authentication/grant events. The UI exposes history type, search, action and older pages to authorized users. Request correlation is generated once per HTTP request; CLI close records a named active staff operator with an explicit cycle-wide Coordinator grant and a required reason. No automatic deletion, retention expiry, or disposal authority is introduced. D12 remains Pending Decision. School IT must verify staff/model-permission assignment, admin operator procedures, target logs and preservation before acceptance.
 
 ### D10 — Accepted formats, limits and upload resources
 

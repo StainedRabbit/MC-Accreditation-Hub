@@ -37,6 +37,7 @@ import type {
   Submission,
   Item,
   Audit,
+  AuditPage,
   Certification,
   PackageAttempt,
   PackageChoice,
@@ -281,6 +282,57 @@ const subtitles: Record<string, string> = {
   audit: "System activity and change log",
 };
 
+function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
+  const [kind, setKind] = useState<"academic" | "security">(security ? "security" : "academic");
+  const [search, setSearch] = useState("");
+  const [action, setAction] = useState("");
+  const [events, setEvents] = useState<Audit[]>([]);
+  const [next, setNext] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const generation = useRef(0);
+  async function load(before?: number) {
+    const current = ++generation.current;
+    setLoading(true);
+    setError("");
+    const params = new URLSearchParams({ kind, limit: "50" });
+    if (kind === "academic" && cycle) params.set("cycle", cycle);
+    if (search.trim()) params.set("search", search.trim());
+    if (action.trim()) params.set("action", action.trim());
+    if (before) params.set("before", String(before));
+    try {
+      const page = await api<AuditPage>(`audit/?${params}`);
+      if (current !== generation.current) return;
+      setEvents((old) => before ? [...old, ...page.results] : page.results);
+      setNext(page.next_before);
+    } catch (e) {
+      if (current === generation.current) setError((e as Error).message);
+    } finally {
+      if (current === generation.current) setLoading(false);
+    }
+  }
+  useEffect(() => { void load(); return () => { generation.current += 1; }; }, [kind, cycle]);
+  return <>
+    <div className="page-heading"><div><h1>Audit Trail</h1><p>Authorized history with older events available</p></div></div>
+    <div className="panel">
+      {security && <label>History type <select value={kind} onChange={(e) => setKind(e.target.value as "academic" | "security")}>
+        <option value="security">Security and account</option><option value="academic">Scoped academic</option>
+      </select></label>}
+      <label>Search <input value={search} onChange={(e) => setSearch(e.target.value)} maxLength={120} /></label>
+      <label>Action <input value={action} onChange={(e) => setAction(e.target.value)} maxLength={80} /></label>
+      <button type="button" onClick={() => void load()} disabled={loading}>Filter</button>
+      {error && <p role="alert">{error}</p>}
+    </div>
+    <div className="panel table-wrap"><table><thead><tr><th>User</th><th>Action</th><th>Record</th><th>Scope</th><th>Details</th><th>Request</th><th>Date &amp; Time</th></tr></thead>
+      <tbody>{events.map((e) => <tr key={e.id}><td>{e.actor}</td><td>{e.action.replaceAll("_", " ")}</td>
+        <td>{e.record}</td><td>{e.area_id ?? "Institution"}</td><td><pre>{JSON.stringify(e.detail)}</pre></td>
+        <td>{e.request_id}</td><td>{new Date(e.created_at).toLocaleString("en-PH")}</td></tr>)}</tbody></table>
+      {!events.length && !loading && <div className="empty">No audit events in this authorized scope.</div>}
+      {next && <button type="button" onClick={() => void load(next)} disabled={loading}>Load older events</button>}
+    </div>
+  </>;
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [initializing, setInitializing] = useState(true),
@@ -294,7 +346,6 @@ function App() {
     [documents, setDocuments] = useState<Document[]>([]),
     [submissions, setSubmissions] = useState<Submission[]>([]),
     [packages, setPackages] = useState<PackageAttempt[]>([]),
-    [events, setEvents] = useState<Audit[]>([]),
     [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState(""),
     [loading, setLoading] = useState(false),
@@ -343,7 +394,6 @@ function App() {
     setDocuments([]);
     setSubmissions([]);
     setPackages([]);
-    setEvents([]);
     setSummary(null);
     setDetail(null);
     setDocDetail(null);
@@ -403,14 +453,13 @@ function App() {
     setError("");
     try {
       const suffix = `?cycle=${cycle}`;
-      const [a, r, d, s, p, c, ev] = await Promise.all([
+      const [a, r, d, s, p, c] = await Promise.all([
         api<Area[]>("areas/" + suffix),
         api<Requirement[]>("requirements/" + suffix),
         api<Document[]>("documents/" + suffix),
         api<Submission[]>("submissions/" + suffix),
         api<PackageAttempt[]>("packages/" + suffix),
         api<Summary>("compliance/" + suffix),
-        api<Audit[]>("audit/" + suffix),
       ]);
       if (generation !== requestGeneration.current) return;
       setAreas(a);
@@ -419,7 +468,6 @@ function App() {
       setSubmissions(s);
       setPackages(p);
       setSummary(c);
-      setEvents(ev);
       if (includeDetails && detail) {
         const updated = await api<Requirement>(`requirements/${detail.id}/`);
         if (generation === requestGeneration.current)
@@ -645,7 +693,7 @@ function App() {
         </div>
         <div className="nav-label">MAIN</div>
         <nav>
-          {nav.map(([key, text, Icon]) => (
+          {nav.filter(([key]) => key !== "audit" || user.can_view_security_audit || user.assignments.some((a) => a.role === "coordinator")).map(([key, text, Icon]) => (
             <button
               key={key}
               className={page === key ? "active" : ""}
@@ -1693,49 +1741,7 @@ function App() {
               </section>}
             </>
           )}
-          {page === "audit" && (
-            <>
-              <div className="page-heading">
-                <div>
-                  <h1>Audit Trail</h1>
-                  <p>Latest 200 activities in areas you can monitor</p>
-                </div>
-              </div>
-              <div className="panel table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Action</th>
-                      <th>Record</th>
-                      <th>Date & Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {events.map((e) => (
-                      <tr key={e.id}>
-                        <td>{e.actor}</td>
-                        <td>
-                          <span className="badge pending">
-                            {e.action.replaceAll("_", " ")}
-                          </span>
-                        </td>
-                        <td>{e.record}</td>
-                        <td>
-                          {new Date(e.created_at).toLocaleString("en-PH")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!events.length && (
-                  <div className="empty">
-                    No audit events available for your role and scope.
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+          {page === "audit" && <AuditTrail cycle={cycle} security={user.can_view_security_audit} />}
           <footer className="content-footer">
             MC Accreditation Hub · Graduate School of Mabini Colleges, Inc.
           </footer>

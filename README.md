@@ -90,10 +90,10 @@ Create a real cycle from an approved JSON structure:
 
 ```powershell
 python backend/manage.py create_cycle path/to/cycle.json
-python backend/manage.py close_cycle 1
+python backend/manage.py close_cycle CYCLE_ID --actor-id STAFF_USER_ID --reason "Operator-approved cycle close rationale"
 ```
 
-Only run `close_cycle` for the intended cycle ID when operating directly from the server. In the application, an assigned Coordinator can close or reopen a cycle from the Dashboard, but both actions require a recorded reason. A closed cycle blocks further requirement, mapping, submission, review, and version changes; downloads remain available. Reopening is exceptional and fully audited. Create new cycle records for subsequent assessments. Source versions can be explicitly reused in new-cycle mappings by authorized coordinators through the API; old decisions never transfer.
+Only run `close_cycle` for the intended cycle ID with a named active staff operator who also has an explicit cycle-wide Coordinator grant, and an approved reason, when operating directly from the server. In the application, an assigned Coordinator can close or reopen a cycle from the Dashboard, but both actions require a recorded reason. A closed cycle blocks further requirement, mapping, submission, review, and version changes; downloads remain available. Reopening is exceptional and fully audited. Create new cycle records for subsequent assessments. Source versions can be explicitly reused in new-cycle mappings by authorized coordinators through the API; old decisions never transfer.
 
 ## Account recovery
 

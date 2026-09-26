@@ -10,12 +10,15 @@ from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.contrib.auth.models import Permission
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from rest_framework.test import APIClient
 from pypdf import PdfWriter
 from .models import *
+from .audit import write_audit
 
 
 RECOVERY_TEST_SETTINGS = {
@@ -281,7 +284,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertIn('Faculty Plan', csv_response.content.decode())
         audit = self.client.get('/api/audit/', {'search': 'Faculty Development'})
         self.assertEqual(audit.status_code, 200)
-        self.assertTrue(any(event['action'] == 'version_uploaded' for event in audit.data))
+        self.assertTrue(any(event['action'] == 'version_uploaded' for event in audit.data['results']))
         self.client.force_authenticate(self.outsider)
         hidden_search = self.client.get('/api/search/', {'q': 'Faculty'})
         self.assertEqual(hidden_search.status_code, 200)
@@ -726,10 +729,17 @@ class WorkflowTests(WorkflowFixture, TestCase):
         doc = self.upload(valid_until=timezone.localdate())
         self.decide(self.submit(doc))
         self.certify()
-        call_command('close_cycle', self.cycle.id, stdout=io.StringIO())
+        with self.assertRaises(CommandError):
+            call_command('close_cycle', self.cycle.id, actor_id=self.administrator.id,
+                         reason='Fictional unauthorized close', stdout=io.StringIO())
+        self.coordinator.is_staff = True
+        self.coordinator.save(update_fields=['is_staff'])
+        call_command('close_cycle', self.cycle.id, actor_id=self.coordinator.id,
+                     reason='Fictional operator close', stdout=io.StringIO())
         with patch('hub.compliance.timezone.localdate', return_value=timezone.localdate() + timedelta(days=5)):
             self.assertEqual(self.compliance()['percentage'], 100)
-        self.assertTrue(AuditEvent.objects.filter(action='cycle_closed').exists())
+        self.assertTrue(AuditEvent.objects.filter(action='cycle_closed', actor=self.coordinator,
+                                                  detail__rationale='Fictional operator close').exists())
 
 
 class ConcurrencyTests(WorkflowFixture, TransactionTestCase):
@@ -1029,3 +1039,121 @@ class StorageReconciliationTests(WorkflowFixture, TestCase):
         self.assertEqual(result['orphaned'], [orphan.name])
         self.assertTrue(orphan.exists())
         self.assertTrue(DocumentVersion.objects.filter(pk=version.pk).exists())
+
+
+class AuditHistoryTests(WorkflowFixture, TestCase):
+    def test_scoped_academic_access_revocation_and_pagination(self):
+        for number in range(5):
+            write_audit(self.coordinator, self.area, 'synthetic_review', f'record:{number}', reason='fixture')
+        write_audit(self.coordinator, self.other_area, 'synthetic_review', 'other-area')
+        scoped = self.user('coordinator', self.area, 'area-coordinator')
+        self.client.force_authenticate(scoped)
+        first = self.client.get('/api/audit/', {'limit': 2, 'action': 'synthetic_review'})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(len(first.data['results']), 2)
+        self.assertIsNotNone(first.data['next_before'])
+        second = self.client.get('/api/audit/', {'limit': 2, 'action': 'synthetic_review',
+                                                 'before': first.data['next_before']})
+        self.assertEqual(len(second.data['results']), 2)
+        self.assertTrue(all(row['area_id'] == self.area.id for row in first.data['results'] + second.data['results']))
+        self.assertTrue(all(row['detail']['reason'] == 'fixture' for row in first.data['results']))
+        RoleAssignment.objects.filter(user=scoped, role='coordinator').delete()
+        self.assertEqual(self.client.get('/api/audit/').data['results'], [])
+        self.client.force_authenticate(self.viewer)
+        self.assertEqual(self.client.get('/api/audit/').data['results'], [])
+
+    def test_security_capability_is_separate_from_product_admin_and_evidence(self):
+        account = self.user('administrator', None, 'security-operator')
+        account.user_permissions.add(Permission.objects.get(codename='view_security_audit'))
+        account = User.objects.get(pk=account.pk)
+        self.client.force_authenticate(account)
+        security = self.client.get('/api/audit/', {'kind': 'security', 'action': 'grant_created'})
+        self.assertEqual(security.status_code, 200)
+        self.assertTrue(security.data['results'])
+        self.assertTrue(all(row['area_id'] is None for row in security.data['results']))
+        self.assertEqual(self.client.get('/api/audit/').data['results'], [])
+        document = self.upload()
+        self.client.force_authenticate(account)
+        self.assertEqual(self.client.get(f'/api/documents/{document["id"]}/').status_code, 404)
+        self.assertEqual(self.client.get(f'/api/document-versions/{document["versions"][0]["id"]}/download/').status_code, 404)
+        ordinary_admin = self.user('administrator', None, 'ordinary-admin')
+        self.client.force_authenticate(ordinary_admin)
+        self.assertEqual(self.client.get('/api/audit/', {'kind': 'security'}).status_code, 403)
+
+    def test_account_grant_logout_and_secret_redaction(self):
+        account = User.objects.create_user(username='audit-fixture', email='audit@test.invalid', password='synthetic-secret-1234')
+        account.is_active = False
+        account.save(update_fields=['is_active'])
+        grant = RoleAssignment.objects.create(user=account, role='viewer', cycle=self.cycle)
+        grant_id = grant.pk
+        grant.delete()
+        self.assertTrue(AuditEvent.objects.filter(action='account_created', record=f'user:{account.pk}').exists())
+        self.assertTrue(AuditEvent.objects.filter(action='account_updated', record=f'user:{account.pk}').exists())
+        self.assertTrue(AuditEvent.objects.filter(action='grant_revoked', record=f'grant:{grant_id}').exists())
+        client = APIClient()
+        token = client.get('/api/auth/csrf/').data['csrfToken']
+        self.assertEqual(client.post('/api/auth/login/', {'username': self.custodian.username,
+                         'password': 'Test-password-1234'}, format='json', HTTP_X_CSRFTOKEN=token).status_code, 200)
+        token = client.get('/api/auth/csrf/').data['csrfToken']
+        self.assertEqual(client.post('/api/auth/logout/', {}, format='json', HTTP_X_CSRFTOKEN=token).status_code, 200)
+        self.assertTrue(AuditEvent.objects.filter(action='login', actor=self.custodian).exists())
+        self.assertTrue(AuditEvent.objects.filter(action='logout', actor=self.custodian).exists())
+        serialized = json.dumps(list(AuditEvent.objects.values('record', 'detail')))
+        self.assertNotIn('synthetic-secret-1234', serialized)
+        self.assertNotIn('Test-password-1234', serialized)
+        self.assertNotIn(token, serialized)
+
+    def test_cycle_request_correlation_and_detail_redaction(self):
+        write_audit(self.coordinator, self.area, 'synthetic_safe', 'record:1',
+                    reason='fixture', reset_token='hidden-token', nested={'password': 'hidden-password'})
+        safe = AuditEvent.objects.get(action='synthetic_safe')
+        self.assertEqual(safe.detail['reset_token'], '[redacted]')
+        self.assertEqual(safe.detail['nested']['password'], '[redacted]')
+        self.client.force_authenticate(self.coordinator)
+        response = self.client.post(f'/api/cycles/{self.cycle.pk}/close/',
+                                    {'rationale': 'Fictional cycle review complete'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        events = list(AuditEvent.objects.filter(action='cycle_closed', actor=self.coordinator))
+        self.assertEqual(len(events), 2)
+        self.assertEqual(len({event.request_id for event in events}), 1)
+        self.assertTrue(all(event.detail['rationale'] == 'Fictional cycle review complete' for event in events))
+
+    @override_settings(**RECOVERY_TEST_SETTINGS)
+    def test_recovery_audit_omits_token_and_security_grant_can_be_revoked(self):
+        with patch('hub.views.EmailMessage.send', return_value=1):
+            response = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
+        self.assertEqual(response.status_code, 200)
+        event = AuditEvent.objects.get(action='recovery_email_accepted', actor=self.custodian)
+        self.assertEqual(event.detail, {})
+        self.assertNotIn(self.custodian.email, event.record)
+        account = self.user('administrator', None, 'temporary-security')
+        permission = Permission.objects.get(codename='view_security_audit')
+        account.user_permissions.add(permission)
+        account = User.objects.get(pk=account.pk)
+        self.client.force_authenticate(account)
+        self.assertEqual(self.client.get('/api/audit/', {'kind': 'security'}).status_code, 200)
+        account.user_permissions.remove(permission)
+        account = User.objects.get(pk=account.pk)
+        self.client.force_authenticate(account)
+        self.assertEqual(self.client.get('/api/audit/', {'kind': 'security'}).status_code, 403)
+        self.assertTrue(AuditEvent.objects.filter(action='account_permission_remove', record=f'user:{account.pk}').exists())
+
+    def test_legacy_shared_download_has_source_and_recipient_scope(self):
+        document = self.upload()
+        version = DocumentVersion.objects.get(pk=document['versions'][0]['id'])
+        recipient = self.user('coordinator', self.other_area, 'recipient-coordinator')
+        requirement = Requirement.objects.create(area=self.other_area, code='OLD', title='Fictional legacy',
+                                                   responsible='School', active=True, created_by=self.coordinator)
+        item = EvidenceItem.objects.create(requirement=requirement, label='Sample')
+        mapping = EvidenceMapping.objects.create(item=item, document=version.document, created_by=self.coordinator)
+        Submission.objects.create(mapping=mapping, version=version, submitted_by=self.custodian)
+        self.client.force_authenticate(recipient)
+        response = self.client.get(f'/api/document-versions/{version.pk}/download/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(b''.join(response.streaming_content).startswith(b'%PDF-'))
+        events = list(AuditEvent.objects.filter(action='version_downloaded', actor=recipient, record=f'version:{version.pk}'))
+        self.assertEqual({event.area_id for event in events}, {self.area.pk, self.other_area.pk})
+        self.assertEqual(len({event.request_id for event in events}), 1)
+        recipient_page = self.client.get('/api/audit/', {'area': self.other_area.pk, 'action': 'version_downloaded'})
+        self.assertEqual(len(recipient_page.data['results']), 1)
+        self.assertEqual(recipient_page.data['results'][0]['detail']['source_area_id'], self.area.pk)
