@@ -276,7 +276,16 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 | B. School remote-access boundary plus documented proxy chain | Supports approved remote users; IT specifies every trusted hop and admin management network. Header sanitation/rate limiting is verified end to end. | Yes: authentication fixes and topology-specific configuration/tests. |
 | C. Public application login with separately restricted administration | Expands exposure and requires explicit IT/security acceptance, consistent multi-worker abuse controls and monitoring. No public evidence access is introduced. | Yes: authentication fixes, hardened exposure configuration and tests. |
 
-**Recommended option:** A for a controlled initial pilot, subject to actual access needs. **Required approver:** School IT; Security/Records Owner. **Production-acceptance impact:** F09 remains blocking until spoof-resistant forwarding and consistent limits cover application/admin login and enabled recovery. Supply actual hostname/DNS/TLS owner, hosts/CSRF origins and network policy. Approve HSTS subdomain inclusion independently of duration/preload; none is inferred from selecting HTTPS. This is not authority to deploy or provision a network.
+**Recommended option:** A for a controlled initial pilot, subject to actual access needs. **Required approver:** School IT; Security/Records Owner. **Approval evidence:** Not recorded; no option or topology is approved. **Production-acceptance impact:** F09 remains blocking until spoof-resistant forwarding and consistent limits cover application/admin login and enabled recovery. Approve HSTS subdomain inclusion independently of duration/preload; none is inferred from selecting HTTPS. This is not authority to deploy or provision a network.
+
+**Exact School IT inputs needed before F09 implementation:**
+
+1. The ordered client-to-Django proxy chain: every reverse proxy/load balancer, each trusted hop and its source addresses, which hop terminates TLS, and which hop replaces or strips inbound `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, and `Forwarded` headers. Identify how Gunicorn is prevented from accepting direct untrusted traffic.
+2. The public versus internal exposure boundary: approved hostname/DNS and HTTPS ownership, which application and API routes are reachable from school networks, remote access, or the public internet, and the corresponding approved hosts/CSRF origins. State the pilot population and whether self-service recovery remains disabled.
+3. The permitted source networks for `/api/admin/`, the access mechanism and enforcement point (proxy, firewall, or both), and whether direct Django/admin access is possible from any other path.
+4. The shared rate-limit storage available to all Gunicorn workers and any proxy instances, its operator/availability expectations, and the approved limit/key policy for application login, recovery request/confirmation, and Django admin login, including how shared school-network clients are treated.
+
+The current reference Nginx configuration appends to `X-Forwarded-For`, Django has no confirmed trusted-hop count, the login throttle uses worker-local default cache, and recovery/admin lack matching limits. These remain unmodified pending the approved design. Record the selected option, named approvers, approval evidence, and actual values here before implementation; a recommendation is not approval.
 
 ### D19 — Backup, recovery and records of operation
 
