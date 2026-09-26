@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
-from django.db import close_old_connections
+from django.db import DatabaseError, close_old_connections
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -603,14 +603,28 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertEqual(client.get('/api/auth/me/').status_code, 403)
 
     def test_password_change_requires_current_password_and_keeps_session(self):
-        self.client.force_authenticate(self.custodian)
-        bad = self.client.post('/api/auth/password-change/', {'current_password': 'wrong', 'new_password': 'Changed-password-1234'}, format='json')
+        client = APIClient(enforce_csrf_checks=True)
+        token = client.get('/api/auth/csrf/').data['csrfToken']
+        signed_in = client.post('/api/auth/login/', {'username': self.custodian.username,
+            'password': 'Test-password-1234'}, format='json', HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(signed_in.status_code, 200)
+        self.assertEqual(client.get('/api/auth/me/').data['id'], self.custodian.pk)
+        token = client.get('/api/auth/csrf/').data['csrfToken']
+        bad = client.post('/api/auth/password-change/', {'current_password': 'wrong',
+            'new_password': 'Changed-password-1234'}, format='json', HTTP_X_CSRFTOKEN=token)
         self.assertEqual(bad.status_code, 400)
-        response = self.client.post('/api/auth/password-change/', {'current_password': 'Test-password-1234', 'new_password': 'Changed-password-1234'}, format='json')
+        response = client.post('/api/auth/password-change/', {'current_password': 'Test-password-1234',
+            'new_password': 'Changed-password-1234'}, format='json', HTTP_X_CSRFTOKEN=token)
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(self.client.get('/api/auth/me/').status_code, 200)
+        self.assertEqual(client.get('/api/auth/me/').data['id'], self.custodian.pk)
         self.assertTrue(User.objects.get(pk=self.custodian.pk).check_password('Changed-password-1234'))
         self.assertTrue(AuditEvent.objects.filter(action='password_changed', actor=self.custodian).exists())
+        other = APIClient(enforce_csrf_checks=True)
+        other_token = other.get('/api/auth/csrf/').data['csrfToken']
+        self.assertEqual(other.post('/api/auth/login/', {'username': self.custodian.username,
+            'password': 'Test-password-1234'}, format='json', HTTP_X_CSRFTOKEN=other_token).status_code, 403)
+        self.assertEqual(other.post('/api/auth/login/', {'username': self.custodian.username,
+            'password': 'Changed-password-1234'}, format='json', HTTP_X_CSRFTOKEN=other_token).status_code, 200)
 
     def test_password_recovery_reports_when_delivery_is_not_configured(self):
         disabled = self.client.post('/api/auth/password-reset/', {'email': self.custodian.email}, format='json')
@@ -1250,3 +1264,43 @@ class InputBoundaryTests(WorkflowFixture, TestCase):
                 response = self.client.post('/api/requirements/', base | change, format='json')
                 self.assertEqual(response.status_code, 400)
         self.assertEqual(Requirement.objects.count(), before)
+
+
+class SessionAndHealthEvidenceTests(WorkflowFixture, TestCase):
+    def session_client(self, user):
+        client = APIClient(enforce_csrf_checks=True)
+        token = client.get('/api/auth/csrf/').data['csrfToken']
+        response = client.post('/api/auth/login/', {'username': user.username,
+            'password': 'Test-password-1234'}, format='json', HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(response.status_code, 200)
+        return client
+
+    def test_inactive_account_cannot_log_in_or_keep_a_session(self):
+        client = self.session_client(self.custodian)
+        self.assertEqual(client.get('/api/auth/me/').status_code, 200)
+        self.custodian.is_active = False
+        self.custodian.save(update_fields=['is_active'])
+        self.assertEqual(client.get('/api/auth/me/').status_code, 403)
+        another = APIClient(enforce_csrf_checks=True)
+        token = another.get('/api/auth/csrf/').data['csrfToken']
+        denied = another.post('/api/auth/login/', {'username': self.custodian.username,
+            'password': 'Test-password-1234'}, format='json', HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.data['detail'], 'Invalid username or password.')
+
+    def test_revoked_grant_removes_evidence_access_from_existing_session(self):
+        document = self.upload()
+        client = self.session_client(self.custodian)
+        path = f"/api/documents/{document['id']}/"
+        self.assertEqual(client.get(path).status_code, 200)
+        RoleAssignment.objects.filter(user=self.custodian, role='custodian', area=self.area).delete()
+        self.assertEqual(client.get('/api/auth/me/').status_code, 200)
+        self.assertEqual(client.get(path).status_code, 404)
+        self.assertEqual(client.get(f"/api/document-versions/{document['versions'][0]['id']}/download/").status_code, 404)
+
+    def test_health_probe_fails_closed_when_database_is_unavailable(self):
+        client = APIClient()
+        with patch('hub.views.connection.cursor', side_effect=DatabaseError('synthetic unavailable')):
+            response = client.get('/api/health/')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data, {'status': 'unavailable'})

@@ -2,6 +2,8 @@
 
 Record the date, release commit, environment, operator, and result for every item. Stop and remediate a failed item before pilot use.
 
+The F25 local synthetic test slice uses a real Django cookie session and CSRF requests to verify password-change continuity, inactive-account denial, and immediate evidence-access loss after a grant is revoked. It also injects a database cursor failure to verify `/api/health/` returns 503 without details. Run the focused `hub.tests.WorkflowTests.test_password_change_requires_current_password_and_keeps_session` and `hub.tests.SessionAndHealthEvidenceTests` tests against an isolated PostgreSQL test database. This local result does not check any School IT target item below; repeat session, access and health checks through the approved HTTPS proxy on the target environment before acceptance.
+
 - [ ] School IT approved hostname, TLS certificate, firewall, service account, database role, private evidence mount, backup target, retention, RPO/RTO, and incident owner.
 - [ ] `DJANGO_DEBUG=0`; secret and database password are outside Git; allowed hosts and CSRF origins are the final HTTPS hostname.
 - [ ] `deploy/scripts/release-check.sh` passed: no unapplied migrations, no deployment errors, and every deployment warning either resolved or explicitly accepted by ID with an approved reason. Attach the gate output; a printed migration plan alone is insufficient.
