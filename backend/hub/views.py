@@ -181,7 +181,7 @@ def req_data(req, user, detail=False):
     if detail:
         result['assignments'] = [assignment_data(a) for a in req.user_assignments.filter(active=True).select_related('user')]
         result['items'] = [{'id': i.id, 'label': i.label, 'criteria': i.criteria, 'mandatory': i.mandatory,
-                            'status': package_item_state(req, i) if req.packages.exists() else item_state(i),
+                            'status': package_item_state(req, i, user) if req.packages.exists() else item_state(i),
                             'mappings': [mapping_data(m, user) for m in visible_mappings_for(user, i.mappings.all())]}
                            for i in req.items.all()]
         result['certifications'] = [certification_data(c) for c in req.certifications.all()]
@@ -206,13 +206,18 @@ def req_data(req, user, detail=False):
     return result
 
 
-def package_item_state(requirement, item):
+def package_item_state(requirement, item, user):
+    visible_attempts = list(visible_packages_for(user, requirement.packages.all()))
     for status, display in [('submitted', 'pending'), ('revisions_requested', 'revision_requested'),
                             ('approved', 'approved'), ('draft', 'draft')]:
         if any(package.status == status and (status != 'approved' or package_is_ready(package, requirement)) and
                any(entry.mapping.item_id == item.id for entry in package.items.all())
-               for package in requirement.packages.all()):
+               for package in visible_attempts):
             return display
+    if any(package.status == 'approved' and package_is_ready(package, requirement) and
+           any(entry.mapping.item_id == item.id and can_version(user, entry.version) for entry in package.items.all())
+           for package in requirement.packages.all()):
+        return 'approved'
     return 'missing'
 
 
