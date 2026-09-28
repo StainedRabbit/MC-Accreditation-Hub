@@ -86,6 +86,7 @@ const dateTime = (value: string) =>
   });
 const reportDateTime = (value: string) =>
   new Date(value).toLocaleString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const auditDateTime = (value: string) => `${reportDateTime(value)} (Asia/Manila)`;
 const percent = (value: number | null) =>
   value === null ? "N/A" : `${value}%`;
 const initials = (name: string) =>
@@ -293,6 +294,7 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [filtersDirty, setFiltersDirty] = useState(false);
+  const [expanded, setExpanded] = useState<number | null>(null);
   const generation = useRef(0);
   function invalidateAuditSearch() {
     generation.current += 1;
@@ -301,6 +303,7 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
     setError("");
     setLoading(false);
     setFiltersDirty(true);
+    setExpanded(null);
   }
   async function load(before?: number) {
     if (before && filtersDirty) return;
@@ -331,21 +334,36 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
   }, [kind, cycle]);
   return <>
     <div className="page-heading"><div><h1>Audit Trail</h1><p>Authorized history with older events available</p></div></div>
-    <div className="panel">
+    <div className="panel audit-filters">
+      <div className="audit-filter-fields">
       {security && <label>History type <select value={kind} onChange={(e) => { invalidateAuditSearch(); setKind(e.target.value as "academic" | "security"); }}>
         <option value="security">Security and account</option><option value="academic">Scoped academic</option>
       </select></label>}
       <label>Search <input value={search} onChange={(e) => { invalidateAuditSearch(); setSearch(e.target.value); }} maxLength={120} /></label>
       <label>Action <input value={action} onChange={(e) => { invalidateAuditSearch(); setAction(e.target.value); }} maxLength={80} /></label>
-      <button type="button" onClick={() => void load()} disabled={loading}>Filter</button>
+      <button className="primary" type="button" onClick={() => void load()} disabled={loading}>Filter</button>
+      </div>
       {error && <p role="alert">{error}</p>}
     </div>
-    <div className="panel table-wrap"><table><thead><tr><th>User</th><th>Action</th><th>Record</th><th>Scope</th><th>Details</th><th>Request</th><th>Date &amp; Time</th></tr></thead>
-      <tbody>{events.map((e) => <tr key={e.id}><td>{e.actor}</td><td>{e.action.replaceAll("_", " ")}</td>
-        <td>{e.record}</td><td>{e.area_id ?? "Institution"}</td><td><pre>{JSON.stringify(e.detail)}</pre></td>
-        <td>{e.request_id}</td><td>{new Date(e.created_at).toLocaleString("en-PH")}</td></tr>)}</tbody></table>
+    <div className="panel table-wrap audit-table"><table><thead><tr><th>User</th><th>Action</th><th>Record</th><th>Scope</th><th>Date &amp; Time</th><th>Details</th></tr></thead>
+      <tbody>{events.map((e) => <React.Fragment key={e.id}>
+        <tr><td data-label="User"><strong>{e.actor}</strong></td><td data-label="Action"><span className="audit-action">{e.action.replaceAll("_", " ")}</span></td>
+        <td data-label="Record">{e.record}</td><td data-label="Scope">{e.area_id === null ? "Institution" : `Area #${e.area_id}`}</td>
+        <td data-label="Date & Time"><time dateTime={e.created_at}>{auditDateTime(e.created_at)}</time></td>
+        <td data-label="Details"><button type="button" className="link audit-detail-toggle" aria-expanded={expanded === e.id}
+          aria-controls={expanded === e.id ? `audit-detail-${e.id}` : undefined} onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
+          {expanded === e.id ? "Hide details" : "View details"}</button></td></tr>
+        {expanded === e.id && <tr className="audit-expanded"><td colSpan={6}><div id={`audit-detail-${e.id}`}>
+          <h3>Event details</h3>
+          <dl><dt>Request correlation</dt><dd>{e.request_id || "Not available"}</dd>
+            {Object.entries(e.detail || {}).map(([key, value]) => <React.Fragment key={key}>
+              <dt>{key.replaceAll("_", " ")}</dt>
+              <dd>{value !== null && typeof value === "object" ? <pre>{JSON.stringify(value, null, 2)}</pre> : String(value ?? "—")}</dd>
+            </React.Fragment>)}</dl>
+        </div></td></tr>}
+      </React.Fragment>)}</tbody></table>
       {!events.length && !loading && <div className="empty">{filtersDirty ? "Apply filters to view audit events." : "No audit events in this authorized scope."}</div>}
-      {next && !filtersDirty && <button type="button" onClick={() => void load(next)} disabled={loading}>Load older events</button>}
+      {next && !filtersDirty && <button className="secondary audit-more" type="button" onClick={() => void load(next)} disabled={loading}>Load older events</button>}
     </div>
   </>;
 }
@@ -951,7 +969,7 @@ function App() {
                   {percent(summary?.percentage ?? null)} Compliance
                 </span>
               </div>
-              <div className="stats">
+              <div className="stats primary-stats">
                 {[
                   [
                     "📊",
@@ -975,13 +993,6 @@ function App() {
                     "green",
                   ],
                   [
-                    "📋",
-                    summary?.ready_for_completion_review ?? 0,
-                    "Ready for Completion Review",
-                    "Awaiting Coordinator certification",
-                    "purple",
-                  ],
-                  [
                     "🔎",
                     summary?.for_verification ?? 0,
                     "For Verification",
@@ -995,7 +1006,6 @@ function App() {
                     "Needs attention",
                     "orange",
                   ],
-                  ["📝", summary?.in_progress ?? 0, "In Progress", "Draft or reopened work", "purple"],
                   [
                     "🔴",
                     summary?.missing ?? 0,
@@ -1018,6 +1028,19 @@ function App() {
                     <small>{hint}</small>
                   </div>
                 ))}
+              </div>
+              <div className="workflow-stats" aria-label="Additional workflow statuses">
+                <div className="workflow-stat panel">
+                  <span className="stat-icon" aria-hidden="true">📋</span>
+                  <div><strong className="purple">{summary?.ready_for_completion_review ?? 0}</strong>
+                    <span>Ready for Completion Review</span>
+                    <small>Awaiting Coordinator certification</small></div>
+                </div>
+                <div className="workflow-stat panel">
+                  <span className="stat-icon" aria-hidden="true">📝</span>
+                  <div><strong className="purple">{summary?.in_progress ?? 0}</strong>
+                    <span>In Progress</span><small>Draft or reopened work</small></div>
+                </div>
               </div>
               <div className="dashboard-grid">
                 <section className="panel readiness">
