@@ -41,7 +41,9 @@ export type Area = Summary & {
   title: string;
   code: string;
   icon: string;
+  order: number;
   can_manage: boolean;
+  can_delete: boolean;
   can_upload: boolean;
 };
 export type Decision = {

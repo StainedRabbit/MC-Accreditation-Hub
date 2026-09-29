@@ -13,6 +13,7 @@ from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.db import transaction, connection, DatabaseError
 from django.db.models import Q
+from django.db.models.fields.json import KeyTextTransform
 from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
@@ -437,10 +438,73 @@ class AreasView(APIView):
         qs = areas_for(request.user)
         if query_id(request, 'cycle'):
             qs = qs.filter(cycle_id=request.query_params['cycle'])
-        return Response([{'id': a.id, 'cycle': a.cycle_id, 'title': a.title, 'code': a.code, 'icon': a.icon,
-                          'can_manage': a.cycle.status == 'active' and areas_for(request.user, ['coordinator']).filter(pk=a.id).exists(),
-                          'can_upload': a.cycle.status == 'active' and areas_for(request.user, WRITE_ROLES).filter(pk=a.id).exists(),
-                          **summary(with_evidence(a.requirements.all()))} for a in qs])
+        return Response([area_data(a, request.user) for a in qs])
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = payload(AreaInput, request)
+        cycle = serializer.validated_data.get('cycle')
+        if not cycle:
+            raise ValidationError({'cycle': 'Select a cycle.'})
+        cycle = Cycle.objects.select_for_update().get(pk=cycle.pk)
+        if not has_cyclewide_coordinator(request.user, cycle):
+            raise PermissionDenied('A cycle-wide Coordinator grant is required to add an area.')
+        if cycle.status != 'active':
+            raise ValidationError('Areas can be added only in an active cycle.')
+        # Revalidate after taking the cycle lock so concurrent code collisions are rejected cleanly.
+        serializer = payload(AreaInput, request)
+        area = serializer.save(cycle=cycle)
+        return Response(area_data(area, request.user), status=201)
+
+
+def area_has_records(area):
+    return (RoleAssignment.objects.filter(area=area).exists() or
+            Requirement.objects.filter(area=area).exists() or
+            Document.objects.filter(area=area).exists() or
+            AuditEvent.objects.filter(area=area).exists())
+
+
+def area_data(area, user):
+    scoped_coordinator = area.cycle.status == 'active' and areas_for(user, ['coordinator']).filter(pk=area.pk).exists()
+    return {'id': area.id, 'cycle': area.cycle_id, 'title': area.title, 'code': area.code, 'icon': area.icon,
+            'order': area.order, 'can_manage': scoped_coordinator,
+            'can_delete': scoped_coordinator and not area_has_records(area),
+            'can_upload': area.cycle.status == 'active' and areas_for(user, WRITE_ROLES).filter(pk=area.pk).exists(),
+            **summary(with_evidence(area.requirements.all()))}
+
+
+class AreaDetailView(APIView):
+    @transaction.atomic
+    def patch(self, request, pk):
+        cycle_id = get_object_or_404(Area.objects.only('cycle_id'), pk=pk).cycle_id
+        cycle = get_object_or_404(Cycle.objects.select_for_update(), pk=cycle_id)
+        area = get_object_or_404(Area.objects.select_for_update().select_related('cycle'), pk=pk)
+        if not areas_for(request.user, ['coordinator']).filter(pk=area.pk).exists():
+            raise PermissionDenied('You do not have permission to manage this accreditation area.')
+        if cycle.status != 'active':
+            raise ValidationError('Areas can be edited only in an active cycle.')
+        serializer = payload(AreaInput, request, instance=area, partial=True)
+        updated = serializer.save()
+        audit(request.user, None, 'area_updated', updated.title, area_id=updated.id,
+              area_code=updated.code, cycle_id=cycle.id)
+        return Response(area_data(updated, request.user))
+
+    @transaction.atomic
+    def delete(self, request, pk):
+        cycle_id = get_object_or_404(Area.objects.only('cycle_id'), pk=pk).cycle_id
+        cycle = get_object_or_404(Cycle.objects.select_for_update(), pk=cycle_id)
+        area = get_object_or_404(Area.objects.select_for_update().select_related('cycle'), pk=pk)
+        if not areas_for(request.user, ['coordinator']).filter(pk=area.pk).exists():
+            raise PermissionDenied('You do not have permission to manage this accreditation area.')
+        if cycle.status != 'active':
+            raise ValidationError('Areas can be deleted only in an active cycle.')
+        if area_has_records(area):
+            raise ValidationError('Only an area with no linked assignments, requirements, documents, or audit history can be deleted.')
+        area_id, area_title, area_code, cycle_id = area.id, area.title, area.code, cycle.id
+        audit(request.user, None, 'area_deleted', area_title, area_id=area_id,
+              area_code=area_code, cycle_id=cycle_id)
+        area.delete()
+        return Response(status=204)
 
 
 class RequirementsView(APIView):
@@ -1256,19 +1320,34 @@ class SearchView(APIView):
 class AuditView(APIView):
     def get(self, request):
         kind = request.query_params.get('kind', 'academic')
+        audit_events = AuditEvent.objects.annotate(
+            detail_area_id=KeyTextTransform('area_id', 'detail'),
+            detail_cycle_id=KeyTextTransform('cycle_id', 'detail'),
+        )
         if kind == 'security':
             if not request.user.has_perm('hub.view_security_audit'):
                 raise PermissionDenied('Security audit access is required.')
-            qs = AuditEvent.objects.filter(area__isnull=True)
+            qs = audit_events.filter(area__isnull=True).exclude(
+                action__in=['area_created', 'area_updated', 'area_deleted'])
         elif kind == 'academic':
-            qs = AuditEvent.objects.filter(area__in=areas_for(request.user, ['coordinator']))
+            managed_areas = areas_for(request.user, ['coordinator'])
+            scoped_cycles = list(request.user.assignments.filter(
+                role='coordinator', area__isnull=True).values_list('cycle_id', flat=True))
+            qs = audit_events.filter(
+                Q(area__in=managed_areas) |
+                Q(area__isnull=True, detail_area_id__in=[str(area_id) for area_id in managed_areas.values_list('id', flat=True)]) |
+                Q(area__isnull=True, detail_area_id__isnull=False,
+                  detail_cycle_id__in=[str(cycle_id) for cycle_id in scoped_cycles])
+            )
         else:
             raise ValidationError({'kind': 'Use academic or security.'})
         qs = qs.select_related('actor', 'area')
         if query_id(request, 'cycle'):
-            qs = qs.filter(area__cycle_id=request.query_params['cycle'])
+            qs = qs.filter(Q(area__cycle_id=request.query_params['cycle']) |
+                           Q(area__isnull=True, detail_cycle_id=request.query_params['cycle']))
         if query_id(request, 'area'):
-            qs = qs.filter(area_id=request.query_params['area'])
+            qs = qs.filter(Q(area_id=request.query_params['area']) |
+                           Q(area__isnull=True, detail_area_id=request.query_params['area']))
         if query_id(request, 'actor'):
             qs = qs.filter(actor_id=request.query_params['actor'])
         if query_id(request, 'before'):
@@ -1292,5 +1371,7 @@ class AuditView(APIView):
         page = page[:limit]
         return Response({'results': [{'id': e.id, 'actor': e.actor.get_full_name() or e.actor.username if e.actor else 'System',
             'actor_id': e.actor_id, 'action': e.action, 'record': e.record, 'detail': e.detail,
-            'area_id': e.area_id, 'request_id': e.request_id, 'created_at': e.created_at} for e in page],
+            'area_id': e.area_id if e.area_id is not None else
+                (e.detail.get('area_id') if e.action in ['area_created', 'area_updated', 'area_deleted'] else None),
+            'request_id': e.request_id, 'created_at': e.created_at} for e in page],
             'next_before': page[-1].id if more else None})

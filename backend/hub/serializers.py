@@ -1,6 +1,41 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from .models import Requirement, EvidenceItem
+from .models import Requirement, EvidenceItem, Area
+
+
+class AreaInput(serializers.ModelSerializer):
+    class Meta:
+        model = Area
+        fields = ['cycle', 'code', 'title', 'icon', 'order']
+        extra_kwargs = {'cycle': {'required': False}}
+
+    def validate_code(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Enter an area code.')
+        return value
+
+    def validate_title(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Enter an area title.')
+        return value
+
+    def validate_icon(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Enter an area icon.')
+        return value
+
+    def validate(self, attrs):
+        instance = self.instance
+        cycle = attrs.get('cycle', instance.cycle if instance else None)
+        if instance and cycle.pk != instance.cycle_id:
+            raise serializers.ValidationError({'cycle': 'An area cannot move to another cycle.'})
+        code = attrs.get('code', instance.code if instance else None)
+        if cycle and Area.objects.filter(cycle=cycle, code=code).exclude(pk=instance.pk if instance else None).exists():
+            raise serializers.ValidationError({'code': 'This area code is already used in the cycle.'})
+        return attrs
 
 
 class ItemInput(serializers.Serializer):

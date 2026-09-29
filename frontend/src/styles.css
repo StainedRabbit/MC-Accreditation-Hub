@@ -689,11 +689,19 @@ button.secondary {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 20px;
 }
+.area-card-shell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .area-card {
   text-align: left;
   color: #142036;
   padding: 22px;
   margin: 0;
+  width: 100%;
+  flex: 1;
 }
 .area-card:hover {
   border-color: #a8c4ff;
@@ -717,6 +725,24 @@ button.secondary {
   font-size: 15px;
   min-height: 36px;
   margin-bottom: 8px;
+}
+.area-code {
+  display: block;
+  margin: -5px 0 12px;
+  color: #718095;
+  font-weight: 600;
+}
+.area-card-actions {
+  display: flex;
+  gap: 8px;
+}
+.area-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 .area-counts {
   display: flex;

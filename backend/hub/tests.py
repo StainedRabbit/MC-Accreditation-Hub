@@ -123,6 +123,58 @@ class WorkflowFixture:
                                  **({'submissions': selected} if outcome == 'complete' else {})}, format='json')
 
 
+class AreaManagementTests(WorkflowFixture, TestCase):
+    def create_area(self, code='A3', title='Student Support'):
+        return self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': code, 'title': title,
+            'icon': '📘', 'order': 3}, format='json')
+
+    def test_cycle_coordinator_can_create_edit_and_delete_empty_area_with_audit(self):
+        created = self.create_area()
+        self.assertEqual(created.status_code, 201, created.data)
+        area_id = created.data['id']
+        self.assertEqual(created.data['order'], 3)
+
+        edited = self.client.patch(f'/api/areas/{area_id}/', {'title': 'Student Services', 'order': 4}, format='json')
+        self.assertEqual(edited.status_code, 200, edited.data)
+        self.assertEqual(edited.data['title'], 'Student Services')
+
+        history = self.client.get(f'/api/audit/?kind=academic&area={area_id}')
+        self.assertEqual(history.status_code, 200, history.data)
+        self.assertEqual([event['action'] for event in history.data['results']], ['area_updated', 'area_created'])
+
+        deleted = self.client.delete(f'/api/areas/{area_id}/')
+        self.assertEqual(deleted.status_code, 204)
+        history = self.client.get(f'/api/audit/?kind=academic&cycle={self.cycle.id}&area={area_id}')
+        self.assertIn('area_deleted', [event['action'] for event in history.data['results']])
+
+    def test_duplicate_codes_and_linked_area_deletion_are_rejected(self):
+        duplicate = self.create_area(code=self.area.code)
+        self.assertEqual(duplicate.status_code, 400)
+        blocked = self.client.delete(f'/api/areas/{self.area.id}/')
+        self.assertEqual(blocked.status_code, 400)
+        self.assertTrue(Area.objects.filter(pk=self.area.id).exists())
+
+    def test_area_coordinator_can_edit_assigned_area_but_cannot_create(self):
+        scoped = User.objects.create_user(username='area-coordinator', email='area-coordinator@test.invalid', password='Test-password-1234')
+        RoleAssignment.objects.create(user=scoped, role='coordinator', cycle=self.cycle, area=self.area)
+        self.client.force_authenticate(scoped)
+        edited = self.client.patch(f'/api/areas/{self.area.id}/', {'title': 'Faculty Affairs'}, format='json')
+        self.assertEqual(edited.status_code, 200, edited.data)
+        denied = self.create_area()
+        self.assertEqual(denied.status_code, 403)
+
+    def test_users_without_coordinator_scope_and_inactive_cycles_cannot_manage_areas(self):
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.create_area().status_code, 403)
+        self.assertEqual(self.client.patch(f'/api/areas/{self.area.id}/', {'title': 'No Access'}, format='json').status_code, 403)
+
+        self.client.force_authenticate(self.coordinator)
+        self.cycle.status = 'closed'
+        self.cycle.save(update_fields=['status'])
+        self.assertEqual(self.create_area().status_code, 400)
+        self.assertEqual(self.client.patch(f'/api/areas/{self.area.id}/', {'title': 'Closed'}, format='json').status_code, 400)
+
+
 class WorkflowTests(WorkflowFixture, TestCase):
     def test_certification_requires_deliberate_current_evidence_and_preserves_snapshot(self):
         doc = self.upload()

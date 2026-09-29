@@ -24,6 +24,8 @@ import {
   Printer,
   KeyRound,
   LockKeyhole,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { api, post } from "./api";
 import "@fontsource-variable/inter";
@@ -404,6 +406,7 @@ function App() {
     [editing, setEditing] = useState<Requirement | null>(null);
   const [security, setSecurity] = useState(false),
     [cycleTransition, setCycleTransition] = useState<"close" | "reopen" | null>(null);
+  const [areaForm, setAreaForm] = useState<Area | "new" | null>(null);
   const [upload, setUpload] = useState<{
       doc?: Document;
       item?: Item;
@@ -468,6 +471,7 @@ function App() {
     setPackageEditor(null);
     setPackageReview(null);
     setCertification(null);
+    setAreaForm(null);
     setMappingItem(null);
     setAssignmentRequirement(null);
     setStewardshipDocument(null);
@@ -728,6 +732,18 @@ function App() {
   const title = nav.find((n) => n[0] === page)?.[1] || "Dashboard";
   const currentSubmissions = submissions.filter((s) => s.current);
   const canManage = areas.some((a) => a.can_manage);
+  const canAddArea = Boolean(selectedCycle?.status === "active" && user.assignments.some(
+    (a) => a.role === "coordinator" && a.cycle_id === selectedCycle.id && a.area_id === null,
+  ));
+  async function deleteArea(area: Area) {
+    if (!window.confirm(`Delete the empty area “${area.title}”?`)) return;
+    try {
+      await api(`areas/${area.id}/`, { method: "DELETE" });
+      await changed("Accreditation area deleted.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   const filteredRequirements = requirements.filter(
     (r) =>
       (!areaFilter || String(r.area) === areaFilter) &&
@@ -1121,6 +1137,7 @@ function App() {
           )}
           {security && <PasswordChangeModal close={() => setSecurity(false)} changed={changed} />}
           {cycleTransition && selectedCycle && <CycleTransitionModal cycle={selectedCycle} action={cycleTransition} close={() => setCycleTransition(null)} submit={transitionCycle} />}
+          {areaForm && selectedCycle && <AreaForm cycle={selectedCycle.id} editing={areaForm === "new" ? null : areaForm} close={() => setAreaForm(null)} saved={async () => { setAreaForm(null); await changed("Accreditation area saved."); }} />}
           {page === "areas" && (
             <>
               <div className="page-heading">
@@ -1130,12 +1147,13 @@ function App() {
                     {areas.length} areas in {selectedCycle?.title}
                   </p>
                 </div>
+                {canAddArea && <button className="primary" onClick={() => setAreaForm("new")}><Plus size={17} /> Add Area</button>}
               </div>
               <div className="area-grid">
                 {areas.map((a) => (
+                  <div className="area-card-shell" key={a.id}>
                   <button
                     className="panel area-card"
-                    key={a.id}
                     onClick={() => {
                       navigate("requirements");
                       setAreaFilter(String(a.id));
@@ -1146,6 +1164,7 @@ function App() {
                       <strong className="green">{percent(a.percentage)}</strong>
                     </div>
                     <h3>{a.title}</h3>
+                    <small className="area-code">{a.code}</small>
                     <Progress value={a.percentage} />
                     <div className="area-counts">
                       <div>
@@ -1165,6 +1184,11 @@ function App() {
                       {a.total} applicable requirements · {a.needs_revision} need revision
                     </small>
                   </button>
+                  {a.can_manage && <div className="area-card-actions">
+                    <button className="secondary" onClick={() => setAreaForm(a)}><Pencil size={15} /> Edit</button>
+                    {a.can_delete && <button className="danger" onClick={() => void deleteArea(a)}><Trash2 size={15} /> Delete</button>}
+                  </div>}
+                  </div>
                 ))}
               </div>
             </>
@@ -1965,6 +1989,53 @@ function App() {
       )}
     </div>
   );
+}
+
+function AreaForm({ cycle, editing, close, saved }: {
+  cycle: number;
+  editing: Area | null;
+  close: () => void;
+  saved: () => Promise<void>;
+}) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const data = {
+      ...(editing ? {} : { cycle }),
+      code: form.get("code"),
+      title: form.get("title"),
+      icon: form.get("icon"),
+      order: Number(form.get("order")),
+    };
+    try {
+      await api(editing ? `areas/${editing.id}/` : "areas/", {
+        method: editing ? "PATCH" : "POST",
+        body: JSON.stringify(data),
+      });
+      await saved();
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Modal title={editing ? "Edit Accreditation Area" : "Add Accreditation Area"} close={close}>
+    <form onSubmit={submit}>
+      <ErrorBox error={error} />
+      <div className="form-grid">
+        <label>Area code<input name="code" required maxLength={20} defaultValue={editing?.code} /></label>
+        <label>Area title<input name="title" required maxLength={180} defaultValue={editing?.title} /></label>
+        <label>Icon<input name="icon" required maxLength={10} defaultValue={editing?.icon || "📁"} /></label>
+        <label>Display order<input name="order" type="number" min="0" required defaultValue={editing?.order ?? 0} /></label>
+      </div>
+      <div className="form-actions"><button className="secondary" type="button" onClick={close}>Cancel</button>
+        <button className="primary" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Add area"}</button></div>
+    </form>
+  </Modal>;
 }
 
 function RequirementForm({

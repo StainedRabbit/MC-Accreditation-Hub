@@ -85,8 +85,10 @@ def cycle_created(sender, instance, created, **kwargs):
 @receiver(post_save, sender=Area)
 def area_created(sender, instance, created, **kwargs):
     if created:
-        write_audit(current_actor(), instance, 'area_created', f'area:{instance.pk}',
-                    cycle_id=instance.cycle_id)
+        # Keep the event addressable by cycle and area while allowing an empty area to be deleted.
+        write_audit(current_actor(), None, 'area_created', f'area:{instance.pk}',
+                    cycle_id=instance.cycle_id, area_id=instance.pk,
+                    area_code=instance.code, area_title=instance.title)
 
 
 @receiver(m2m_changed, sender=User.user_permissions.through)

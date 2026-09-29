@@ -16,6 +16,9 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. Health, C
 | POST `cycles/{id}/close/` | Scoped Coordinator only `{rationale}`; changes an active cycle to closed and logs each authorized area |
 | POST `cycles/{id}/reopen/` | Scoped Coordinator only `{rationale}`; restores a closed cycle to active and logs each authorized area |
 | GET `areas/?cycle=id` | Scoped areas, permission flags, and compliance totals |
+| POST `areas/` | Cycle-wide Coordinator in an active cycle `{cycle,code,title,icon,order}`; audits the new area |
+| PATCH `areas/{id}/` | Scoped Coordinator in an active cycle; edit `code`, `title`, `icon`, or `order` |
+| DELETE `areas/{id}/` | Scoped Coordinator in an active cycle; only when no assignments, requirements, documents, or area-linked audit history exists |
 | GET `requirements/?cycle=id&area=id&search=text&status=complete` | Scoped requirement summaries; filters optional |
 | POST `requirements/` | `{area,code,title,description?,responsible,deadline?,active,applicable?,exclusion_reason?,items:[{label,criteria?,mandatory?}]}`; records initial applicability history |
 | GET `requirements/{id}/` | Requirement, criteria, status, scoped package attempt history, visible `package_choices` with exact version/checksum, Coordinator-only approved package certification candidates, legacy item-level history, certification snapshots, and applicability history |

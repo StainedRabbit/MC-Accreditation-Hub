@@ -28,6 +28,7 @@ export async function api<T>(
       ...options.headers,
     },
   });
+  if (res.status === 204) return undefined as T;
   const data = await res
     .json()
     .catch(() => ({ detail: "The server returned an unexpected response." }));
