@@ -1735,6 +1735,19 @@ function App() {
                 )}
               </div>
               {docDetail.can_delegate_stewardship && <div className="actions"><button className="secondary" onClick={() => setStewardshipDocument(docDetail)}>Delegate stewardship</button></div>}
+              {docDetail.versions[0] && ["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
+                <section className="panel" aria-label="Document preview">
+                  <h2>Document preview · v{docDetail.versions[0].number}</h2>
+                  {docDetail.versions[0].content_type === "application/pdf" ? (
+                    <iframe title={`Preview of ${docDetail.versions[0].original_name}`} src={`/api/document-versions/${docDetail.versions[0].id}/preview/`} style={{ width: "100%", height: "75vh", border: "1px solid #d1d5db", borderRadius: 8 }} />
+                  ) : (
+                    <img alt={`Preview of ${docDetail.versions[0].original_name}`} src={`/api/document-versions/${docDetail.versions[0].id}/preview/`} style={{ display: "block", maxWidth: "100%", maxHeight: "75vh", margin: "0 auto", objectFit: "contain" }} />
+                  )}
+                </section>
+              )}
+              {docDetail.versions[0] && !["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
+                <p className="muted">This file type does not support in-browser preview. Download the file to view it.</p>
+              )}
               <section className="panel">
                 <h3>Document version history</h3>
                 <p className="muted">
@@ -1759,10 +1772,15 @@ function App() {
                         <code>{v.checksum}</code>
                       </details>
                     </div>
-                    <a className="link" href={v.download_url}>
-                      <Download size={17} />
-                      Download
-                    </a>
+                    <div className="actions">
+                      {["application/pdf", "image/jpeg", "image/png"].includes(v.content_type) && (
+                        <a className="link" href={`/api/document-versions/${v.id}/preview/`} target="_blank" rel="noreferrer">View</a>
+                      )}
+                      <a className="link" href={v.download_url}>
+                        <Download size={17} />
+                        Download
+                      </a>
+                    </div>
                   </div>
                 ))}
               </section>
@@ -2131,7 +2149,6 @@ function RequirementForm({
   saved: () => Promise<void>;
 }) {
   const [error, setError] = useState(""),
-    [requirementSearch, setRequirementSearch] = useState(""),
     [busy, setBusy] = useState(false),
     [applicable, setApplicable] = useState(editing?.applicable ?? true);
   const [items, setItems] = useState([{ label: "", criteria: "" }]);
@@ -2390,6 +2407,7 @@ function UploadForm({
   saved: (message: string) => Promise<void>;
 }) {
   const [error, setError] = useState(""),
+    [requirementSearch, setRequirementSearch] = useState(""),
     [busy, setBusy] = useState(false),
     [uploaded, setUploaded] = useState<Document | null>(null);
   async function submit(e: React.FormEvent<HTMLFormElement>) {

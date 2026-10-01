@@ -708,6 +708,33 @@ class DownloadView(APIView):
         return response
 
 
+class PreviewView(APIView):
+    def get(self, request, pk):
+        version = get_object_or_404(DocumentVersion.objects.select_related('document__area'), pk=pk)
+        if not can_version(request.user, version):
+            raise Http404
+        if version.content_type not in {'application/pdf', 'image/jpeg', 'image/png'}:
+            raise Http404('In-browser preview is unavailable for this file type.')
+        path = settings.PRIVATE_MEDIA_ROOT / str(version.storage_key)
+        if not path.is_file():
+            raise Http404('Stored file unavailable.')
+        source_area = version.document.area
+        audit(request.user, source_area, 'version_viewed', f'version:{pk}',
+              version=pk, source_area_id=source_area.id)
+        recipient_ids = set(Submission.objects.filter(version=version).values_list(
+            'mapping__item__requirement__area_id', flat=True))
+        recipient_ids.update(PackageItem.objects.filter(version=version).values_list(
+            'package__requirement__area_id', flat=True))
+        for recipient in areas_for(request.user).filter(id__in=recipient_ids).exclude(pk=source_area.pk):
+            audit(request.user, recipient, 'version_viewed', f'version:{pk}',
+                  version=pk, source_area_id=source_area.id)
+        response = FileResponse(path.open('rb'), as_attachment=False,
+                                filename=version.original_name, content_type=version.content_type)
+        response['Cache-Control'] = 'private, no-store'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
+
+
 class RequirementAssignmentsView(APIView):
     def get(self, request, pk):
         requirement = get_object_or_404(scoped_requirements(request.user), pk=pk)
