@@ -176,6 +176,7 @@ export type Version = {
 };
 export type Document = {
   id: string;
+  created_at: string;
   title: string;
   category: string;
   area: number;
@@ -200,7 +201,7 @@ export type Audit = {
   request_id: string;
   created_at: string;
 };
-export type AuditPage = { results: Audit[]; next_before: number | null };
+export type AuditPage = { results: Audit[]; next_before: number | null; next_cursor?: string | null };
 export type SearchResults = {
   requirements: Array<{ id: number; code: string; title: string; area: string; status: string }>;
   documents: Array<{ id: string; title: string; category: string; area: string }>;

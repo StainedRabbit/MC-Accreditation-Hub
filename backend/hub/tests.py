@@ -1151,6 +1151,27 @@ class StorageReconciliationTests(WorkflowFixture, TestCase):
 
 
 class AuditHistoryTests(WorkflowFixture, TestCase):
+    def test_sorted_audit_cursor_covers_entire_history_and_rejects_changed_sort(self):
+        for record in ('Zulu', 'Alpha', 'Echo', 'Beta', 'Charlie'):
+            write_audit(self.coordinator, self.area, 'synthetic_review', record)
+        params = {'action': 'synthetic_review', 'sort': 'record', 'direction': 'asc', 'limit': 2}
+        records = []
+        cursor = None
+        for _ in range(3):
+            response = self.client.get('/api/audit/', {**params, **({'cursor': cursor} if cursor else {})})
+            self.assertEqual(response.status_code, 200, response.data)
+            records.extend(row['record'] for row in response.data['results'])
+            cursor = response.data['next_cursor']
+            if not cursor:
+                break
+        self.assertEqual(records, ['Alpha', 'Beta', 'Charlie', 'Echo', 'Zulu'])
+        first = self.client.get('/api/audit/', params).data['next_cursor']
+        self.assertEqual(self.client.get('/api/audit/', {**params, 'direction': 'desc', 'cursor': first}).status_code, 400)
+        self.assertEqual(self.client.get('/api/audit/', {**params, 'cursor': 'invalid'}).status_code, 400)
+        for field in ('newest', 'actor', 'action', 'record', 'scope', 'date'):
+            with self.subTest(field=field):
+                self.assertEqual(self.client.get('/api/audit/', {**params, 'sort': field}).status_code, 200)
+
     def test_filtered_audit_pages_start_fresh_and_recheck_grants(self):
         for number in range(5):
             write_audit(self.coordinator, self.area, 'synthetic_review', f'fictional alpha {number}')
@@ -1354,6 +1375,24 @@ class SearchContinuationTests(WorkflowFixture, TestCase):
 
 
 class ReportProvenanceTests(WorkflowFixture, TestCase):
+    def test_report_json_and_csv_share_sort_order(self):
+        Requirement.objects.create(area=self.area, code='Z99', title='Alpha item', responsible='Office',
+                                   created_by=self.coordinator)
+        params = {'cycle': self.cycle.id, 'sort': 'requirement', 'direction': 'asc'}
+        response = self.client.get('/api/reports/compliance/', params)
+        self.assertEqual(response.status_code, 200, response.data)
+        titles = [row['title'] for row in response.data['rows']]
+        self.assertEqual(titles, sorted(titles, key=str.casefold))
+        csv_response = self.client.get('/api/reports/compliance/', {**params, 'download': 'csv'})
+        csv_rows = list(csv.reader(io.StringIO(csv_response.content.decode('utf-8'))))
+        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status']
+        start = csv_rows.index(header) + 1
+        self.assertEqual([row[2] for row in csv_rows[start:]], titles)
+        self.assertEqual(self.client.get('/api/reports/compliance/', {**params, 'sort': 'invalid'}).status_code, 400)
+        for field in ('newest', 'area', 'code', 'requirement', 'responsible', 'evidence', 'status', 'deadline'):
+            with self.subTest(field=field):
+                self.assertEqual(self.client.get('/api/reports/compliance/', {**params, 'sort': field}).status_code, 200)
+
     def test_status_filter_keeps_cycle_area_readiness_and_records_population(self):
         document = self.upload()
         self.assertEqual(self.decide(self.submit(document)).status_code, 201)

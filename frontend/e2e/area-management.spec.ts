@@ -27,6 +27,7 @@ test("cycle Coordinator can add, edit, and delete an empty accreditation area", 
   await expect(form).toHaveCount(0);
   let card = page.locator(".area-card-shell").filter({ hasText: initialTitle });
   await expect(card).toBeVisible();
+  await expect(page.locator(".area-card-shell").first()).toContainText(initialTitle);
 
   await card.getByRole("button", { name: "Edit" }).click();
   const edit = page.getByRole("dialog");
@@ -47,4 +48,30 @@ test("cycle Coordinator can add, edit, and delete an empty accreditation area", 
   expect(history.results.map((event: { action: string }) => event.action)).toEqual([
     "area_deleted", "area_updated", "area_created",
   ]);
+});
+
+test("requirements sort both ways and a new requirement returns to the top", async ({ page }) => {
+  await login(page);
+  await page.getByRole("button", { name: "Requirements", exact: true }).click();
+  const table = page.locator(".table-wrap table").first();
+  const titles = () => table.locator("tbody tr td:first-child strong").allTextContents();
+  const header = table.getByRole("button", { name: /Requirement/ }).first();
+  const collator = new Intl.Collator("en-PH", { sensitivity: "base", numeric: true });
+  await header.click();
+  const ascending = await titles();
+  expect(ascending).toEqual([...ascending].sort(collator.compare));
+  await header.click();
+  const descending = await titles();
+  expect(descending).toEqual([...descending].sort((a, b) => collator.compare(b, a)));
+
+  const title = `A new synthetic requirement ${Date.now()}`;
+  await page.getByRole("button", { name: "Add Requirement" }).click();
+  const form = page.getByRole("dialog");
+  await form.getByLabel("Requirement code").fill(`SORT${Date.now()}`);
+  await form.getByLabel("Requirement title").fill(title);
+  await form.getByLabel("Responsible office / person").fill("Synthetic office");
+  await form.getByLabel("Evidence item 1").fill("Synthetic checklist item");
+  await form.getByRole("button", { name: "Save Requirement" }).click();
+  await expect(form).toHaveCount(0);
+  await expect(table.locator("tbody tr").first()).toContainText(title);
 });

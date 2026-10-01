@@ -1,6 +1,9 @@
 from pathlib import Path
 import csv
+import hashlib
+import json
 from uuid import UUID
+from django.core import signing
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth import update_session_auth_hash
@@ -12,8 +15,9 @@ from django.utils.encoding import force_bytes
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.db import transaction, connection, DatabaseError
-from django.db.models import Q
+from django.db.models import Q, F, Value, Case, When, CharField, Max
 from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Cast, Coalesce, Concat, Lower, NullIf, Trim
 from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
@@ -379,7 +383,7 @@ def version_data(version):
 def doc_data(doc, user):
     versions = [version_data(v) for v in doc.versions.all() if can_version(user, v)]
     mappings = visible_mappings_for(user, doc.mappings.all())
-    return {'id': str(doc.id), 'title': doc.title, 'category': doc.category, 'area': doc.area_id,
+    return {'id': str(doc.id), 'title': doc.title, 'category': doc.category, 'created_at': doc.created_at, 'area': doc.area_id,
         'area_title': doc.area.title, 'cycle': doc.area.cycle_id, 'versions': versions,
         'custodian': doc.custodian.get_full_name() or doc.custodian.username,
         'steward': (doc.steward.get_full_name() or doc.steward.username) if doc.steward else None,
@@ -1159,12 +1163,37 @@ class ComplianceView(APIView):
 
 
 REPORT_STATUSES = {'complete', 'for_verification', 'needs_revision', 'ready_for_completion_review', 'in_progress', 'missing', 'draft', 'excluded'}
+REPORT_SORTS = {'newest', 'area', 'code', 'requirement', 'responsible', 'evidence', 'status', 'deadline'}
+REPORT_STATUS_LABELS = {
+    'complete': 'Complete', 'for_verification': 'For Verification', 'needs_revision': 'Needs Revision',
+    'ready_for_completion_review': 'Ready for Completion Review', 'in_progress': 'In Progress',
+    'missing': 'Missing Evidence', 'draft': 'Draft', 'excluded': 'Not Applicable',
+}
+
+
+def report_sort_key(entry, field):
+    requirement, result = entry
+    values = {
+        'newest': requirement.id, 'area': requirement.area.title, 'code': requirement.code,
+        'requirement': requirement.title, 'responsible': requirement.responsible,
+        'evidence': result['approved_items'] / result['required_items'] if result['required_items'] else 0,
+        'status': REPORT_STATUS_LABELS.get(result['status'], result['status']),
+        'deadline': requirement.deadline,
+    }
+    value = values[field]
+    return value.casefold() if isinstance(value, str) else value
 
 
 def report_rows(request):
     cycle_id = query_id(request, 'cycle')
     area_id = query_id(request, 'area')
     requested_status = request.query_params.get('status', '')
+    sort = request.query_params.get('sort', 'newest')
+    direction = request.query_params.get('direction', 'desc')
+    if sort not in REPORT_SORTS:
+        raise ValidationError({'sort': 'Choose a valid report column.'})
+    if direction not in ('asc', 'desc'):
+        raise ValidationError({'direction': 'Use asc or desc.'})
     if requested_status and requested_status not in REPORT_STATUSES:
         raise ValidationError({'status': 'Choose a valid requirement status.'})
     authorized = areas_for(request.user)
@@ -1188,6 +1217,10 @@ def report_rows(request):
         if requested_status and result['status'] != requested_status:
             continue
         rows.append((requirement, result))
+    rows.sort(key=lambda entry: entry[0].id, reverse=True)
+    nonnull = [entry for entry in rows if report_sort_key(entry, sort) is not None]
+    nulls = [entry for entry in rows if report_sort_key(entry, sort) is None]
+    rows = sorted(nonnull, key=lambda entry: report_sort_key(entry, sort), reverse=direction == 'desc') + nulls
     return cycle, scope_areas, area_id, requested_status, population, rows
 
 
@@ -1350,8 +1383,16 @@ class AuditView(APIView):
                            Q(area__isnull=True, detail_area_id=request.query_params['area']))
         if query_id(request, 'actor'):
             qs = qs.filter(actor_id=request.query_params['actor'])
-        if query_id(request, 'before'):
+        sort = request.query_params.get('sort')
+        direction = request.query_params.get('direction', 'desc')
+        if sort is not None and sort not in ('newest', 'actor', 'action', 'record', 'scope', 'date'):
+            raise ValidationError({'sort': 'Choose a valid audit column.'})
+        if direction not in ('asc', 'desc'):
+            raise ValidationError({'direction': 'Use asc or desc.'})
+        if sort is None and query_id(request, 'before'):
             qs = qs.filter(pk__lt=request.query_params['before'])
+        elif sort is not None and request.query_params.get('before'):
+            raise ValidationError({'before': 'Use the sort cursor for ordered audit results.'})
         term = query_text(request, 'search')
         if term:
             qs = qs.filter(Q(record__icontains=term) | Q(action__icontains=term) |
@@ -1366,12 +1407,53 @@ class AuditView(APIView):
         if not raw_limit.isdigit() or not 1 <= int(raw_limit) <= 100:
             raise ValidationError({'limit': 'Use a page size from 1 to 100.'})
         limit = int(raw_limit)
-        page = list(qs.order_by('-id')[:limit + 1])
-        more = len(page) > limit
-        page = page[:limit]
+        if sort is None:
+            page = list(qs.order_by('-id')[:limit + 1])
+            more = len(page) > limit
+            page = page[:limit]
+            next_cursor = None
+            next_before = page[-1].id if more else None
+        else:
+            signature_params = {key: request.query_params.get(key, '') for key in
+                                ('kind', 'cycle', 'area', 'actor', 'search', 'action', 'sort', 'direction')}
+            signature = hashlib.sha256(json.dumps(signature_params, sort_keys=True).encode()).hexdigest()
+            raw_cursor = request.query_params.get('cursor')
+            if raw_cursor:
+                try:
+                    state = signing.loads(raw_cursor, salt='audit-sort-cursor')
+                except signing.BadSignature:
+                    raise ValidationError({'cursor': 'Invalid audit cursor.'})
+                if state.get('signature') != signature or not isinstance(state.get('offset'), int) or not isinstance(state.get('max_id'), int):
+                    raise ValidationError({'cursor': 'Cursor does not match the selected audit filters and sort.'})
+                offset, max_id = state['offset'], state['max_id']
+                if offset < 0 or max_id < 0:
+                    raise ValidationError({'cursor': 'Invalid audit cursor.'})
+            else:
+                offset, max_id = 0, qs.aggregate(last=Max('id'))['last'] or 0
+            qs = qs.filter(pk__lte=max_id)
+            if sort == 'actor':
+                full_name = Trim(Concat(F('actor__first_name'), Value(' '), F('actor__last_name')))
+                qs = qs.annotate(sort_value=Lower(Coalesce(NullIf(full_name, Value('')), F('actor__username'), Value('System'))))
+            elif sort == 'scope':
+                area_text = Coalesce(Cast(F('area_id'), CharField()), F('detail_area_id'))
+                qs = qs.annotate(sort_value=Lower(Case(
+                    When(area__isnull=False, then=Concat(Value('Area #'), area_text)),
+                    When(action__in=['area_created', 'area_updated', 'area_deleted'],
+                         then=Concat(Value('Area #'), area_text)),
+                    default=Value('Institution'), output_field=CharField())))
+            elif sort in ('action', 'record'):
+                qs = qs.annotate(sort_value=Lower(F(sort)))
+            field = 'id' if sort == 'newest' else 'created_at' if sort == 'date' else 'sort_value'
+            order = field if direction == 'asc' else '-' + field
+            page = list(qs.order_by(order, '-id')[offset:offset + limit + 1])
+            more = len(page) > limit
+            page = page[:limit]
+            next_cursor = signing.dumps({'signature': signature, 'offset': offset + len(page), 'max_id': max_id},
+                                        salt='audit-sort-cursor') if more else None
+            next_before = None
         return Response({'results': [{'id': e.id, 'actor': e.actor.get_full_name() or e.actor.username if e.actor else 'System',
             'actor_id': e.actor_id, 'action': e.action, 'record': e.record, 'detail': e.detail,
             'area_id': e.area_id if e.area_id is not None else
                 (e.detail.get('area_id') if e.action in ['area_created', 'area_updated', 'area_deleted'] else None),
             'request_id': e.request_id, 'created_at': e.created_at} for e in page],
-            'next_before': page[-1].id if more else None})
+            'next_before': next_before, 'next_cursor': next_cursor})

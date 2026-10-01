@@ -97,6 +97,31 @@ const initials = (name: string) =>
     .map((n) => n[0])
     .slice(0, 2)
     .join("");
+type SortState = { key: string; direction: "asc" | "desc" };
+const newestSort: SortState = { key: "newest", direction: "desc" };
+function nextSort(current: SortState, key: string): SortState {
+  return { key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" };
+}
+function SortHeader({ label, sort, field, onSort }: { label: string; sort: SortState; field: string; onSort: (field: string) => void }) {
+  const active = sort.key === field;
+  return <th scope="col" aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+    <button type="button" className="sort-header" onClick={() => onSort(field)}>
+      {label}<span aria-hidden="true" className="sort-indicator">{active ? (sort.direction === "asc" ? "▲" : "▼") : "↕"}</span>
+    </button>
+  </th>;
+}
+function sortRows<T>(rows: T[], sort: SortState, value: (row: T, key: string) => string | number | null, id: (row: T) => string | number): T[] {
+  const collator = new Intl.Collator("en-PH", { sensitivity: "base", numeric: true });
+  return [...rows].sort((a, b) => {
+    const left = value(a, sort.key), right = value(b, sort.key);
+    if (left === null && right !== null) return 1;
+    if (right === null && left !== null) return -1;
+    const difference = typeof left === "number" && typeof right === "number"
+      ? left - right : collator.compare(String(left ?? ""), String(right ?? ""));
+    return (difference * (sort.direction === "asc" ? 1 : -1)) || collator.compare(String(id(b)), String(id(a)));
+  });
+}
+const timeValue = (value: string | null | undefined) => value ? new Date(value).getTime() : null;
 function Badge({ status }: { status: string }) {
   return <span className={`badge ${status}`}>{labels[status] || status}</span>;
 }
@@ -289,10 +314,11 @@ const subtitles: Record<string, string> = {
 
 function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
   const [kind, setKind] = useState<"academic" | "security">(security ? "security" : "academic");
+  const [sort, setSort] = useState<SortState>(newestSort);
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("");
   const [events, setEvents] = useState<Audit[]>([]);
-  const [next, setNext] = useState<number | null>(null);
+  const [next, setNext] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [filtersDirty, setFiltersDirty] = useState(false);
@@ -307,8 +333,8 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
     setFiltersDirty(true);
     setExpanded(null);
   }
-  async function load(before?: number) {
-    if (before && filtersDirty) return;
+  async function load(cursor?: string) {
+    if (cursor && filtersDirty) return;
     const current = ++generation.current;
     setLoading(true);
     setError("");
@@ -317,12 +343,14 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
     if (kind === "academic" && cycle) params.set("cycle", cycle);
     if (search.trim()) params.set("search", search.trim());
     if (action.trim()) params.set("action", action.trim());
-    if (before) params.set("before", String(before));
+    params.set("sort", sort.key);
+    params.set("direction", sort.direction);
+    if (cursor) params.set("cursor", cursor);
     try {
       const page = await api<AuditPage>(`audit/?${params}`);
       if (current !== generation.current) return;
-      setEvents((old) => before ? [...old, ...page.results] : page.results);
-      setNext(page.next_before);
+      setEvents((old) => cursor ? [...old, ...page.results] : page.results);
+      setNext(page.next_cursor || null);
     } catch (e) {
       if (current === generation.current) setError((e as Error).message);
     } finally {
@@ -333,7 +361,7 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
     invalidateAuditSearch();
     void load();
     return () => { generation.current += 1; };
-  }, [kind, cycle]);
+  }, [kind, cycle, sort]);
   return <>
     <div className="page-heading"><div><h1>Audit Trail</h1><p>Authorized history with older events available</p></div></div>
     <div className="panel audit-filters">
@@ -347,7 +375,15 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
       </div>
       {error && <p role="alert">{error}</p>}
     </div>
-    <div className="panel table-wrap audit-table"><table><thead><tr><th>User</th><th>Action</th><th>Record</th><th>Scope</th><th>Date &amp; Time</th><th>Details</th></tr></thead>
+    <div className="panel table-wrap audit-table">
+      <div className="audit-mobile-sort"><label>Sort by <select value={sort.key} onChange={(event) => setSort({ key: event.target.value, direction: "asc" })}>
+        <option value="newest">Newest</option><option value="actor">User</option><option value="action">Action</option>
+        <option value="record">Record</option><option value="scope">Scope</option><option value="date">Date &amp; Time</option>
+      </select></label><button type="button" className="secondary" onClick={() => setSort((old) => ({ ...old, direction: old.direction === "asc" ? "desc" : "asc" }))}>
+        {sort.direction === "asc" ? "Ascending" : "Descending"}</button></div>
+      <table><thead><tr>
+        {([ ["User", "actor"], ["Action", "action"], ["Record", "record"], ["Scope", "scope"], ["Date & Time", "date"] ] as const).map(([label, field]) =>
+          <SortHeader key={field} label={label} field={field} sort={sort} onSort={(key) => setSort((old) => nextSort(old, key))} />)}<th>Details</th></tr></thead>
       <tbody>{events.map((e) => <React.Fragment key={e.id}>
         <tr><td data-label="User"><strong>{e.actor}</strong></td><td data-label="Action"><span className="audit-action">{e.action.replaceAll("_", " ")}</span></td>
         <td data-label="Record">{e.record}</td><td data-label="Scope">{e.area_id === null ? "Institution" : `Area #${e.area_id}`}</td>
@@ -376,6 +412,11 @@ function App() {
     [sessionMessage, setSessionMessage] = useState("");
   const [page, setPage] = useState("dashboard"),
     [mobile, setMobile] = useState(false);
+  const [requirementSort, setRequirementSort] = useState<SortState>(newestSort);
+  const [documentSort, setDocumentSort] = useState<SortState>(newestSort);
+  const [packageSort, setPackageSort] = useState<SortState>(newestSort);
+  const [submissionSort, setSubmissionSort] = useState<SortState>(newestSort);
+  const [reportSort, setReportSort] = useState<SortState>(newestSort);
   const [cycles, setCycles] = useState<Cycle[]>([]),
     [cycle, setCycle] = useState(""),
     [areas, setAreas] = useState<Area[]>([]);
@@ -429,7 +470,7 @@ function App() {
   const detailGeneration = useRef(0);
   const contextRef = useRef({ cycle, userId: user?.id ?? null });
   contextRef.current = { cycle, userId: user?.id ?? null };
-  const selectedReportKey = JSON.stringify([user?.id ?? null, cycle, reportArea, reportStatus]);
+  const selectedReportKey = JSON.stringify([user?.id ?? null, cycle, reportArea, reportStatus, reportSort]);
   const reportReady = Boolean(report && !reportLoading && !reportError && reportKey === selectedReportKey &&
     report.selected_filters.cycle_id === Number(cycle) &&
     report.selected_filters.area_id === (reportArea ? Number(reportArea) : null) &&
@@ -466,6 +507,11 @@ function App() {
     setSubmissions([]);
     setPackages([]);
     setSummary(null);
+    setRequirementSort(newestSort);
+    setDocumentSort(newestSort);
+    setPackageSort(newestSort);
+    setSubmissionSort(newestSort);
+    setReportSort(newestSort);
     setUpload(null);
     setReview(null);
     setPackageEditor(null);
@@ -628,7 +674,7 @@ function App() {
   async function loadReport() {
     if (!cycle || !user) return;
     const generation = ++reportGeneration.current;
-    const key = JSON.stringify([user.id, cycle, reportArea, reportStatus]);
+    const key = JSON.stringify([user.id, cycle, reportArea, reportStatus, reportSort]);
     setReportLoading(true);
     setReportError("");
     setReport(null);
@@ -637,6 +683,8 @@ function App() {
       const params = new URLSearchParams({ cycle });
       if (reportArea) params.set("area", reportArea);
       if (reportStatus) params.set("status", reportStatus);
+      params.set("sort", reportSort.key);
+      params.set("direction", reportSort.direction);
       const result = await api<ComplianceReport>(`reports/compliance/?${params}`);
       if (generation === reportGeneration.current &&
           contextRef.current.cycle === cycle && contextRef.current.userId === user.id) {
@@ -654,7 +702,7 @@ function App() {
   }
   useEffect(() => {
     if (page === "reports" && cycle) void loadReport();
-  }, [page, cycle, reportArea, reportStatus, user?.id]);
+  }, [page, cycle, reportArea, reportStatus, reportSort, user?.id]);
   useEffect(() => {
     if (reportArea && !areas.some((area) => String(area.id) === reportArea)) {
       invalidateReport();
@@ -692,6 +740,8 @@ function App() {
   }
   async function changed(message: string) {
     setNotice(message);
+    setPackageSort(newestSort);
+    setSubmissionSort(newestSort);
     await refresh();
   }
   async function openPackageEditor(requirement: Requirement, draft?: PackageAttempt) {
@@ -731,6 +781,14 @@ function App() {
     );
   const title = nav.find((n) => n[0] === page)?.[1] || "Dashboard";
   const currentSubmissions = submissions.filter((s) => s.current);
+  const sortedPackages = sortRows(packages, packageSort, (item, key) => ({
+    newest: item.id, requirement: item.requirement_title, attempt: item.number,
+    owner: item.owner, status: labels[item.status] || item.status,
+  } as Record<string, string | number>)[key] ?? null, (item) => item.id);
+  const sortedSubmissions = sortRows(currentSubmissions, submissionSort, (item, key) => ({
+    newest: item.id, evidence: item.document_title, requirement: item.requirement_title,
+    submitter: item.submitted_by, status: labels[item.status] || item.status,
+  } as Record<string, string | number>)[key] ?? null, (item) => item.id);
   const canManage = areas.some((a) => a.can_manage);
   const canAddArea = Boolean(selectedCycle?.status === "active" && user.assignments.some(
     (a) => a.role === "coordinator" && a.cycle_id === selectedCycle.id && a.area_id === null,
@@ -752,6 +810,12 @@ function App() {
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
+  const sortedRequirements = sortRows(filteredRequirements, requirementSort, (item, key) => ({
+    newest: item.id, requirement: item.title, area: item.area_title,
+    evidence: item.required_items ? item.approved_items / item.required_items : 0,
+    responsible: item.responsible, status: labels[item.status] || item.status,
+    deadline: timeValue(item.deadline),
+  } as Record<string, string | number | null>)[key] ?? null, (item) => item.id);
   const filteredDocuments = documents.filter(
     (d) =>
       (!areaFilter || String(d.area) === areaFilter) &&
@@ -759,6 +823,11 @@ function App() {
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
+  const sortedDocuments = sortRows(filteredDocuments, documentSort, (item, key) => ({
+    newest: timeValue(item.created_at), name: item.title, type: item.category,
+    area: item.area_title, uploader: item.versions[0]?.uploaded_by || "",
+    date: timeValue(item.versions[0]?.uploaded_at), version: item.versions[0]?.number ?? 0,
+  } as Record<string, string | number | null>)[key] ?? null, (item) => item.id);
   const filters = (
     <div className="filters">
       <div className="search-field">
@@ -912,6 +981,11 @@ function App() {
                 setSubmissions([]);
                 setPackages([]);
                 setSummary(null);
+                setRequirementSort(newestSort);
+                setDocumentSort(newestSort);
+                setPackageSort(newestSort);
+                setSubmissionSort(newestSort);
+                setReportSort(newestSort);
                 setError("");
                 setReportArea("");
                 setAreaFilter("");
@@ -1089,7 +1163,7 @@ function App() {
                       View All Areas <ArrowRight size={16} />
                     </button>
                   </div>
-                  {areas.map((a) => (
+                  {[...areas].sort((a, b) => b.id - a.id).map((a) => (
                     <button
                       className="area-progress-row"
                       key={a.id}
@@ -1150,7 +1224,7 @@ function App() {
                 {canAddArea && <button className="primary" onClick={() => setAreaForm("new")}><Plus size={17} /> Add Area</button>}
               </div>
               <div className="area-grid">
-                {areas.map((a) => (
+                {[...areas].sort((a, b) => b.id - a.id).map((a) => (
                   <div className="area-card-shell" key={a.id}>
                   <button
                     className="panel area-card"
@@ -1218,17 +1292,17 @@ function App() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Requirement</th>
-                      <th>Accreditation Area</th>
-                      <th>Evidence</th>
-                      <th>Responsible</th>
-                      <th>Status</th>
-                      <th>Deadline</th>
+                      <SortHeader label="Requirement" field="requirement" sort={requirementSort} onSort={(key) => setRequirementSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Accreditation Area" field="area" sort={requirementSort} onSort={(key) => setRequirementSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Evidence" field="evidence" sort={requirementSort} onSort={(key) => setRequirementSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Responsible" field="responsible" sort={requirementSort} onSort={(key) => setRequirementSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Status" field="status" sort={requirementSort} onSort={(key) => setRequirementSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Deadline" field="deadline" sort={requirementSort} onSort={(key) => setRequirementSort((old) => nextSort(old, key))} />
                       <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRequirements.map((r) => (
+                    {sortedRequirements.map((r) => (
                       <tr key={r.id}>
                         <td>
                           <strong>{r.title}</strong>
@@ -1578,17 +1652,17 @@ function App() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Document Name</th>
-                      <th>Type</th>
-                      <th>Area</th>
-                      <th>Uploaded By</th>
-                      <th>Date</th>
-                      <th>Version</th>
+                      <SortHeader label="Document Name" field="name" sort={documentSort} onSort={(key) => setDocumentSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Type" field="type" sort={documentSort} onSort={(key) => setDocumentSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Area" field="area" sort={documentSort} onSort={(key) => setDocumentSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Uploaded By" field="uploader" sort={documentSort} onSort={(key) => setDocumentSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Date" field="date" sort={documentSort} onSort={(key) => setDocumentSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Version" field="version" sort={documentSort} onSort={(key) => setDocumentSort((old) => nextSort(old, key))} />
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredDocuments.map((d) => {
+                    {sortedDocuments.map((d) => {
                       const v = d.versions[0];
                       return (
                         <tr key={d.id}>
@@ -1730,8 +1804,12 @@ function App() {
                 </div>
               </div>
               <div className="panel table-wrap"><h2>Requirement packages</h2>
-                <table><thead><tr><th>Requirement</th><th>Attempt</th><th>Submitted by</th><th>Status</th><th>Actions</th></tr></thead>
-                  <tbody>{packages.map((attempt) => <tr key={attempt.id}><td>{attempt.requirement_title}</td><td>#{attempt.number} · {attempt.items.length} pinned versions</td><td>{attempt.owner}</td><td><Badge status={attempt.status} /></td>
+                <table><thead><tr>
+                  <SortHeader label="Requirement" field="requirement" sort={packageSort} onSort={(key) => setPackageSort((old) => nextSort(old, key))} />
+                  <SortHeader label="Attempt" field="attempt" sort={packageSort} onSort={(key) => setPackageSort((old) => nextSort(old, key))} />
+                  <SortHeader label="Submitted by" field="owner" sort={packageSort} onSort={(key) => setPackageSort((old) => nextSort(old, key))} />
+                  <SortHeader label="Status" field="status" sort={packageSort} onSort={(key) => setPackageSort((old) => nextSort(old, key))} /><th>Actions</th></tr></thead>
+                  <tbody>{sortedPackages.map((attempt) => <tr key={attempt.id}><td>{attempt.requirement_title}</td><td>#{attempt.number} · {attempt.items.length} pinned versions</td><td>{attempt.owner}</td><td><Badge status={attempt.status} /></td>
                     <td>{attempt.can_review ? <button className="primary" onClick={() => setPackageReview(attempt)}>Review package</button> : <button className="link" onClick={() => void openRequirement(attempt.requirement)}>View history</button>}</td></tr>)}</tbody>
                 </table>{!packages.length && <p className="muted">Submitted packages will appear here.</p>}
               </div>
@@ -1740,15 +1818,15 @@ function App() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Evidence</th>
-                      <th>Requirement</th>
-                      <th>Submitted By</th>
-                      <th>Status</th>
+                      <SortHeader label="Evidence" field="evidence" sort={submissionSort} onSort={(key) => setSubmissionSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Requirement" field="requirement" sort={submissionSort} onSort={(key) => setSubmissionSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Submitted By" field="submitter" sort={submissionSort} onSort={(key) => setSubmissionSort((old) => nextSort(old, key))} />
+                      <SortHeader label="Status" field="status" sort={submissionSort} onSort={(key) => setSubmissionSort((old) => nextSort(old, key))} />
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {currentSubmissions.map((s) => (
+                    {sortedSubmissions.map((s) => (
                       <tr key={s.id}>
                         <td>
                           <strong>{s.document_title}</strong>
@@ -1867,7 +1945,7 @@ function App() {
                   <p>Printable readiness report for {selectedCycle?.title || "your selected cycle"}.</p>
                 </div>
                 <div className="actions no-print">
-                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}&download=csv`}>
+                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}&sort=${reportSort.key}&direction=${reportSort.direction}&download=csv`}>
                     <Download size={16} /> Export CSV
                   </a> : <button className="secondary" type="button" disabled><Download size={16} /> Export CSV</button>}
                   <button className="primary" disabled={!reportReady} onClick={() => { if (reportReady) window.print(); }}><Printer size={16} /> Print report</button>
@@ -1909,7 +1987,8 @@ function App() {
                 <section className="panel table-wrap">
                   <div className="report-meta"><span>{report.filtered_row_count} displayed rows</span><span>Calculated {reportDateTime(report.calculated_at)} ({report.timezone})</span></div>
                   <table>
-                    <thead><tr><th>Area</th><th>Code</th><th>Requirement</th><th>Responsible</th><th>Evidence</th><th>Status</th><th>Deadline</th></tr></thead>
+                    <thead><tr>{([ ["Area", "area"], ["Code", "code"], ["Requirement", "requirement"], ["Responsible", "responsible"], ["Evidence", "evidence"], ["Status", "status"], ["Deadline", "deadline"] ] as const).map(([label, field]) =>
+                      <SortHeader key={field} label={label} field={field} sort={reportSort} onSort={(key) => setReportSort((old) => nextSort(old, key))} />)}</tr></thead>
                     <tbody>{report.rows.map((row) => <tr key={row.id}><td>{row.area}</td><td>{row.code}</td><td><strong>{row.title}</strong></td><td>{row.responsible}</td><td>{row.approved_items}/{row.required_items}</td><td><Badge status={row.status} /></td><td>{date(row.deadline)}</td></tr>)}</tbody>
                   </table>
                   {!report.rows.length && <div className="empty">No requirements match this report filter.</div>}
@@ -1931,6 +2010,7 @@ function App() {
           close={() => setRequirementForm(false)}
           saved={async () => {
             setRequirementForm(false);
+            if (!editing) { setRequirementSort(newestSort); setReportSort(newestSort); }
             await changed("Requirement saved.");
           }}
         />
@@ -1943,6 +2023,7 @@ function App() {
           close={() => setUpload(null)}
           saved={async (message) => {
             setUpload(null);
+            if (!upload.doc) setDocumentSort(newestSort);
             await changed(message);
           }}
         />

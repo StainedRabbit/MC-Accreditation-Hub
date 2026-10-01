@@ -71,9 +71,9 @@ test("audit rows expose readable details, correlation, timezone, filters and old
     created_at: "2026-09-27T00:00:00Z", detail: { reason: "Synthetic review note", package_number: 2 } });
   await page.route("**/api/audit/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
-    const search = params.get("search"), before = params.get("before");
-    const results = search ? [event(70, "filtered_event")] : before ? [event(80, "older_event")] : [event(100, "package_approved")];
-    await route.fulfill({ json: { results, next_before: !search && !before ? 100 : null } });
+    const search = params.get("search"), cursor = params.get("cursor");
+    const results = search ? [event(70, "filtered_event")] : cursor ? [event(80, "older_event")] : [event(100, "package_approved")];
+    await route.fulfill({ json: { results, next_cursor: !search && !cursor ? "older-100" : null } });
   });
   await page.getByRole("button", { name: "Audit Trail" }).click();
   const rows = page.locator(".audit-table tbody > tr:not(.audit-expanded)");

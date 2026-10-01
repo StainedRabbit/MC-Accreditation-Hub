@@ -18,23 +18,23 @@ test("audit search changes clear the old cursor and ignore a delayed older page"
   let olderStarted!: () => void;
   const olderGate = new Promise<void>((resolve) => { releaseOlder = resolve; });
   const started = new Promise<void>((resolve) => { olderStarted = resolve; });
-  const requested: Array<{ search: string | null; action: string | null; before: string | null }> = [];
+  const requested: Array<{ search: string | null; action: string | null; cursor: string | null }> = [];
   await page.route("**/api/audit/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
-    const search = params.get("search"), action = params.get("action"), before = params.get("before");
-    requested.push({ search, action, before });
-    if (before === "90") {
+    const search = params.get("search"), action = params.get("action"), cursor = params.get("cursor");
+    requested.push({ search, action, cursor });
+    if (cursor === "older-90") {
       olderStarted();
       await olderGate;
-      await route.fulfill({ json: { results: [event(85, "stale older record")], next_before: null } });
-    } else if (search === "fresh" && before === "70") {
-      await route.fulfill({ json: { results: [event(60, "fresh oldest record")], next_before: null } });
+      await route.fulfill({ json: { results: [event(85, "stale older record")], next_cursor: null } });
+    } else if (search === "fresh" && cursor === "older-70") {
+      await route.fulfill({ json: { results: [event(60, "fresh oldest record")], next_cursor: null } });
     } else if (search === "fresh" && action === "synthetic_new") {
-      await route.fulfill({ json: { results: [event(55, "new action record", "synthetic_new")], next_before: null } });
+      await route.fulfill({ json: { results: [event(55, "new action record", "synthetic_new")], next_cursor: null } });
     } else if (search === "fresh") {
-      await route.fulfill({ json: { results: [event(80, "fresh recent record"), event(70, "fresh older record")], next_before: 70 } });
+      await route.fulfill({ json: { results: [event(80, "fresh recent record"), event(70, "fresh older record")], next_cursor: "older-70" } });
     } else {
-      await route.fulfill({ json: { results: [event(100, "initial record"), event(90, "initial older record")], next_before: 90 } });
+      await route.fulfill({ json: { results: [event(100, "initial record"), event(90, "initial older record")], next_cursor: "older-90" } });
     }
   });
 
@@ -52,8 +52,8 @@ test("audit search changes clear the old cursor and ignore a delayed older page"
   await expect(page.getByText("fresh recent record")).toBeVisible();
   await page.getByRole("button", { name: "Load older events" }).click();
   await expect(page.getByText("fresh oldest record")).toBeVisible();
-  expect(requested.some((entry) => entry.search === "fresh" && entry.before === "70")).toBe(true);
-  expect(requested.some((entry) => entry.search === "fresh" && entry.before === "90")).toBe(false);
+  expect(requested.some((entry) => entry.search === "fresh" && entry.cursor === "older-70")).toBe(true);
+  expect(requested.some((entry) => entry.search === "fresh" && entry.cursor === "older-90")).toBe(false);
 
   await page.getByLabel("Action", { exact: true }).fill("synthetic_new");
   await expect(page.getByRole("button", { name: "Load older events" })).toHaveCount(0);
