@@ -22,6 +22,7 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework.views import APIView
@@ -1410,6 +1411,20 @@ class AuditView(APIView):
                            Q(area__isnull=True, detail_area_id=request.query_params['area']))
         if query_id(request, 'actor'):
             qs = qs.filter(actor_id=request.query_params['actor'])
+        from_date = request.query_params.get('from_date', '')
+        to_date = request.query_params.get('to_date', '')
+        if from_date:
+            parsed_from = parse_date(from_date)
+            if parsed_from is None:
+                raise ValidationError({'from_date': 'Use a valid date in YYYY-MM-DD format.'})
+            qs = qs.filter(created_at__date__gte=parsed_from)
+        if to_date:
+            parsed_to = parse_date(to_date)
+            if parsed_to is None:
+                raise ValidationError({'to_date': 'Use a valid date in YYYY-MM-DD format.'})
+            qs = qs.filter(created_at__date__lte=parsed_to)
+        if from_date and to_date and parsed_from > parsed_to:
+            raise ValidationError({'to_date': 'End date must be on or after the start date.'})
         sort = request.query_params.get('sort')
         direction = request.query_params.get('direction', 'desc')
         if sort is not None and sort not in ('newest', 'actor', 'action', 'record', 'scope', 'date'):
@@ -1442,7 +1457,7 @@ class AuditView(APIView):
             next_before = page[-1].id if more else None
         else:
             signature_params = {key: request.query_params.get(key, '') for key in
-                                ('kind', 'cycle', 'area', 'actor', 'search', 'action', 'sort', 'direction')}
+                                ('kind', 'cycle', 'area', 'actor', 'search', 'action', 'from_date', 'to_date', 'sort', 'direction')}
             signature = hashlib.sha256(json.dumps(signature_params, sort_keys=True).encode()).hexdigest()
             raw_cursor = request.query_params.get('cursor')
             if raw_cursor:

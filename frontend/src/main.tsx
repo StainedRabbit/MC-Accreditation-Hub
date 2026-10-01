@@ -317,6 +317,8 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
   const [sort, setSort] = useState<SortState>(newestSort);
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [events, setEvents] = useState<Audit[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -343,6 +345,8 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
     if (kind === "academic" && cycle) params.set("cycle", cycle);
     if (search.trim()) params.set("search", search.trim());
     if (action.trim()) params.set("action", action.trim());
+    if (fromDate) params.set("from_date", fromDate);
+    if (toDate) params.set("to_date", toDate);
     params.set("sort", sort.key);
     params.set("direction", sort.direction);
     if (cursor) params.set("cursor", cursor);
@@ -361,7 +365,7 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
     invalidateAuditSearch();
     void load();
     return () => { generation.current += 1; };
-  }, [kind, cycle, sort]);
+  }, [kind, cycle, sort, search, action, fromDate, toDate]);
   return <>
     <div className="page-heading"><div><h1>Audit Trail</h1><p>Authorized history with older events available</p></div></div>
     <div className="panel audit-filters">
@@ -369,9 +373,10 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
       {security && <label>History type <select value={kind} onChange={(e) => { invalidateAuditSearch(); setKind(e.target.value as "academic" | "security"); }}>
         <option value="security">Security and account</option><option value="academic">Scoped academic</option>
       </select></label>}
-      <label>Search <input value={search} onChange={(e) => { invalidateAuditSearch(); setSearch(e.target.value); }} maxLength={120} /></label>
-      <label>Action <input value={action} onChange={(e) => { invalidateAuditSearch(); setAction(e.target.value); }} maxLength={80} /></label>
-      <button className="primary" type="button" onClick={() => void load()} disabled={loading}>Filter</button>
+      <label>Search <input value={search} onChange={(e) => setSearch(e.target.value)} maxLength={120} /></label>
+      <label>Action <input value={action} onChange={(e) => setAction(e.target.value)} maxLength={80} /></label>
+      <label>From date <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} /></label>
+      <label>To date <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} /></label>
       </div>
       {error && <p role="alert">{error}</p>}
     </div>
