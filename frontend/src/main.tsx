@@ -2131,6 +2131,7 @@ function RequirementForm({
   saved: () => Promise<void>;
 }) {
   const [error, setError] = useState(""),
+    [requirementSearch, setRequirementSearch] = useState(""),
     [busy, setBusy] = useState(false),
     [applicable, setApplicable] = useState(editing?.applicable ?? true);
   const [items, setItems] = useState([{ label: "", criteria: "" }]);
@@ -2444,10 +2445,20 @@ function UploadForm({
         {!context.doc && (
           <>
             {!context.item && <label>
+              Find requirement
+              <input
+                type="search"
+                value={requirementSearch}
+                onChange={(event) => setRequirementSearch(event.target.value)}
+                placeholder="Search code, title, or area"
+                disabled={!!uploaded}
+              />
+            </label>}
+            {!context.item && <label>
               Requirement
               <select name="requirement" required disabled={!!uploaded}>
                 <option value="">Select your assigned requirement</option>
-                {requirements.map((requirement) => <option key={requirement.id} value={requirement.id}>{requirement.code} — {requirement.title}</option>)}
+                {requirements.filter((requirement) => `${requirement.code} ${requirement.title} ${requirement.area_title}`.toLowerCase().includes(requirementSearch.trim().toLowerCase())).map((requirement) => <option key={requirement.id} value={requirement.id}>{requirement.code} — {requirement.title}</option>)}
               </select>
             </label>}
             <label>
