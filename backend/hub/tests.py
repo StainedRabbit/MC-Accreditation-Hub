@@ -304,15 +304,23 @@ class WorkflowTests(WorkflowFixture, TestCase):
         doc = self.upload()
         sub = self.submit(doc)
         version = doc['versions'][0]['id']
+        preview = self.client.get(f'/api/document-versions/{version}/preview/')
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview['Content-Type'], 'application/pdf')
+        self.assertTrue(preview['Content-Disposition'].startswith('inline;'))
+        self.assertEqual(preview['X-Frame-Options'], 'SAMEORIGIN')
+        b''.join(preview.streaming_content)
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get('/api/documents/').status_code, 403)
         self.assertEqual(self.client.get(f'/api/document-versions/{version}/download/').status_code, 403)
+        self.assertEqual(self.client.get(f'/api/document-versions/{version}/preview/').status_code, 403)
         self.client.force_authenticate(self.outsider)
         self.assertEqual(self.client.get('/api/documents/').data, [])
         self.assertEqual(self.client.get('/api/requirements/').data, [])
         self.assertEqual(self.client.get('/api/submissions/').data, [])
         self.assertEqual(self.client.get(f'/api/documents/{doc["id"]}/').status_code, 404)
         self.assertEqual(self.client.get(f'/api/document-versions/{version}/download/').status_code, 404)
+        self.assertEqual(self.client.get(f'/api/document-versions/{version}/preview/').status_code, 404)
         self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'Unauthorized'}, format='json').status_code, 404)
         self.assertEqual(self.decide(sub, user=self.outsider).status_code, 404)
 
@@ -1151,6 +1159,27 @@ class StorageReconciliationTests(WorkflowFixture, TestCase):
 
 
 class AuditHistoryTests(WorkflowFixture, TestCase):
+    def test_audit_date_range_is_inclusive_and_validated(self):
+        early = write_audit(self.coordinator, self.area, 'synthetic_review', 'fictional early')
+        late = write_audit(self.coordinator, self.area, 'synthetic_review', 'fictional late')
+        AuditEvent.objects.filter(pk=early.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 9, 27, 23, 59, 59)))
+        AuditEvent.objects.filter(pk=late.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 9, 28, 0, 0, 0)))
+
+        one_day = self.client.get('/api/audit/', {'action': 'synthetic_review',
+            'from_date': '2026-09-27', 'to_date': '2026-09-27'})
+        self.assertEqual(one_day.status_code, 200, one_day.data)
+        self.assertEqual([row['record'] for row in one_day.data['results']], ['fictional early'])
+        inclusive = self.client.get('/api/audit/', {'action': 'synthetic_review',
+            'from_date': '2026-09-27', 'to_date': '2026-09-28'})
+        self.assertEqual({row['record'] for row in inclusive.data['results']},
+                         {'fictional early', 'fictional late'})
+        self.assertEqual(self.client.get('/api/audit/', {'from_date': '2026-99-99'}).status_code, 400)
+        reversed_range = self.client.get('/api/audit/', {'from_date': '2026-09-28',
+                                                          'to_date': '2026-09-27'})
+        self.assertEqual(reversed_range.status_code, 400)
+
     def test_sorted_audit_cursor_covers_entire_history_and_rejects_changed_sort(self):
         for record in ('Zulu', 'Alpha', 'Echo', 'Beta', 'Charlie'):
             write_audit(self.coordinator, self.area, 'synthetic_review', record)

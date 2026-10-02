@@ -2,7 +2,7 @@
 
 ## Current slice
 
-The current local presentation slice polishes the Dashboard, Compliance Monitoring, and Audit Trail using the 18 uploaded reference screenshots. Seven headline metrics and two compact workflow counters retain all nine existing values, status names, and the defined compliance formula. Audit events use scannable rows/cards with expandable details, request correlation, and explicitly labelled Asia/Manila timestamps; existing security/academic access, filtering, and cursor pagination remain in force. This changes only React, CSS, and browser tests. The earlier F15 cursor fix remains complete; D20 capacity and broader collection performance remain unresolved.
+The current local presentation and interaction slice polishes the Dashboard, Compliance Monitoring, and Audit Trail using the 18 uploaded reference screenshots. Seven headline metrics and two compact workflow counters retain all nine existing values, status names, and the defined compliance formula. Audit events use scannable rows/cards with expandable details, request correlation, and explicitly labelled Asia/Manila timestamps; search and action filters refresh as the user types, and inclusive date filters are available. Upload Evidence filters assigned requirements by code, title, or area. The Evidence Repository displays the latest PDF or image inline with authorized version previews; DOCX and XLSX remain download-only. The F15 cursor fix remains complete; D20 capacity and broader collection performance remain unresolved.
 
 ## Completed work
 
@@ -19,6 +19,7 @@ The current local presentation slice polishes the Dashboard, Compliance Monitori
 - The Playwright workflow now covers approved evidence becoming ready, Coordinator completion, dashboard count change, reopening, and the reversed count change. It also confirms a Reviewer cannot see certification controls.
 - Scoped Search returns only authorized requirement and document metadata. Compliance Reports reuse the same scoped status calculation as the dashboard, support area/status filters, print cleanly, and export formula-safe CSV.
 - Audit Trail remains user-facing and now supports server-side scoped text/action filters for future pagination and UI controls.
+- Upload Evidence requirement search, authorized inline PDF/JPEG/PNG preview, and Audit Trail live search/date filters are implemented. Preview access is audited separately and uses the same version visibility policy as downloads.
 - Scoped Coordinators can close an active cycle or reopen a closed cycle from the Dashboard. Both transitions require a rationale, are audited per area, and all normal write endpoints continue to enforce active-cycle locking.
 - Signed-in users can change their password from Account security without losing their current session. Recovery email is deliberately disabled until SMTP, sender, and public application URL settings are supplied; the login flow directs users to administrator-assisted recovery when it is unavailable.
 - F08: self-service recovery now requires an authenticated encrypted SMTP backend, valid sender, and public HTTPS URL; console, dummy, incomplete, and example settings fail closed. Unknown accounts and SMTP failures receive the same account-neutral response without claiming delivery. Reset credentials appear only in the emailed URL fragment and confirmation POST body, with the fragment removed from browser history before rendering. The reference Nginx access log omits query strings. Confirmation uses a user row lock so consumed tokens cannot race. Administrator-assisted recovery remains the documented pilot path.
@@ -46,6 +47,7 @@ The current local presentation slice polishes the Dashboard, Compliance Monitori
 
 ## Verified behavior
 
+- 2026-10-01 local interaction verification: focused PostgreSQL tests passed for authorized inline PDF preview/denial and inclusive Audit Trail date ranges, malformed dates, and reversed ranges (**2 tests**). The guarded disposable browser run passed **6 tests** across workflow, audit search/cursor handling, date filtering, upload requirement search, and inline PDF preview. `npm.cmd run build --prefix frontend` and `git diff --check` passed. The runner used a temporary fictional database, evidence folder, and loopback services and removed them after the run; no school or production data was used. DOCX/XLSX preview remains unsupported in-browser.
 - `python backend/manage.py test hub --noinput`: 24 PostgreSQL-backed tests passed on 2026-09-09.
 - `python backend/manage.py check` and `python backend/manage.py makemigrations --check --dry-run`: passed on 2026-09-09.
 - `npm.cmd run build --prefix frontend`: passed on 2026-09-09.

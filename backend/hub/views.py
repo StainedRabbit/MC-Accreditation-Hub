@@ -733,6 +733,7 @@ class PreviewView(APIView):
                                 filename=version.original_name, content_type=version.content_type)
         response['Cache-Control'] = 'private, no-store'
         response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'SAMEORIGIN'
         return response
 
 
@@ -1414,12 +1415,18 @@ class AuditView(APIView):
         from_date = request.query_params.get('from_date', '')
         to_date = request.query_params.get('to_date', '')
         if from_date:
-            parsed_from = parse_date(from_date)
+            try:
+                parsed_from = parse_date(from_date)
+            except ValueError:
+                parsed_from = None
             if parsed_from is None:
                 raise ValidationError({'from_date': 'Use a valid date in YYYY-MM-DD format.'})
             qs = qs.filter(created_at__date__gte=parsed_from)
         if to_date:
-            parsed_to = parse_date(to_date)
+            try:
+                parsed_to = parse_date(to_date)
+            except ValueError:
+                parsed_to = None
             if parsed_to is None:
                 raise ValidationError({'to_date': 'Use a valid date in YYYY-MM-DD format.'})
             qs = qs.filter(created_at__date__lte=parsed_to)

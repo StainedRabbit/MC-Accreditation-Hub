@@ -18,11 +18,11 @@ test("audit search changes clear the old cursor and ignore a delayed older page"
   let olderStarted!: () => void;
   const olderGate = new Promise<void>((resolve) => { releaseOlder = resolve; });
   const started = new Promise<void>((resolve) => { olderStarted = resolve; });
-  const requested: Array<{ search: string | null; action: string | null; cursor: string | null }> = [];
+  const requested: Array<{ search: string | null; action: string | null; cursor: string | null; fromDate: string | null; toDate: string | null }> = [];
   await page.route("**/api/audit/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     const search = params.get("search"), action = params.get("action"), cursor = params.get("cursor");
-    requested.push({ search, action, cursor });
+    requested.push({ search, action, cursor, fromDate: params.get("from_date"), toDate: params.get("to_date") });
     if (cursor === "older-90") {
       olderStarted();
       await olderGate;
@@ -43,13 +43,10 @@ test("audit search changes clear the old cursor and ignore a delayed older page"
   await page.getByRole("button", { name: "Load older events" }).click();
   await started;
   await page.getByLabel("Search", { exact: true }).fill("fresh");
-  await expect(page.getByRole("button", { name: "Load older events" })).toHaveCount(0);
-  await expect(page.getByText("Apply filters to view audit events.")).toBeVisible();
+  await expect(page.getByText("fresh recent record")).toBeVisible();
   releaseOlder();
   await expect(page.getByText("stale older record")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await expect(page.getByText("fresh recent record")).toBeVisible();
   await page.getByRole("button", { name: "Load older events" }).click();
   await expect(page.getByText("fresh oldest record")).toBeVisible();
   expect(requested.some((entry) => entry.search === "fresh" && entry.cursor === "older-70")).toBe(true);
@@ -57,7 +54,10 @@ test("audit search changes clear the old cursor and ignore a delayed older page"
 
   await page.getByLabel("Action", { exact: true }).fill("synthetic_new");
   await expect(page.getByRole("button", { name: "Load older events" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Filter", exact: true }).click();
   await expect(page.getByText("new action record")).toBeVisible();
   await expect(page.getByText("fresh recent record")).toHaveCount(0);
+  await page.getByLabel("From date").fill("2026-09-01");
+  await page.getByLabel("To date").fill("2026-09-30");
+  await expect.poll(() => requested.some((entry) => entry.fromDate === "2026-09-01" && entry.toDate === "2026-09-30")).toBe(true);
+  expect(requested.some((entry) => entry.search === "fresh" && entry.action === "synthetic_new" && entry.fromDate === "2026-09-01" && entry.toDate === "2026-09-30")).toBe(true);
 });

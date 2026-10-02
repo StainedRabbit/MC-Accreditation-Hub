@@ -69,8 +69,10 @@ test("audit rows expose readable details, correlation, timezone, filters and old
   const event = (id: number, action: string) => ({ id, actor: "Fictional Coordinator", actor_id: 1,
     action, record: `Fictional requirement ${id}`, area_id: 2, request_id: `synthetic-request-${id}`,
     created_at: "2026-09-27T00:00:00Z", detail: { reason: "Synthetic review note", package_number: 2 } });
+  const auditRequests: URL[] = [];
   await page.route("**/api/audit/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
+    auditRequests.push(new URL(route.request().url()));
     const search = params.get("search"), cursor = params.get("cursor");
     const results = search ? [event(70, "filtered_event")] : cursor ? [event(80, "older_event")] : [event(100, "package_approved")];
     await route.fulfill({ json: { results, next_cursor: !search && !cursor ? "older-100" : null } });
@@ -94,11 +96,13 @@ test("audit rows expose readable details, correlation, timezone, filters and old
   await expect(rows).toHaveCount(2);
   await expect(rows.last()).toContainText("older event");
   await page.getByLabel("Search", { exact: true }).fill("filtered");
-  await expect(rows).toHaveCount(0);
-  await page.getByRole("button", { name: "Filter", exact: true }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText("filtered event");
   await expect(page.getByText("Fictional requirement 100")).toHaveCount(0);
+  await page.getByLabel("From date").fill("2026-09-01");
+  await page.getByLabel("To date").fill("2026-09-30");
+  await expect.poll(() => auditRequests.some((request) => request.searchParams.get("from_date") === "2026-09-01" && request.searchParams.get("to_date") === "2026-09-30")).toBe(true);
+  await expect(rows).toHaveCount(1);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".sidebar")).not.toHaveClass(/open/);
