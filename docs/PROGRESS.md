@@ -106,7 +106,7 @@ The current local presentation and interaction slice polishes the Dashboard, Com
 
 ## Next exact task
 
-School IT must verify the D18 proxy peer and trusted hops, internal exposure, admin source CIDRs, TLS/log behavior and shared throttle storage; the D19 backup operator/platform, separated destination, encryption/key custody, retention, RPO/RTO, alerts and target restore rehearsal; and the D20 expected user/evidence volume, capacity thresholds and operating owners. The Academic Owner and Project Owner must ratify D16 workflow scope and D21 report meaning. The Security/Records Owner must settle D11/D12 scanning, sensitivity, retention and disposal before real evidence is accepted. D22 target reviewers and evidence record need School IT confirmation. Local synthetic tests are not target acceptance.
+The Project Owner must assign named approvers, schedule the joint workshop, and circulate the [workshop brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md) and [outcome/baseline template](PILOT_READINESS_OUTCOME_TEMPLATE.md). At the workshop, resolve D01–D08 and D09–D15 with their required approvers, then ratify D16; review D17–D22 and record owners, actual values, conditions, and evidence gaps. In particular, School IT must supply and verify D18 network/admin values, D19 backup/recovery ownership and targets, and D20 pilot scale and operating controls. The Security/Records Owner and Academic Owner must resolve D11/D12 before real evidence is accepted. D22 target reviewers and evidence record need School IT confirmation. Keep unapproved items pending; local synthetic tests are not target acceptance.
 
 See the [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) for pending owner and school IT decisions.
 

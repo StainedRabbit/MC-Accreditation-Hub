@@ -11,9 +11,28 @@ The Project Owner coordinates scope and delivery. The Academic Owner approves ac
 
 ## Workspace handoff checkpoint
 
-`git status` showed seven modified, uncommitted files: `backend/hub/tests.py`, `backend/hub/views.py`, `docs/API.md`, `docs/PROGRESS.md`, and three frontend E2E specifications for audit search continuation, dashboard polish, and workflow. The progress record describes the current local slice as dashboard/compliance/audit presentation and interaction polish, including audit search/date filters and cursor continuation. These changes remain a local checkpoint; they do not demonstrate School IT target acceptance.
+At preparation review, `main` matched `origin/main` at `7c9703f` and the working tree was clean. That commit contains the audit search continuation, dashboard/audit polish, workflow verification, and this workshop brief. The progress record describes the current local slice as dashboard/compliance/audit presentation and interaction polish, including audit search/date filters and cursor continuation. This is a committed local checkpoint; it does not demonstrate School IT target acceptance.
 
-**Handoff review status: incomplete.** The workspace command runner repeatedly failed to start `git diff` during preparation, so the exact changes in these seven files could not be inspected. The progress record reports local build/check and rendered UI results for the slice, but those notes have not been independently checked against the current diff here. Do not call the seven-file patch reviewed or handoff-ready until the exact diff has been reviewed and its existing verification evidence and known gaps matched to the files. Preserve the working tree and commit state. The progress record identifies unresolved capacity/operations work (D20), target restore and production operating controls (D18–D19), and outstanding policy/owner decisions below.
+The earlier seven-file uncommitted checkpoint note is superseded. The tracked files in that checkpoint were committed, with the workshop brief also included in `7c9703f`; the current working tree no longer contains that pending patch. Existing local verification notes remain repository records, not target-environment acceptance evidence. Unresolved capacity/operations work (D20), target restore and operating controls (D18–D19), and policy/owner decisions below remain open.
+
+## Workshop logistics and ownership
+
+Complete the role-to-person assignments and meeting details before circulating an invitation. The Project Owner owns scheduling, confirming decision authority, and maintaining the outcome record. No names, date, meeting mode, or target values are inferred here.
+
+| Role / function | Named attendee | Workshop responsibility | Pre-read complete |
+|---|---|---|---|
+| Project Owner / facilitator | Not assigned | Confirm scope, facilitate decisions, own baseline and action tracking | Not recorded |
+| Decision recorder | Not assigned | Capture exact outcomes, conditions, approvers, evidence, and actions | Not recorded |
+| Academic Owner | Not assigned | Approve academic workflow, instrument, and reporting requirements | Not recorded |
+| Security/Records Owner | Not assigned | Approve visibility, file security, sensitivity, records, and audit requirements | Not recorded |
+| School IT | Not assigned | Approve environment, operations, recovery, and target acceptance controls | Not recorded |
+
+| Workshop date/time and timezone | Not scheduled |
+| Meeting mode / location | Not recorded |
+| Decision evidence repository or ticket | Not assigned |
+| Follow-up checkpoint | Not scheduled |
+
+Use [the pilot readiness outcome template](PILOT_READINESS_OUTCOME_TEMPLATE.md) to record workshop outcomes and the resulting versioned baseline/backlog. Keep this brief and the decision register as preparation/source material; do not record approval by filling a template before the required approvers have approved it.
 
 ## Pre-read
 
@@ -28,8 +47,8 @@ The Project Owner coordinates scope and delivery. The Academic Owner approves ac
 1. **Opening and authority (10 min):** confirm roles, scope, decision-recording method, and that recommendations are not approvals.
 2. **Academic/access decisions (45–60 min):** decide or ratify D01–D08 and D09–D15 in register order. Give each decision its required approver(s); record dissent, conditions, or deferral without converting silence into consent.
 3. **Acceptance baseline (20–30 min):** use outcomes from the prior decisions to resolve and ratify D16. Record any requirement changes and their owner.
-4. **School IT and operations (45–60 min):** prepare D17–D20 in parallel with academic decisions where possible; confirm values, owners, and evidence needed for target checks. Treat D17–D18 provisional selections as unapproved until their listed approvers confirm them.
-5. **Reports and evidence plan (20 min):** ratify D21; resolve D22's environment, reviewer, and evidence-record choices. D22 target acceptance depends on the approved D16 baseline and D18–D20 target/operating criteria.
+4. **School IT and operations (45–60 min):** resolve D17–D20; confirm actual values, operating owners, and evidence needed for target checks. Treat D17–D18 provisional selections as unapproved until their listed approvers confirm them.
+5. **Reports and acceptance evidence (20 min):** ratify D21 and resolve D22's environment, reviewers, and evidence record. D22 target acceptance depends on the approved D16 baseline and D18–D20 target/operating criteria.
 6. **Read-back and actions (10 min):** read back each decision status, conditions, approvers, evidence gaps, accountable owner, and next checkpoint. Keep pending any decision without its required approval evidence.
 
 The timeboxes are planning estimates, not a scheduled meeting length. Split a topic for follow-up if owners lack evidence; do not force a decision to meet the agenda.
@@ -93,6 +112,6 @@ Deferred questions / action owner / due checkpoint: Not recorded
 
 ## Follow-up and document validation
 
-After the workshop, update the decision register only from actual recorded approvals and evidence. Track implementation and verification in separate fields/checkpoints; do not treat a selected option as proof of a fix. Revise the baseline/progress documents only after the approved outcomes are known. Target operation, real evidence, and production acceptance remain gated by the approved environment, operating controls, and completed evidence.
+After the workshop, update the decision register and outcome template only from actual recorded approvals and evidence. Track implementation and verification in separate fields/checkpoints; do not treat a selected option as proof of a fix. Issue a numbered baseline only after D16 approval evidence exists. Revise progress claims only after the approved outcomes and their verification are known. Target operation, real evidence, and school acceptance remain gated by the approved environment, operating controls, and completed evidence.
 
-Before circulation, complete the seven-file diff review and replace the handoff caveat above with a factual summary; verify every decision's role/status against the register and confirm this brief's relative links resolve. No application test run is required for this document.
+Before circulation, fill the logistics and attendee fields, confirm pre-read owners, verify the decision matrix against the register, and confirm the relative links resolve. No application test run is required for this document.
