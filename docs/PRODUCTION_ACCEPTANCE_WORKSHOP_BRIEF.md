@@ -34,6 +34,8 @@ Complete the role-to-person assignments and meeting details before circulating a
 
 Use [the pilot readiness outcome template](PILOT_READINESS_OUTCOME_TEMPLATE.md) to record workshop outcomes and the resulting versioned baseline/backlog. Keep this brief and the decision register as preparation/source material; do not record approval by filling a template before the required approvers have approved it.
 
+Use the [workshop invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md) to circulate the pre-read and request the required inputs. Fill its recipient, date, time, mode, and response deadline fields before sending.
+
 ## Pre-read
 
 - Project Owner: review the complete register and identify which provisional choices to recommend, with reasons and any conditions; recommendations remain proposals.
