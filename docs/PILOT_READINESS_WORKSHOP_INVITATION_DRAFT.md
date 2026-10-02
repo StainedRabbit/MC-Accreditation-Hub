@@ -2,7 +2,7 @@
 
 **Status:** Draft for Project Owner completion. No invitation has been sent.
 
-Fill in all bracketed fields, confirm decision authority and availability, and send through the school's approved channel. Attach or link the [workshop brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md), [decision register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md), and [outcome/baseline template](PILOT_READINESS_OUTCOME_TEMPLATE.md). Do not include real institutional evidence files.
+Fill in all bracketed fields, confirm decision authority and availability, and send through the school's approved channel. Attach or link the [workshop brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md), [decision register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md), [outcome/baseline template](PILOT_READINESS_OUTCOME_TEMPLATE.md), and [readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md). Do not include real institutional evidence files.
 
 ## Scheduling fields
 
@@ -54,4 +54,5 @@ Thank you,
 - [ ] Date, timezone, duration, mode/location, and response/pre-read deadlines are confirmed.
 - [ ] Decision recorder and evidence repository are assigned.
 - [ ] Brief, register, and blank outcome/baseline template are shared.
+- [ ] Readiness tracker is updated with RSVP, alternate, pre-read, and evidence status.
 - [ ] Invitees are told not to bring or send real institutional evidence.

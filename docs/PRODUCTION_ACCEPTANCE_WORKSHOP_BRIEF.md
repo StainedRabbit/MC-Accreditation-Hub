@@ -36,6 +36,8 @@ Use [the pilot readiness outcome template](PILOT_READINESS_OUTCOME_TEMPLATE.md) 
 
 Use the [workshop invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md) to circulate the pre-read and request the required inputs. Fill its recipient, date, time, mode, and response deadline fields before sending.
 
+Track attendance, authorized alternates, pre-read completion, and missing evidence in the [workshop readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md). Store references to sensitive School IT material in the approved evidence repository; do not place secrets or unrestricted network details in the shared tracker.
+
 ## Pre-read
 
 - Project Owner: review the complete register and identify which provisional choices to recommend, with reasons and any conditions; recommendations remain proposals.
