@@ -162,6 +162,8 @@ class DocumentVersion(ImmutableRecord):
     document = models.ForeignKey(Document, on_delete=models.PROTECT, related_name='versions')
     number = models.PositiveIntegerField()
     storage_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    idempotency_key = models.UUIDField(null=True, blank=True)
+    idempotency_fingerprint = models.CharField(max_length=64, blank=True, default='')
     original_name = models.CharField(max_length=255)
     content_type = models.CharField(max_length=120)
     size = models.PositiveIntegerField()
@@ -172,7 +174,10 @@ class DocumentVersion(ImmutableRecord):
 
     class Meta:
         ordering = ['-number']
-        constraints = [models.UniqueConstraint(fields=['document', 'number'], name='document_version_number')]
+        constraints = [
+            models.UniqueConstraint(fields=['document', 'number'], name='document_version_number'),
+            models.UniqueConstraint(fields=['uploaded_by', 'idempotency_key'], name='version_upload_idempotency_user'),
+        ]
 
 
 class EvidenceMapping(models.Model):

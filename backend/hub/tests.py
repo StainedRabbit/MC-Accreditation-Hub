@@ -3,6 +3,7 @@ import csv
 import json
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -859,7 +860,135 @@ class WorkflowTests(WorkflowFixture, TestCase):
                                                   detail__rationale='Fictional operator close').exists())
 
 
+class UploadIdempotencyTests(WorkflowFixture, TestCase):
+    def upload_with_key(self, key, *, title='Retry evidence', document=None, user=None, header=True):
+        actor = user or self.custodian
+        self.client.force_authenticate(actor)
+        data = {'file': pdf_file(), **({'valid_until': ''} if document else {})}
+        if not document:
+            data.update({'title': title, 'area': self.area.id, 'requirement': self.requirement.id})
+        headers = {'HTTP_IDEMPOTENCY_KEY': str(key)} if header else {}
+        url = f'/api/documents/{document}/versions/' if document else '/api/documents/'
+        return self.client.post(url, data, format='multipart', **headers)
+
+    def stored_files(self):
+        return [path for path in Path(self.media.name).rglob('*') if path.is_file()]
+
+    def uploaded_audits(self):
+        return AuditEvent.objects.filter(action='version_uploaded').count()
+
+    def test_new_document_retry_returns_same_document_and_version_once(self):
+        key = '1e99f8ba-867d-4b7c-bd78-381734cf9c50'
+        first = self.upload_with_key(key)
+        replay = self.upload_with_key(key)
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(replay.status_code, 201, replay.data)
+        self.assertEqual(replay.data['id'], first.data['id'])
+        self.assertEqual(replay.data['versions'][0]['id'], first.data['versions'][0]['id'])
+        self.assertEqual(Document.objects.count(), 1)
+        self.assertEqual(DocumentVersion.objects.count(), 1)
+        self.assertEqual(len(self.stored_files()), 1)
+        self.assertEqual(self.uploaded_audits(), 1)
+
+    def test_different_payload_with_same_key_conflicts_without_side_effects(self):
+        key = '27da893a-7cb8-4a3b-93d5-5de474fbd19d'
+        self.assertEqual(self.upload_with_key(key).status_code, 201)
+        conflict = self.upload_with_key(key, title='Changed request')
+        self.assertEqual(conflict.status_code, 409, conflict.data)
+        self.assertEqual((Document.objects.count(), DocumentVersion.objects.count()), (1, 1))
+        self.assertEqual((len(self.stored_files()), self.uploaded_audits()), (1, 1))
+
+    def test_version_route_replays_and_missing_header_remains_compatible(self):
+        doc = self.upload()
+        key = '48e20184-5b38-4516-9f8c-a6af44931067'
+        first = self.upload_with_key(key, document=doc['id'])
+        replay = self.upload_with_key(key, document=doc['id'])
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(replay.status_code, 201, replay.data)
+        self.assertEqual(replay.data['versions'][-1]['id'], first.data['versions'][-1]['id'])
+        self.assertEqual(DocumentVersion.objects.count(), 2)
+        self.assertEqual(self.uploaded_audits(), 2)
+        legacy_one = self.upload_with_key(None, title='Legacy one', header=False)
+        legacy_two = self.upload_with_key(None, title='Legacy two', header=False)
+        self.assertEqual(legacy_one.status_code, 201, legacy_one.data)
+        self.assertEqual(legacy_two.status_code, 201, legacy_two.data)
+        self.assertNotEqual(legacy_one.data['id'], legacy_two.data['id'])
+        legacy_version_one = self.upload_with_key(None, document=legacy_one.data['id'], header=False)
+        legacy_version_two = self.upload_with_key(None, document=legacy_one.data['id'], header=False)
+        self.assertEqual(legacy_version_one.status_code, 201, legacy_version_one.data)
+        self.assertEqual(legacy_version_two.status_code, 201, legacy_version_two.data)
+        self.assertEqual(DocumentVersion.objects.filter(document_id=legacy_one.data['id']).count(), 3)
+
+    def test_key_is_scoped_to_uploader_and_authorization_precedes_replay(self):
+        key = '5cc53009-c837-4ba4-8cf8-7a928752a22c'
+        first = self.upload_with_key(key)
+        other = self.user('custodian', self.area, 'second-custodian')
+        RequirementAssignment.objects.create(requirement=self.requirement, user=other, assigned_by=self.coordinator)
+        second = self.upload_with_key(key, user=other)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertNotEqual(second.data['id'], first.data['id'])
+        self.assertEqual((Document.objects.count(), DocumentVersion.objects.count()), (2, 2))
+
+        assignment = RequirementAssignment.objects.get(requirement=self.requirement, user=self.custodian)
+        assignment.active = False
+        assignment.save(update_fields=['active'])
+        denied = self.upload_with_key(key)
+        self.assertEqual(denied.status_code, 403, denied.data)
+        self.assertEqual((Document.objects.count(), DocumentVersion.objects.count()), (2, 2))
+
+    def test_version_replay_rechecks_current_stewardship(self):
+        document = self.upload()
+        key = 'eea8e1d4-c039-44c4-b52d-75830f508947'
+        first = self.upload_with_key(key, document=document['id'])
+        self.assertEqual(first.status_code, 201, first.data)
+        replacement_steward = self.user('custodian', self.area, 'replacement-steward')
+        record = Document.objects.get(pk=document['id'])
+        record.steward = replacement_steward
+        record.save(update_fields=['steward'])
+        replay = self.upload_with_key(key, document=document['id'])
+        self.assertEqual(replay.status_code, 403, replay.data)
+        self.assertEqual(DocumentVersion.objects.filter(document=record).count(), 2)
+
+    def test_invalid_key_is_rejected(self):
+        response = self.upload_with_key('not-a-uuid')
+        self.assertEqual(response.status_code, 400)
+
+
 class ConcurrencyTests(WorkflowFixture, TransactionTestCase):
+    def test_concurrent_same_key_uploads_resolve_to_one_saved_result(self):
+        key = '68d86839-bf68-46e8-962f-f53c4903785d'
+        barrier = Barrier(2)
+        from . import views as upload_views
+        original_validate = upload_views.validate_upload
+
+        def synchronized_validate(upload):
+            result = original_validate(upload)
+            barrier.wait(timeout=20)
+            return result
+
+        def upload(user_id):
+            close_old_connections()
+            try:
+                client = APIClient()
+                client.force_authenticate(User.objects.get(pk=user_id))
+                return client.post('/api/documents/', {
+                    'file': pdf_file(), 'title': 'Concurrent evidence',
+                    'area': self.area.id, 'requirement': self.requirement.id,
+                }, format='multipart', HTTP_IDEMPOTENCY_KEY=key)
+            finally:
+                close_old_connections()
+
+        with patch('hub.views.validate_upload', side_effect=synchronized_validate):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                responses = list(pool.map(upload, [self.custodian.id, self.custodian.id]))
+        self.assertEqual([response.status_code for response in responses], [201, 201], [r.data for r in responses])
+        self.assertEqual(responses[0].data['id'], responses[1].data['id'])
+        self.assertEqual(responses[0].data['versions'][0]['id'], responses[1].data['versions'][0]['id'])
+        self.assertEqual((Document.objects.count(), DocumentVersion.objects.count()), (1, 1))
+        self.assertEqual(len([p for p in Path(self.media.name).rglob('*') if p.is_file()]), 1)
+        self.assertEqual(AuditEvent.objects.filter(action='version_uploaded').count(), 1)
+
     def test_two_reviewers_cannot_record_conflicting_decisions(self):
         sub = self.submit(self.upload())
         def decide(user_id, outcome):

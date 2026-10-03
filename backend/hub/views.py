@@ -14,7 +14,7 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
-from django.db import transaction, connection, DatabaseError
+from django.db import transaction, connection, DatabaseError, IntegrityError
 from django.db.models import Q, F, Value, Case, When, CharField, Max
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Cast, Coalesce, Concat, Lower, NullIf, Trim
@@ -28,7 +28,7 @@ from django.views.decorators.csrf import csrf_protect
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from rest_framework.exceptions import PermissionDenied, ValidationError, MethodNotAllowed
+from rest_framework.exceptions import APIException, PermissionDenied, ValidationError, MethodNotAllowed
 from rest_framework.throttling import AnonRateThrottle
 from .models import *
 from .access import *
@@ -617,6 +617,7 @@ class DocumentsView(APIView):
 
 def upload_document(request, document_id=None):
     data = payload(UploadInput, request).validated_data
+    idempotency_key = upload_idempotency_key(request)
     # Reject unauthorized work before application file-content validation.
     # The checks inside the transaction still govern concurrent changes.
     if document_id:
@@ -635,6 +636,11 @@ def upload_document(request, document_id=None):
             raise ValidationError('This cycle is not active. Closed and draft cycles are read-only.')
         require_assignee_or_coordinator_override(request.user, requirement, data.get('override_reason'), 'upload')
     name, content_type, contents, checksum = validate_upload(data['file'])
+    fingerprint = upload_request_fingerprint(document_id, data, name, content_type, len(contents), checksum)
+    if idempotency_key:
+        replay = find_upload_replay(request.user, idempotency_key, fingerprint)
+        if replay is not None:
+            return replay
     storage_path = None
     try:
         with transaction.atomic():
@@ -658,7 +664,9 @@ def upload_document(request, document_id=None):
             last = doc.versions.order_by('-number').first()
             version = DocumentVersion.objects.create(document=doc, number=last.number + 1 if last else 1,
                 original_name=name, content_type=content_type, size=len(contents), checksum=checksum,
-                uploaded_by=request.user, valid_until=data.get('valid_until'))
+                uploaded_by=request.user, valid_until=data.get('valid_until'),
+                idempotency_key=idempotency_key,
+                idempotency_fingerprint=fingerprint if idempotency_key else '')
             settings.PRIVATE_MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
             storage_path = settings.PRIVATE_MEDIA_ROOT / str(version.storage_key)
             with storage_path.open('xb') as output:
@@ -668,10 +676,67 @@ def upload_document(request, document_id=None):
                   override_reason=data.get('override_reason', '') if overridden else '')
             result = doc_data(doc, request.user)
         return Response(result, status=201)
+    except IntegrityError:
+        if storage_path and storage_path.exists():
+            storage_path.unlink()
+        if idempotency_key:
+            replay = find_upload_replay(request.user, idempotency_key, fingerprint)
+            if replay is not None:
+                return replay
+        raise
     except Exception:
         if storage_path and storage_path.exists():
             storage_path.unlink()
         raise
+
+
+class UploadIdempotencyConflict(APIException):
+    status_code = 409
+    default_detail = 'This Idempotency-Key was already used for a different upload request.'
+    default_code = 'idempotency_conflict'
+
+
+def upload_idempotency_key(request):
+    value = request.headers.get('Idempotency-Key')
+    if value is None:
+        return None
+    try:
+        key = UUID(value)
+    except (TypeError, ValueError, AttributeError):
+        raise ValidationError({'Idempotency-Key': 'Use a UUID value.'})
+    if str(key) != value.lower():
+        raise ValidationError({'Idempotency-Key': 'Use a UUID value.'})
+    return key
+
+
+def upload_request_fingerprint(document_id, data, name, content_type, size, checksum):
+    request_data = {
+        'endpoint': 'version' if document_id else 'document',
+        'document_id': str(document_id) if document_id else None,
+        'valid_until': data['valid_until'].isoformat() if data.get('valid_until') else None,
+        'override_reason': data.get('override_reason', ''),
+        'file': {'name': name, 'content_type': content_type, 'size': size, 'sha256': checksum},
+    }
+    if not document_id:
+        request_data.update({
+            'title': data['title'],
+            'area': data['area'],
+            'requirement': data['requirement'],
+            'category': data['category'],
+        })
+    serialized = json.dumps(request_data, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+
+def find_upload_replay(user, key, fingerprint):
+    version = DocumentVersion.objects.select_related('document__area').filter(
+        uploaded_by=user, idempotency_key=key,
+    ).first()
+    if version is None:
+        return None
+    if version.idempotency_fingerprint != fingerprint:
+        raise UploadIdempotencyConflict()
+    return Response(doc_data(version.document, user), status=201)
 
 
 class VersionsView(APIView):

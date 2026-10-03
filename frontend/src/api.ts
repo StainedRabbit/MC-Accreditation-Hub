@@ -1,4 +1,11 @@
 let csrf = "";
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
@@ -37,7 +44,7 @@ export async function api<T>(
       const session = await fetch("/api/auth/me/");
       if (!session.ok) window.dispatchEvent(new Event("session-expired"));
     }
-    throw new Error(
+    throw new ApiError(
       typeof data.detail === "string"
         ? data.detail
         : Object.entries(data)
@@ -46,6 +53,7 @@ export async function api<T>(
                 `${k}: ${Array.isArray(v) ? v.join(", ") : JSON.stringify(v)}`,
             )
             .join("\n"),
+      res.status,
     );
   }
   return data as T;

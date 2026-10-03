@@ -27,7 +27,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { api, post } from "./api";
+import { ApiError, api, post } from "./api";
 import "@fontsource-variable/inter";
 import type {
   User,
@@ -2414,22 +2414,35 @@ function UploadForm({
   const [error, setError] = useState(""),
     [requirementSearch, setRequirementSearch] = useState(""),
     [busy, setBusy] = useState(false),
-    [uploaded, setUploaded] = useState<Document | null>(null);
+    [uploaded, setUploaded] = useState<Document | null>(null),
+    [uploadUncertain, setUploadUncertain] = useState(false),
+    [uploadOperationKey, setUploadOperationKey] = useState(() => crypto.randomUUID());
+  const pendingUpload = useRef<{ key: string; form: FormData } | null>(null);
+  const fieldsLocked = busy || uploadUncertain || !!uploaded;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!pendingUpload.current) {
+      const form = new FormData(e.currentTarget);
+      if (context.requirement) form.set("requirement", String(context.requirement));
+      if (!form.get("valid_until")) form.delete("valid_until");
+      pendingUpload.current = { key: uploadOperationKey, form };
+    }
+    const { key, form: f } = pendingUpload.current;
     setBusy(true);
     setError("");
-    const f = new FormData(e.currentTarget);
-    if (context.requirement) f.set("requirement", String(context.requirement));
-    if (!f.get("valid_until")) f.delete("valid_until");
+    let savedDocument = uploaded;
     try {
       const doc =
         uploaded ||
         (await api<Document>(
           context.doc ? `documents/${context.doc.id}/versions/` : "documents/",
-          { method: "POST", body: f },
+          { method: "POST", body: f, headers: { "Idempotency-Key": key } },
         ));
-      setUploaded(doc);
+      savedDocument = doc;
+      if (!uploaded) {
+        setUploaded(doc);
+      }
+      setUploadUncertain(false);
       if (context.item) {
         await post<{ id: number }>("evidence-mappings/", {
           item: context.item.id,
@@ -2442,11 +2455,19 @@ function UploadForm({
           ? "Evidence uploaded and mapped. Add its version to a package draft."
           : "Draft version uploaded. Open a requirement to map it into a package.",
       );
+      pendingUpload.current = null;
     } catch (e) {
-      setError(
-        (uploaded ? "The file is saved. Retry mapping: " : "") +
-          (e as Error).message,
-      );
+      if (savedDocument) {
+        setError(context.item
+          ? `The file is saved. Retry mapping: ${(e as Error).message}`
+          : `The file was saved, but this screen could not finish. Check the repository before starting another upload. ${(e as Error).message}`);
+      } else {
+        const uncertain = !(e instanceof ApiError) || e.status >= 500;
+        setUploadUncertain(uncertain);
+        setError(uncertain
+          ? "We couldn't confirm whether the upload finished. Retry this same upload; the request key prevents a duplicate version."
+          : (e as Error).message);
+      }
     } finally {
       setBusy(false);
     }
@@ -2458,7 +2479,12 @@ function UploadForm({
       }
       close={close}
     >
-      <form onSubmit={submit}>
+      <form onSubmit={submit} onChange={() => {
+        if (!fieldsLocked) {
+          pendingUpload.current = null;
+          setUploadOperationKey(crypto.randomUUID());
+        }
+      }}>
         <ErrorBox error={error} />
         {context.item && (
           <p className="muted">
@@ -2474,12 +2500,12 @@ function UploadForm({
                 value={requirementSearch}
                 onChange={(event) => setRequirementSearch(event.target.value)}
                 placeholder="Search code, title, or area"
-                disabled={!!uploaded}
+                disabled={fieldsLocked}
               />
             </label>}
             {!context.item && <label>
               Requirement
-              <select name="requirement" required disabled={!!uploaded}>
+                <select name="requirement" required disabled={fieldsLocked}>
                 <option value="">Select your assigned requirement</option>
                 {requirements.filter((requirement) => `${requirement.code} ${requirement.title} ${requirement.area_title}`.toLowerCase().includes(requirementSearch.trim().toLowerCase())).map((requirement) => <option key={requirement.id} value={requirement.id}>{requirement.code} — {requirement.title}</option>)}
               </select>
@@ -2490,7 +2516,7 @@ function UploadForm({
                 name="title"
                 required
                 maxLength={180}
-                disabled={!!uploaded}
+                disabled={fieldsLocked}
               />
             </label>
             <div className="form-grid">
@@ -2499,7 +2525,7 @@ function UploadForm({
                 <select
                   name="area"
                   defaultValue={context.area || areas[0]?.id}
-                  disabled={!!uploaded}
+                  disabled={fieldsLocked}
                 >
                   {areas.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -2510,7 +2536,7 @@ function UploadForm({
               </label>
               <label>
                 Document type
-                <select name="category" disabled={!!uploaded}>
+                <select name="category" disabled={fieldsLocked}>
                   {[
                     "Supporting Document",
                     "Policy / Plan",
@@ -2535,16 +2561,16 @@ function UploadForm({
             type="file"
             accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
             required={!uploaded}
-            disabled={!!uploaded}
+            disabled={fieldsLocked}
           />
         </label>
         <label>
           Valid until (optional)
-          <input name="valid_until" type="date" disabled={!!uploaded} />
+          <input name="valid_until" type="date" disabled={fieldsLocked} />
         </label>
         <label>
           Coordinator override reason (required only outside assignment or stewardship)
-          <textarea name="override_reason" rows={2} disabled={!!uploaded} />
+          <textarea name="override_reason" rows={2} disabled={fieldsLocked} />
         </label>
         <p className="muted">
           Every upload creates an immutable version. Approvals never carry over
@@ -2557,7 +2583,9 @@ function UploadForm({
           <button className="primary" disabled={busy}>
             {busy
               ? "Saving…"
-              : uploaded
+              : uploadUncertain
+                ? "Retry same upload"
+                : uploaded
                 ? "Retry mapping"
                 : context.item
                   ? "Upload & Map"
