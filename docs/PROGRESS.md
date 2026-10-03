@@ -99,6 +99,8 @@ The current local presentation and interaction slice polishes the Dashboard, Com
 
 - D11/D12 quarantine checkpoint on 2026-10-03: an append-only scan verdict now gates file access, mapping, submission, review and completion; the uploader sees pending/failed status, and School IT has a controlled rescan command. Existing versions begin quarantined after migration. The class-based records schedule remains an owner-supplied input, not a configured retention or disposal rule. D11 and D12 stay Pending Decision; synthetic-only operation remains the interim rule.
 
+- D13 overdue monitoring checkpoint on 2026-10-03: a separate overdue flag uses Asia/Manila dates and freezes at cycle closure; dashboard, requirement list/detail, JSON/CSV and print report expose the count, flag and filter without changing readiness status or denominator. Focused PostgreSQL and isolated browser verification completed locally. D13 remains Pending Decision for Academic Owner and Project Owner approval; D14 archive remains separate.
+
 ## Known incomplete or broken work
 
 - The app permits controlled cross-area mapping, while the older plan defers cross-area sharing. That policy remains unresolved and is outside the current certification change.

@@ -24,6 +24,7 @@ export type Cycle = {
 };
 export type Summary = {
   total: number;
+  overdue_count: number;
   complete: number;
   ready_for_completion_review: number;
   for_verification: number;
@@ -101,6 +102,7 @@ export type Requirement = {
   icon: string;
   responsible: string;
   deadline: string | null;
+  overdue: boolean;
   active: boolean;
   applicable: boolean;
   exclusion_reason: string;
@@ -223,7 +225,7 @@ export type ComplianceReport = Summary & {
   scope: string;
   cycle: { id: number; title: string; instrument: string } | null;
   authorized_areas: Array<{ id: number; cycle_id: number; code: string; title: string }>;
-  selected_filters: { cycle_id: number | null; area_id: number | null; area: string | null; status: string | null };
+  selected_filters: { cycle_id: number | null; area_id: number | null; area: string | null; status: string | null; overdue: boolean };
   rows: Array<{
     id: number;
     code: string;
@@ -232,6 +234,7 @@ export type ComplianceReport = Summary & {
     responsible: string;
     deadline: string | null;
     status: string;
+    overdue: boolean;
     approved_items: number;
     required_items: number;
   }>;

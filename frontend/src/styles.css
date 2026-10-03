@@ -569,7 +569,7 @@ button.secondary {
 }
 .workflow-stats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 15px;
   margin: 15px 0 22px;
 }
@@ -586,6 +586,9 @@ button.secondary {
 .workflow-stat strong { font-size: 24px; }
 .workflow-stat span:not(.stat-icon) { color: #30445f; font-weight: 600; }
 .workflow-stat small { flex-basis: 100%; margin-top: 3px; }
+.overdue-drilldown { width: 100%; text-align: left; cursor: pointer; }
+.overdue-drilldown:hover { border-color: #ad3e00; }
+.overdue-drilldown:focus-visible { outline: 3px solid #ad3e00; outline-offset: 2px; }
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr 2fr;
@@ -771,6 +774,7 @@ button.secondary {
 .filters select {
   width: 220px;
 }
+.filters .overdue-filter { flex: 0 0 auto; align-self: center; white-space: nowrap; margin: 0; }
 .search-field {
   position: relative;
   flex: 1;
@@ -919,6 +923,7 @@ td:first-child {
   background: #f1e9ff;
   border-color: #dac6ff;
 }
+.badge.overdue,
 .badge.needs_revision,
 .badge.revision_requested,
 .badge.revisions_requested,

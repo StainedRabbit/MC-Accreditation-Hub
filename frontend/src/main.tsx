@@ -71,24 +71,18 @@ const labels: Record<string, string> = {
 const date = (value: string | null) =>
   value
     ? new Date(
-        value.length === 10 ? value + "T00:00:00" : value,
+        value.length === 10 ? value + "T12:00:00+08:00" : value,
       ).toLocaleDateString("en-PH", {
+        timeZone: "Asia/Manila",
         month: "short",
         day: "numeric",
         year: "numeric",
       })
     : "No deadline";
-const dateTime = (value: string) =>
-  new Date(value).toLocaleString("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 const reportDateTime = (value: string) =>
   new Date(value).toLocaleString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const auditDateTime = (value: string) => `${reportDateTime(value)} (Asia/Manila)`;
+const dateTime = (value: string) => `${reportDateTime(value)} (Asia/Manila)`;
+const auditDateTime = dateTime;
 const percent = (value: number | null) =>
   value === null ? "N/A" : `${value}%`;
 const initials = (name: string) =>
@@ -480,13 +474,15 @@ function App() {
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState(""),
     [areaFilter, setAreaFilter] = useState(""),
-    [statusFilter, setStatusFilter] = useState("");
+    [statusFilter, setStatusFilter] = useState(""),
+    [overdueOnly, setOverdueOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState(""),
     [searchResults, setSearchResults] = useState<SearchResults | null>(null),
     [searchLoading, setSearchLoading] = useState(false),
     [searchError, setSearchError] = useState("");
   const [reportArea, setReportArea] = useState(""),
     [reportStatus, setReportStatus] = useState(""),
+    [reportOverdue, setReportOverdue] = useState(false),
     [report, setReport] = useState<ComplianceReport | null>(null),
     [reportKey, setReportKey] = useState(""),
     [reportLoading, setReportLoading] = useState(false),
@@ -520,11 +516,12 @@ function App() {
   const detailGeneration = useRef(0);
   const contextRef = useRef({ cycle, userId: user?.id ?? null });
   contextRef.current = { cycle, userId: user?.id ?? null };
-  const selectedReportKey = JSON.stringify([user?.id ?? null, cycle, reportArea, reportStatus, reportSort]);
+  const selectedReportKey = JSON.stringify([user?.id ?? null, cycle, reportArea, reportStatus, reportOverdue, reportSort]);
   const reportReady = Boolean(report && !reportLoading && !reportError && reportKey === selectedReportKey &&
     report.selected_filters.cycle_id === Number(cycle) &&
     report.selected_filters.area_id === (reportArea ? Number(reportArea) : null) &&
-    report.selected_filters.status === (reportStatus || null));
+    report.selected_filters.status === (reportStatus || null) &&
+     report.selected_filters.overdue === reportOverdue);
   function invalidateSearch() {
     searchGeneration.current += 1;
     setSearchResults(null);
@@ -562,6 +559,8 @@ function App() {
     setPackageSort(newestSort);
     setSubmissionSort(newestSort);
     setReportSort(newestSort);
+    setOverdueOnly(false);
+    setReportOverdue(false);
     setUpload(null);
     setReview(null);
     setPackageEditor(null);
@@ -681,6 +680,7 @@ function App() {
     setSearch("");
     setAreaFilter("");
     setStatusFilter("");
+    setOverdueOnly(false);
     setNotice("");
     requestAnimationFrame(() => pageHeadingRef.current?.focus());
   }
@@ -736,7 +736,7 @@ function App() {
   async function loadReport() {
     if (!cycle || !user) return;
     const generation = ++reportGeneration.current;
-    const key = JSON.stringify([user.id, cycle, reportArea, reportStatus, reportSort]);
+    const key = JSON.stringify([user.id, cycle, reportArea, reportStatus, reportOverdue, reportSort]);
     setReportLoading(true);
     setReportError("");
     setReport(null);
@@ -745,6 +745,7 @@ function App() {
       const params = new URLSearchParams({ cycle });
       if (reportArea) params.set("area", reportArea);
       if (reportStatus) params.set("status", reportStatus);
+      if (reportOverdue) params.set("overdue", "1");
       params.set("sort", reportSort.key);
       params.set("direction", reportSort.direction);
       const result = await api<ComplianceReport>(`reports/compliance/?${params}`);
@@ -764,7 +765,7 @@ function App() {
   }
   useEffect(() => {
     if (page === "reports" && cycle) void loadReport();
-  }, [page, cycle, reportArea, reportStatus, reportSort, user?.id]);
+  }, [page, cycle, reportArea, reportStatus, reportOverdue, reportSort, user?.id]);
   useEffect(() => {
     if (reportArea && !areas.some((area) => String(area.id) === reportArea)) {
       invalidateReport();
@@ -886,6 +887,7 @@ function App() {
     (r) =>
       (!areaFilter || String(r.area) === areaFilter) &&
       (!statusFilter || r.status === statusFilter) &&
+      (!overdueOnly || r.overdue) &&
       `${r.title} ${r.code} ${r.description} ${r.responsible}`
         .toLowerCase()
         .includes(search.toLowerCase()),
@@ -958,6 +960,7 @@ function App() {
           ))}
         </select>
       )}
+      {page === "requirements" && <label className="check overdue-filter"><input type="checkbox" checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} />Overdue only</label>}
     </div>
   );
   return (
@@ -1082,6 +1085,8 @@ function App() {
                 setError("");
                 setReportArea("");
                 setAreaFilter("");
+                setOverdueOnly(false);
+                setReportOverdue(false);
                 setCycle(nextCycle);
               }}
             >
@@ -1224,6 +1229,11 @@ function App() {
                   <div><strong className="purple">{summary?.in_progress ?? 0}</strong>
                     <span>In Progress</span><small>Draft or reopened work</small></div>
                 </div>
+                <button type="button" className="workflow-stat panel overdue-drilldown" onClick={() => { navigate("requirements"); setOverdueOnly(true); }}>
+                  <span className="stat-icon" aria-hidden="true">⏰</span>
+                  <div><strong className="orange">{summary?.overdue_count ?? 0}</strong>
+                    <span>Overdue</span><small>View incomplete requirements past their deadline</small></div>
+                </button>
               </div>
               <div className="dashboard-grid">
                 <section className="panel readiness">
@@ -1421,7 +1431,7 @@ function App() {
                         </td>
                         <td>{r.responsible}</td>
                         <td>
-                          <Badge status={r.status} />
+                          <Badge status={r.status} /> {r.overdue && <span className="badge overdue">Overdue</span>}
                         </td>
                         <td>{date(r.deadline)}</td>
                         <td>
@@ -1470,7 +1480,7 @@ function App() {
                 )}
               </div>
               <div className="panel requirement-summary">
-                <Badge status={detail.status} />
+                <Badge status={detail.status} /> {detail.overdue && <span className="badge overdue">Overdue</span>}
                 <p>{detail.description}</p>
                 <div className="metadata">
                   <span>
@@ -2058,7 +2068,7 @@ function App() {
                   <p>Printable readiness report for {selectedCycle?.title || "your selected cycle"}.</p>
                 </div>
                 <div className="actions no-print">
-                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}&sort=${reportSort.key}&direction=${reportSort.direction}&download=csv`}>
+                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}${reportOverdue ? "&overdue=1" : ""}&sort=${reportSort.key}&direction=${reportSort.direction}&download=csv`}>
                     <Download size={16} /> Export CSV
                   </a> : <button className="secondary" type="button" disabled><Download size={16} /> Export CSV</button>}
                   <button className="primary" disabled={!reportReady} onClick={() => { if (reportReady) window.print(); }}><Printer size={16} /> Print report</button>
@@ -2077,6 +2087,7 @@ function App() {
                     {["complete", "for_verification", "needs_revision", "ready_for_completion_review", "in_progress", "missing", "draft", "excluded"].map((status) => <option key={status} value={status}>{labels[status]}</option>)}
                   </select>
                 </label>
+                <label className="check"><input type="checkbox" checked={reportOverdue} onChange={(event) => { invalidateReport(); setReportOverdue(event.target.checked); }} />Overdue only</label>
               </section>
               <ErrorBox error={reportError} />
               {reportLoading && <div className="loading-line">Updating report…</div>}
@@ -2086,8 +2097,8 @@ function App() {
                   <p><strong>Instrument:</strong> {report.cycle?.instrument || "Multiple cycles"}</p>
                   <p><strong>Readiness population:</strong> {report.population_label}</p>
                   <p><strong>Authorized scope:</strong> {report.scope} — {report.authorized_areas.map((area) => `${area.code} ${area.title}`).join("; ") || "No authorized areas"}</p>
-                  <p><strong>Selected filters:</strong> Area: {report.selected_filters.area || "All authorized areas"}; status: {report.selected_filters.status ? labels[report.selected_filters.status] || report.selected_filters.status : "All statuses"}</p>
-                  <p><strong>Readiness:</strong> {report.numerator} complete / {report.denominator} active applicable; {report.excluded} excluded. {report.filtered_row_count} displayed rows.</p>
+                  <p><strong>Selected filters:</strong> Area: {report.selected_filters.area || "All authorized areas"}; status: {report.selected_filters.status ? labels[report.selected_filters.status] || report.selected_filters.status : "All statuses"}; overdue: {report.selected_filters.overdue ? "Overdue only" : "All deadlines"}</p>
+                  <p><strong>Readiness:</strong> {report.numerator} complete / {report.denominator} active applicable; {report.excluded} excluded; {report.overdue_count} overdue. {report.filtered_row_count} displayed rows.</p>
                   <p><strong>Formula:</strong> {report.formula} (version {report.formula_version})</p>
                   <p><strong>Calculated:</strong> {reportDateTime(report.calculated_at)} ({report.timezone})</p>
                 </section>
@@ -2096,17 +2107,18 @@ function App() {
                   <div className="panel"><strong>{report.complete}</strong><span>Completed</span></div>
                   <div className="panel"><strong>{report.total}</strong><span>Applicable requirements</span></div>
                   <div className="panel"><strong>{report.ready_for_completion_review}</strong><span>Ready for review</span></div>
+                  <div className="panel"><strong>{report.overdue_count}</strong><span>Overdue</span></div>
                 </div>
                 <section className="panel table-wrap">
                   <div className="report-meta"><span>{report.filtered_row_count} displayed rows</span><span>Calculated {reportDateTime(report.calculated_at)} ({report.timezone})</span></div>
                   <table>
                     <thead><tr>{([ ["Area", "area"], ["Code", "code"], ["Requirement", "requirement"], ["Responsible", "responsible"], ["Evidence", "evidence"], ["Status", "status"], ["Deadline", "deadline"] ] as const).map(([label, field]) =>
                       <SortHeader key={field} label={label} field={field} sort={reportSort} onSort={(key) => setReportSort((old) => nextSort(old, key))} />)}</tr></thead>
-                    <tbody>{report.rows.map((row) => <tr key={row.id}><td>{row.area}</td><td>{row.code}</td><td><strong>{row.title}</strong></td><td>{row.responsible}</td><td>{row.approved_items}/{row.required_items}</td><td><Badge status={row.status} /></td><td>{date(row.deadline)}</td></tr>)}</tbody>
+                    <tbody>{report.rows.map((row) => <tr key={row.id}><td>{row.area}</td><td>{row.code}</td><td><strong>{row.title}</strong></td><td>{row.responsible}</td><td>{row.approved_items}/{row.required_items}</td><td><Badge status={row.status} /> {row.overdue && <span className="badge overdue">Overdue</span>}</td><td>{date(row.deadline)}</td></tr>)}</tbody>
                   </table>
                   {!report.rows.length && <div className="empty">No requirements match this report filter.</div>}
                 </section>
-                <p className="report-formula">Internal preparation measure only. Status filters change displayed rows, not the readiness denominator.</p>
+                <p className="report-formula">Internal preparation measure only. Status and overdue filters change displayed rows, not the readiness denominator.</p>
               </section>}
             </>
           )}

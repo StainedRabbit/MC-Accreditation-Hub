@@ -1646,6 +1646,95 @@ class SearchContinuationTests(WorkflowFixture, TestCase):
             'documents_after': first.data['next_documents']}).data['documents'], [])
 
 
+class OverdueTests(WorkflowFixture, TestCase):
+    def test_manila_midnight_and_due_date_boundary(self):
+        from datetime import date, datetime, timezone as dt_timezone
+        from .compliance import requirement_result
+
+        self.requirement.deadline = date(2026, 10, 3)
+        self.requirement.save(update_fields=['deadline'])
+        with patch('hub.compliance.timezone.now', return_value=datetime(2026, 10, 2, 15, 59, tzinfo=dt_timezone.utc)):
+            self.assertFalse(requirement_result(self.requirement)['overdue'])
+        with patch('hub.compliance.timezone.now', return_value=datetime(2026, 10, 2, 16, 1, tzinfo=dt_timezone.utc)):
+            self.assertFalse(requirement_result(self.requirement)['overdue'])
+        with patch('hub.compliance.timezone.now', return_value=datetime(2026, 10, 3, 16, 1, tzinfo=dt_timezone.utc)):
+            self.assertTrue(requirement_result(self.requirement)['overdue'])
+
+    def test_closed_cycle_freezes_overdue_and_draft_excluded_undated_do_not_count(self):
+        from datetime import date, datetime, timezone as dt_timezone
+        from .compliance import requirement_result
+
+        def current_overdue():
+            current = Requirement.objects.select_related('area__cycle').get(pk=self.requirement.pk)
+            return requirement_result(current)['overdue']
+
+        self.requirement.deadline = date(2026, 10, 3)
+        self.requirement.save(update_fields=['deadline'])
+        self.cycle.status = 'closed'
+        self.cycle.closed_at = datetime(2026, 10, 3, 15, 59, tzinfo=dt_timezone.utc)
+        self.cycle.save(update_fields=['status', 'closed_at'])
+        with patch('hub.compliance.timezone.now', return_value=datetime(2026, 10, 15, tzinfo=dt_timezone.utc)):
+            self.assertFalse(current_overdue())
+        self.cycle.closed_at = datetime(2026, 10, 3, 16, 1, tzinfo=dt_timezone.utc)
+        self.cycle.save(update_fields=['closed_at'])
+        self.assertTrue(current_overdue())
+        self.cycle.status = 'draft'
+        self.cycle.save(update_fields=['status'])
+        self.assertFalse(current_overdue())
+        self.cycle.status, self.cycle.closed_at = 'active', None
+        self.cycle.save(update_fields=['status', 'closed_at'])
+        self.requirement.applicable = False
+        self.requirement.exclusion_reason = 'Synthetic scope exclusion'
+        self.requirement.save(update_fields=['applicable', 'exclusion_reason'])
+        self.assertFalse(current_overdue())
+        self.requirement.applicable = True
+        self.requirement.deadline = None
+        self.requirement.save(update_fields=['applicable', 'deadline'])
+        self.assertFalse(current_overdue())
+
+    def test_completion_clears_and_reopening_restores_overdue(self):
+        from datetime import timedelta
+        from .compliance import requirement_result
+
+        self.requirement.deadline = timezone.localdate() - timedelta(days=1)
+        self.requirement.save(update_fields=['deadline'])
+        self.assertTrue(requirement_result(self.requirement)['overdue'])
+        document = self.upload()
+        self.assertEqual(self.decide(self.submit(document)).status_code, 201)
+        self.assertEqual(self.certify().status_code, 201)
+        self.assertFalse(requirement_result(self.requirement)['overdue'])
+        self.assertEqual(self.certify(outcome='reopened').status_code, 201)
+        self.assertTrue(requirement_result(self.requirement)['overdue'])
+
+    def test_overdue_report_filter_preserves_readiness_and_csv(self):
+        from datetime import timedelta
+
+        self.requirement.deadline = timezone.localdate() - timedelta(days=1)
+        self.requirement.save(update_fields=['deadline'])
+        Requirement.objects.create(area=self.area, code='FUTURE', title='Future due', responsible='School',
+            deadline=timezone.localdate() + timedelta(days=1), active=True, created_by=self.coordinator)
+        self.client.force_authenticate(self.coordinator)
+        baseline = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id}).data
+        filtered = self.client.get('/api/reports/compliance/',
+            {'cycle': self.cycle.id, 'status': 'missing', 'overdue': '1'}).data
+        self.assertEqual((baseline['total'], baseline['overdue_count']), (2, 1))
+        self.assertEqual((filtered['numerator'], filtered['denominator']),
+                         (baseline['numerator'], baseline['denominator']))
+        self.assertEqual((filtered['selected_filters']['status'], filtered['selected_filters']['overdue']),
+                         ('missing', True))
+        self.assertEqual([row['id'] for row in filtered['rows']], [self.requirement.id])
+        self.assertTrue(filtered['rows'][0]['overdue'])
+        self.assertEqual(self.client.get('/api/reports/compliance/', {'overdue': 'true'}).status_code, 400)
+        csv_response = self.client.get('/api/reports/compliance/',
+            {'cycle': self.cycle.id, 'overdue': '1', 'download': 'csv'})
+        rows = list(csv.reader(io.StringIO(csv_response.content.decode('utf-8'))))
+        self.assertIn(['Overdue filter', 'Overdue only'], rows)
+        self.assertIn(['Overdue count (population)', '1'], rows)
+        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue']
+        self.assertIn(header, rows)
+        self.assertEqual(rows[rows.index(header) + 1][-1], 'Yes')
+
+
 class ReportProvenanceTests(WorkflowFixture, TestCase):
     def test_report_json_and_csv_share_sort_order(self):
         Requirement.objects.create(area=self.area, code='Z99', title='Alpha item', responsible='Office',
@@ -1657,7 +1746,7 @@ class ReportProvenanceTests(WorkflowFixture, TestCase):
         self.assertEqual(titles, sorted(titles, key=str.casefold))
         csv_response = self.client.get('/api/reports/compliance/', {**params, 'download': 'csv'})
         csv_rows = list(csv.reader(io.StringIO(csv_response.content.decode('utf-8'))))
-        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status']
+        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue']
         start = csv_rows.index(header) + 1
         self.assertEqual([row[2] for row in csv_rows[start:]], titles)
         self.assertEqual(self.client.get('/api/reports/compliance/', {**params, 'sort': 'invalid'}).status_code, 400)
@@ -1684,7 +1773,7 @@ class ReportProvenanceTests(WorkflowFixture, TestCase):
         self.assertEqual(report['selected_filters']['status'], 'complete')
         self.assertEqual(report['cycle']['instrument'], self.cycle.instrument)
         self.assertEqual(report['timezone'], 'Asia/Manila')
-        self.assertIn('status filters change rows only', report['population_label'])
+        self.assertIn('status and overdue filters change rows only', report['population_label'])
         self.assertEqual({a['id'] for a in report['authorized_areas']}, {self.area.id, self.other_area.id})
         self.assertEqual(len(report['rows']), 1)
         area_report = self.client.get('/api/reports/compliance/',

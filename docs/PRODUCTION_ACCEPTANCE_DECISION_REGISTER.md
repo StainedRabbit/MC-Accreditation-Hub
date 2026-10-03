@@ -220,7 +220,7 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 | B. Show live overdue age even for closed cycles | Same active-cycle rule, but closed records continue aging; historic closure reports need a clearly separate as-of view. | Yes: flag/report semantics and explicit timezone. |
 | C. Approve deadline display only for launch | Keeps stored dates; deadline monitoring is manual and overdue views are explicitly removed from launch scope. | No overdue feature code; timestamp labelling/consistency and scope/training correction still required. |
 
-**Recommended option:** A, consistent with the plan and historical closed-cycle reporting. **Required approver:** Academic Owner; Project Owner. **Production-acceptance impact:** A/B need implementation before their acceptance checkpoint; C requires an explicit scope amendment. None includes deferred email reminders. Specify treatment of undated, draft, excluded, completed and reopened requirements in acceptance tests.
+**Implementation recommendation:** A, now provisionally implemented with a separate overdue flag, Manila date boundary, closure-date freeze, dashboard/list/report filters, and timestamp labels. D13 remains Pending Decision. **Required approver:** Academic Owner; Project Owner. **Production-acceptance impact:** A/B need implementation before their acceptance checkpoint; C requires an explicit scope amendment. None includes deferred email reminders. Specify treatment of undated, draft, excluded, completed and reopened requirements in acceptance tests.
 
 ### D14 — Archive versus closure and requirement exclusion
 

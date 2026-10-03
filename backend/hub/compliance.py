@@ -1,4 +1,7 @@
 from django.utils import timezone
+from zoneinfo import ZoneInfo
+
+MANILA = ZoneInfo('Asia/Manila')
 from .scanning import scan_status
 
 
@@ -54,6 +57,21 @@ def package_is_ready(package, requirement):
                (not entry.version.valid_until or entry.version.valid_until >= as_of) for entry in items)
 
 
+def requirement_overdue(requirement, status):
+    """Deadline monitoring is independent of readiness status."""
+    cycle = requirement.area.cycle
+    if (not requirement.active or not requirement.applicable or not requirement.deadline or
+            status == 'complete' or cycle.status not in ('active', 'closed')):
+        return False
+    if cycle.status == 'closed':
+        if not cycle.closed_at:
+            return False
+        as_of = timezone.localtime(cycle.closed_at, MANILA).date()
+    else:
+        as_of = timezone.localdate(timezone=MANILA)
+    return requirement.deadline < as_of
+
+
 def requirement_result(requirement):
     items = list(requirement.items.all())
     required = [i for i in items if i.mandatory]
@@ -84,7 +102,8 @@ def requirement_result(requirement):
         status = 'in_progress'
     else:
         status = 'missing'
-    return {'status': status, 'approved_items': approved, 'required_items': len(required),
+    return {'status': status, 'overdue': requirement_overdue(requirement, status),
+            'approved_items': approved, 'required_items': len(required),
             'ready_for_completion_review': status == 'ready_for_completion_review',
             'legacy_certification': bool(latest_certification and latest_certification.outcome == 'complete' and not certification_has_support(latest_certification)),
             'latest_certification': latest_certification}
@@ -95,7 +114,7 @@ def summary(requirements):
     results = [requirement_result(r) for r in requirements if r.active and r.applicable]
     total = len(results)
     counts = {s: sum(r['status'] == s for r in results) for s in ['complete', 'for_verification', 'needs_revision', 'ready_for_completion_review', 'in_progress', 'missing']}
-    return {**counts, 'total': total, 'percentage': round(100 * counts['complete'] / total, 2) if total else None,
+    return {**counts, 'total': total, 'overdue_count': sum(r['overdue'] for r in results), 'percentage': round(100 * counts['complete'] / total, 2) if total else None,
             'excluded': sum(r.active and not r.applicable for r in requirements),
             'formula': '100 × complete applicable requirements / total applicable requirements', 'formula_version': 3}
 

@@ -1296,6 +1296,7 @@ def report_rows(request):
     cycle_id = query_id(request, 'cycle')
     area_id = query_id(request, 'area')
     requested_status = request.query_params.get('status', '')
+    requested_overdue = request.query_params.get('overdue', '')
     sort = request.query_params.get('sort', 'newest')
     direction = request.query_params.get('direction', 'desc')
     if sort not in REPORT_SORTS:
@@ -1304,6 +1305,8 @@ def report_rows(request):
         raise ValidationError({'direction': 'Use asc or desc.'})
     if requested_status and requested_status not in REPORT_STATUSES:
         raise ValidationError({'status': 'Choose a valid requirement status.'})
+    if requested_overdue not in ('', '1'):
+        raise ValidationError({'overdue': 'Use 1 to show overdue requirements.'})
     authorized = areas_for(request.user)
     if cycle_id:
         authorized = authorized.filter(cycle_id=cycle_id)
@@ -1324,27 +1327,29 @@ def report_rows(request):
         result = requirement_result(requirement)
         if requested_status and result['status'] != requested_status:
             continue
+        if requested_overdue and not result['overdue']:
+            continue
         rows.append((requirement, result))
     rows.sort(key=lambda entry: entry[0].id, reverse=True)
     nonnull = [entry for entry in rows if report_sort_key(entry, sort) is not None]
     nulls = [entry for entry in rows if report_sort_key(entry, sort) is None]
     rows = sorted(nonnull, key=lambda entry: report_sort_key(entry, sort), reverse=direction == 'desc') + nulls
-    return cycle, scope_areas, area_id, requested_status, population, rows
+    return cycle, scope_areas, area_id, requested_status, bool(requested_overdue), population, rows
 
 
 def report_data(request):
-    cycle, scope_areas, area_id, requested_status, population, rows = report_rows(request)
+    cycle, scope_areas, area_id, requested_status, requested_overdue, population, rows = report_rows(request)
     readiness = summary(population)
     return {
         **readiness,
         'numerator': readiness['complete'], 'denominator': readiness['total'],
         'filtered_row_count': len(rows),
         'population_label': ('Readiness for all active applicable requirements in the selected authorized area; '
-                             'status filters change rows only.' if area_id else
+                             'status and overdue filters change rows only.' if area_id else
                              'Readiness for all active applicable requirements in the selected authorized cycle; '
-                             'status filters change rows only.' if cycle else
+                             'status and overdue filters change rows only.' if cycle else
                              'Readiness for all active applicable requirements across authorized cycles; '
-                             'status filters change rows only.'),
+                             'status and overdue filters change rows only.'),
         'calculated_at': timezone.now(),
         'timezone': settings.TIME_ZONE,
         'scope': 'Your authorized areas',
@@ -1353,10 +1358,10 @@ def report_data(request):
         'selected_filters': {'cycle_id': cycle.id if cycle else None,
                              'area_id': int(area_id) if area_id else None,
                              'area': next((area['title'] for area in scope_areas if str(area['id']) == area_id), None),
-                             'status': requested_status or None},
+                             'status': requested_status or None, 'overdue': requested_overdue},
         'rows': [{'id': requirement.id, 'code': requirement.code, 'title': requirement.title,
                   'area': requirement.area.title, 'responsible': requirement.responsible,
-                  'deadline': requirement.deadline, 'status': result['status'],
+                  'deadline': requirement.deadline, 'status': result['status'], 'overdue': result['overdue'],
                   'approved_items': result['approved_items'], 'required_items': result['required_items']}
                  for requirement, result in rows],
     }
@@ -1385,6 +1390,8 @@ class ComplianceReportView(APIView):
             ('Area filter ID', data['selected_filters']['area_id'] or 'All authorized areas'),
             ('Area filter', data['selected_filters']['area'] or 'All authorized areas'),
             ('Status filter', data['selected_filters']['status'] or 'All statuses'),
+            ('Overdue filter', 'Overdue only' if data['selected_filters']['overdue'] else 'All deadlines'),
+            ('Overdue count (population)', data['overdue_count']),
             ('Readiness population', data['population_label']),
             ('Numerator (complete)', data['numerator']),
             ('Denominator (active applicable)', data['denominator']),
@@ -1399,11 +1406,11 @@ class ComplianceReportView(APIView):
         for label, value in metadata:
             writer.writerow([csv_cell(label), csv_cell(value)])
         writer.writerow([])
-        writer.writerow(['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status'])
+        writer.writerow(['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue'])
         for row in data['rows']:
             writer.writerow([csv_cell(row['area']), csv_cell(row['code']), csv_cell(row['title']),
                              csv_cell(row['responsible']), row['deadline'] or '',
-                             f"{row['approved_items']}/{row['required_items']}", row['status']])
+                             f"{row['approved_items']}/{row['required_items']}", row['status'], 'Yes' if row['overdue'] else 'No'])
         return response
 
 
