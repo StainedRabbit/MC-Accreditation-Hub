@@ -99,7 +99,9 @@ The current local presentation and interaction slice polishes the Dashboard, Com
 
 - D11/D12 quarantine checkpoint on 2026-10-03: an append-only scan verdict now gates file access, mapping, submission, review and completion; the uploader sees pending/failed status, and School IT has a controlled rescan command. Existing versions begin quarantined after migration. The class-based records schedule remains an owner-supplied input, not a configured retention or disposal rule. D11 and D12 stay Pending Decision; synthetic-only operation remains the interim rule.
 
-- D13 overdue monitoring checkpoint on 2026-10-03: a separate overdue flag uses Asia/Manila dates and freezes at cycle closure; dashboard, requirement list/detail, JSON/CSV and print report expose the count, flag and filter without changing readiness status or denominator. Focused PostgreSQL and isolated browser verification completed locally. D13 remains Pending Decision for Academic Owner and Project Owner approval; D14 archive remains separate.
+- D13 overdue monitoring checkpoint on 2026-10-03: a separate overdue flag uses Asia/Manila dates and freezes at cycle closure; dashboard, requirement list/detail, JSON/CSV and print report expose the count, flag and filter without changing readiness status or denominator. Focused PostgreSQL and isolated browser verification completed locally. D13 remains Pending Decision for Academic Owner and Project Owner approval.
+
+- D14 archive lifecycle checkpoint on 2026-10-04: closed cycles and active-cycle requirements now have distinct, reasoned archive/restore actions with scoped historical views and audit records. Current lists, readiness, and overdue monitoring exclude archived records; report JSON/CSV can display archived rows separately. A migration leaves existing records unarchived. Eleven focused PostgreSQL tests, four isolated browser tests, the frontend build, Django checks, and migration consistency checks passed locally. D14 remains Pending Decision for Project Owner, Academic Owner, and Security/Records Owner approval; archive does not authorize disposal.
 
 ## Known incomplete or broken work
 

@@ -60,7 +60,7 @@ def package_is_ready(package, requirement):
 def requirement_overdue(requirement, status):
     """Deadline monitoring is independent of readiness status."""
     cycle = requirement.area.cycle
-    if (not requirement.active or not requirement.applicable or not requirement.deadline or
+    if (requirement.archived_at or requirement.area.cycle.archived_at or not requirement.active or not requirement.applicable or not requirement.deadline or
             status == 'complete' or cycle.status not in ('active', 'closed')):
         return False
     if cycle.status == 'closed':
@@ -111,11 +111,11 @@ def requirement_result(requirement):
 
 def summary(requirements):
     requirements = list(requirements)
-    results = [requirement_result(r) for r in requirements if r.active and r.applicable]
+    results = [requirement_result(r) for r in requirements if r.active and r.applicable and not r.archived_at and not r.area.cycle.archived_at]
     total = len(results)
     counts = {s: sum(r['status'] == s for r in results) for s in ['complete', 'for_verification', 'needs_revision', 'ready_for_completion_review', 'in_progress', 'missing']}
     return {**counts, 'total': total, 'overdue_count': sum(r['overdue'] for r in results), 'percentage': round(100 * counts['complete'] / total, 2) if total else None,
-            'excluded': sum(r.active and not r.applicable for r in requirements),
+            'excluded': sum(r.active and not r.applicable and not r.archived_at and not r.area.cycle.archived_at for r in requirements),
             'formula': '100 × complete applicable requirements / total applicable requirements', 'formula_version': 3}
 
 

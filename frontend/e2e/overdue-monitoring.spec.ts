@@ -52,5 +52,5 @@ test("overdue drilldown and report filter keep readiness population", async ({ p
   const csv = fs.readFileSync(await download.path(), "utf8");
   expect(csv).toContain("Overdue filter,Overdue only");
   expect(csv).toContain("Overdue count (population)");
-  expect(csv).toContain("Status,Overdue");
+  expect(csv).toContain("Status,Overdue,Archived");
 });

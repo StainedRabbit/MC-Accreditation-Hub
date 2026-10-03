@@ -231,7 +231,7 @@ Requirement-level readiness may reflect draft work in aggregate, while item-leve
 | A. Implement distinct non-destructive cycle/requirement archive actions | Archive is separate from Closed, Draft and Not Applicable, with authorized actions/reasons/history and explicit list/denominator treatment. Archived history remains accessible under scope/retention rules. | Yes: models, transitions, filters/UI and tests. |
 | B. Explicitly accept closure-only cycles and draft/applicability-only requirements for launch | No separate archive action; remove “Archived” labelling for Closed and document that archive remains unfinished/deferred by amendment. | UI/documentation changes; no archive schema required for the amended scope. |
 
-**Recommended option:** A for the original version-1 requirements. **Required approver:** Project Owner; Academic Owner; Security/Records Owner for preservation/retention. **Production-acceptance impact:** Either deliver A or record B as a scope change; closure alone must not be counted as the planned archive deliverable. D12 still governs retention and forbids implied deletion authority.
+**Implementation recommendation:** A, provisionally implemented with separate non-destructive cycle and requirement archive actions, reasoned restore, scoped historical views, and current-monitoring exclusions. D14 remains Pending Decision. **Required approver:** Project Owner; Academic Owner; Security/Records Owner for preservation/retention. **Production-acceptance impact:** Either deliver A or record B as a scope change; closure alone must not be counted as the planned archive deliverable. D12 still governs retention and forbids implied deletion authority.
 
 ### D15 — Launch administration and institutional role mapping
 

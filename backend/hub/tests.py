@@ -1730,9 +1730,9 @@ class OverdueTests(WorkflowFixture, TestCase):
         rows = list(csv.reader(io.StringIO(csv_response.content.decode('utf-8'))))
         self.assertIn(['Overdue filter', 'Overdue only'], rows)
         self.assertIn(['Overdue count (population)', '1'], rows)
-        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue']
+        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue', 'Archived']
         self.assertIn(header, rows)
-        self.assertEqual(rows[rows.index(header) + 1][-1], 'Yes')
+        self.assertEqual(rows[rows.index(header) + 1][-2], 'Yes')
 
 
 class ReportProvenanceTests(WorkflowFixture, TestCase):
@@ -1746,7 +1746,7 @@ class ReportProvenanceTests(WorkflowFixture, TestCase):
         self.assertEqual(titles, sorted(titles, key=str.casefold))
         csv_response = self.client.get('/api/reports/compliance/', {**params, 'download': 'csv'})
         csv_rows = list(csv.reader(io.StringIO(csv_response.content.decode('utf-8'))))
-        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue']
+        header = ['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue', 'Archived']
         start = csv_rows.index(header) + 1
         self.assertEqual([row[2] for row in csv_rows[start:]], titles)
         self.assertEqual(self.client.get('/api/reports/compliance/', {**params, 'sort': 'invalid'}).status_code, 400)
@@ -1773,7 +1773,7 @@ class ReportProvenanceTests(WorkflowFixture, TestCase):
         self.assertEqual(report['selected_filters']['status'], 'complete')
         self.assertEqual(report['cycle']['instrument'], self.cycle.instrument)
         self.assertEqual(report['timezone'], 'Asia/Manila')
-        self.assertIn('status and overdue filters change rows only', report['population_label'])
+        self.assertIn('status, overdue and archive filters change rows only', report['population_label'])
         self.assertEqual({a['id'] for a in report['authorized_areas']}, {self.area.id, self.other_area.id})
         self.assertEqual(len(report['rows']), 1)
         area_report = self.client.get('/api/reports/compliance/',
@@ -1883,3 +1883,97 @@ class SessionAndHealthEvidenceTests(WorkflowFixture, TestCase):
             response = client.get('/api/health/')
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.data, {'status': 'unavailable'})
+
+
+class ArchiveLifecycleTests(WorkflowFixture, TestCase):
+    def test_requirement_archive_preserves_records_and_separates_current_report(self):
+        self.assertIsNone(self.requirement.archived_at)
+        self.requirement.deadline = timezone.localdate() - timedelta(days=2)
+        self.requirement.save(update_fields=['deadline'])
+        document = self.upload()
+        submission = self.submit(document)
+        self.client.force_authenticate(self.coordinator)
+        before = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id}).data
+        self.assertEqual((before['denominator'], before['overdue_count']), (1, 1))
+        url = f'/api/requirements/{self.requirement.id}/archive/'
+        self.assertEqual(self.client.post(url, {}, format='json').status_code, 400)
+        archived = self.client.post(url, {'rationale': 'Preserve historical requirement.'}, format='json')
+        self.assertEqual(archived.status_code, 200, archived.data)
+        self.assertEqual(self.client.post(url, {'rationale': 'Again'}, format='json').status_code, 400)
+        self.assertEqual(self.client.get('/api/requirements/').data, [])
+        historical = self.client.get('/api/requirements/', {'archived': '1'}).data
+        self.assertEqual([row['id'] for row in historical], [self.requirement.id])
+        detail = self.client.get(f'/api/requirements/{self.requirement.id}/').data
+        self.assertFalse(detail['overdue'])
+        self.assertEqual(detail['status'], 'for_verification')
+        self.assertEqual(detail['archive_history'][0]['reason'], 'Preserve historical requirement.')
+        self.assertEqual(self.client.patch(f'/api/requirements/{self.requirement.id}/', {'title': 'Blocked'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(f'/api/requirements/{self.requirement.id}/certifications/', {'outcome': 'complete', 'rationale': 'Blocked'}, format='json').status_code, 400)
+        self.client.force_authenticate(self.reviewer)
+        self.assertEqual(self.client.post('/api/review-decisions/', {'submission': submission['id'], 'outcome': 'approved', 'comment': ''}, format='json').status_code, 400)
+        self.client.force_authenticate(self.custodian)
+        self.assertEqual(self.client.post('/api/documents/', {'file': pdf_file('blocked.pdf'), 'title': 'Blocked', 'area': self.area.id, 'requirement': self.requirement.id}, format='multipart').status_code, 400)
+        self.client.force_authenticate(self.coordinator)
+        self.assertEqual(self.client.get('/api/compliance/').data['total'], 0)
+        current = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id}).data
+        self.assertEqual((current['numerator'], current['denominator'], current['overdue_count'], current['rows']), (0, 0, 0, []))
+        report = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id, 'archived': '1'}).data
+        self.assertEqual((report['denominator'], report['filtered_row_count']), (0, 1))
+        self.assertTrue(report['rows'][0]['archived'])
+        self.assertFalse(report['rows'][0]['overdue'])
+        csv_text = self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id, 'archived': '1', 'download': 'csv'}).content.decode()
+        self.assertIn('Archive view,Archived records', csv_text)
+        self.assertIn('Status,Overdue,Archived', csv_text)
+        self.assertEqual(Document.objects.count(), 1)
+        self.assertEqual(DocumentVersion.objects.count(), 1)
+        self.assertEqual(Submission.objects.count(), 1)
+        self.assertTrue(Path(self.media.name, str(DocumentVersion.objects.get().storage_key)).exists())
+        self.assertEqual(AuditEvent.objects.filter(action='requirement_archived').count(), 1)
+        self.client.force_authenticate(self.viewer)
+        viewer_detail = self.client.get(f'/api/requirements/{self.requirement.id}/').data
+        self.assertTrue(viewer_detail['archived_at'])
+        self.assertEqual((viewer_detail['archive_reason'], viewer_detail['archive_history']), ('', []))
+        self.client.force_authenticate(self.coordinator)
+        restored = self.client.post(f'/api/requirements/{self.requirement.id}/restore/', {'rationale': 'Return to current monitoring.'}, format='json')
+        self.assertEqual(restored.status_code, 200, restored.data)
+        self.assertEqual(self.client.get('/api/compliance/').data['total'], 1)
+        self.assertEqual(self.client.get('/api/compliance/').data['overdue_count'], 1)
+        self.assertEqual(AuditEvent.objects.filter(action='requirement_restored').count(), 1)
+        self.assertEqual(self.client.get(f'/api/requirements/{self.requirement.id}/').data['archive_history'][0]['action'], 'requirement_restored')
+
+    def test_cycle_archive_is_distinct_from_close_and_restore_returns_closed(self):
+        close = self.client.post(f'/api/cycles/{self.cycle.id}/close/', {'rationale': 'Review finished.'}, format='json')
+        self.assertEqual(close.status_code, 200, close.data)
+        self.cycle.refresh_from_db()
+        closure = self.cycle.closed_at
+        url = f'/api/cycles/{self.cycle.id}/archive/'
+        self.assertEqual(self.client.post(url, {'rationale': 'Preserve cycle.'}, format='json').status_code, 200)
+        self.assertEqual(self.client.post(url, {'rationale': 'Again'}, format='json').status_code, 400)
+        self.assertEqual(self.client.get('/api/cycles/').data, [])
+        self.assertTrue(self.client.get('/api/cycles/', {'archived': '1'}).data[0]['archived_at'])
+        self.assertEqual(self.client.get('/api/requirements/').data, [])
+        self.assertEqual(len(self.client.get('/api/requirements/', {'archived': '1'}).data), 1)
+        self.assertEqual(self.client.get('/api/compliance/').data['total'], 0)
+        self.assertEqual(self.client.get('/api/reports/compliance/', {'cycle': self.cycle.id, 'archived': '1'}).data['filtered_row_count'], 1)
+        self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/reopen/', {'rationale': 'Blocked'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(f'/api/requirements/{self.requirement.id}/archive/', {'rationale': 'Blocked'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/restore/', {'rationale': 'Return to closed history.'}, format='json').status_code, 200)
+        self.cycle.refresh_from_db()
+        self.assertEqual(self.cycle.status, 'closed')
+        self.assertEqual(self.cycle.closed_at, closure)
+        self.assertIsNone(self.cycle.archived_at)
+        self.assertEqual(self.client.get('/api/cycles/').data[0]['id'], self.cycle.id)
+        self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/reopen/', {'rationale': 'Continue work.'}, format='json').status_code, 200)
+        self.assertEqual(AuditEvent.objects.filter(action='cycle_archived').count(), 2)
+        self.assertEqual(AuditEvent.objects.filter(action='cycle_restored').count(), 2)
+
+    def test_archive_requires_scope_and_revocation_hides_history(self):
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.post(f'/api/requirements/{self.requirement.id}/archive/', {'rationale': 'No grant.'}, format='json').status_code, 404)
+        self.assertEqual(self.client.post(f'/api/cycles/{self.cycle.id}/archive/', {'rationale': 'No authority.'}, format='json').status_code, 403)
+        self.client.force_authenticate(self.coordinator)
+        self.assertEqual(self.client.post(f'/api/requirements/{self.requirement.id}/archive/', {'rationale': 'Preserve.'}, format='json').status_code, 200)
+        self.coordinator.assignments.all().delete()
+        self.assertEqual(self.client.get('/api/requirements/', {'archived': '1'}).data, [])
+        self.assertEqual(self.client.get(f'/api/requirements/{self.requirement.id}/').status_code, 404)
+        self.assertEqual(self.client.post(f'/api/requirements/{self.requirement.id}/restore/', {'rationale': 'No grant.'}, format='json').status_code, 404)

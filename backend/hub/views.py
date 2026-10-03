@@ -208,16 +208,20 @@ def scoped_requirements(user):
 def req_data(req, user, detail=False):
     result_data = requirement_result(req)
     certification = result_data.pop('latest_certification')
-    can_certify = req.area.cycle.status == 'active' and areas_for(user, ['coordinator']).filter(pk=req.area_id).exists()
+    is_coordinator = areas_for(user, ['coordinator']).filter(pk=req.area_id).exists()
+    can_certify = req.area.cycle.status == 'active' and not req.area.cycle.archived_at and not req.archived_at and is_coordinator
     result = {'id': req.id, 'code': req.code, 'title': req.title, 'description': req.description,
         'area': req.area_id, 'area_title': req.area.title, 'icon': req.area.icon, 'cycle': req.area.cycle_id,
         'responsible': req.responsible, 'deadline': req.deadline, 'active': req.active,
-        'applicable': req.applicable, 'exclusion_reason': req.exclusion_reason, **result_data,
+        'applicable': req.applicable, 'exclusion_reason': req.exclusion_reason,
+        'archived_at': req.archived_at, 'archived_by': req.archived_by_id if is_coordinator else None,
+        'archive_reason': req.archive_reason if is_coordinator else '', **result_data,
         'criteria_revision': req.criteria_revision,
         'legacy_submission_mode': req.legacy_submission_mode,
         'can_manage': can_certify,
         'can_assign': can_certify,
-        'can_upload': req.area.cycle.status == 'active' and (is_active_assignee(user, req) or can_certify)}
+        'can_upload': req.area.cycle.status == 'active' and not req.area.cycle.archived_at and not req.archived_at and (is_active_assignee(user, req) or can_certify),
+        'can_archive': can_certify, 'can_restore': bool(req.archived_at) and req.area.cycle.status == 'active' and not req.area.cycle.archived_at and areas_for(user, ['coordinator']).filter(pk=req.area_id).exists()}
     if detail:
         result['assignments'] = [assignment_data(a) for a in req.user_assignments.filter(active=True).select_related('user')]
         result['items'] = [{'id': i.id, 'label': i.label, 'criteria': i.criteria, 'mandatory': i.mandatory,
@@ -236,6 +240,7 @@ def req_data(req, user, detail=False):
             for version in mapping.document.versions.all() if can_version(user, version) and scan_status(version) == 'clean'
         ] if result['can_upload'] else []
         result['applicability_history'] = [applicability_data(d) for d in req.applicability_decisions.all()]
+        result['archive_history'] = [{'action': e.action, 'reason': e.detail.get('reason', ''), 'actor': e.actor.get_full_name() or e.actor.username if e.actor else 'System', 'created_at': e.created_at} for e in AuditEvent.objects.filter(area=req.area, action__in=['requirement_archived', 'requirement_restored'], detail__requirement=req.id).select_related('actor').order_by('-id')] if is_coordinator else []
         result['certification_candidates'] = [certification_candidate(s) for item in req.items.all()
             for mapping in item.mappings.all() for s in mapping.submissions.all()
             if s.id == next(iter(mapping.submissions.all()), s).id and submission_state(s) == 'approved']
@@ -298,8 +303,9 @@ def package_item_snapshot(entry):
 
 def package_data(package, user):
     requirement = package.requirement
-    editable = package.status == 'draft' and package.owner_id == user.id and requirement.area.cycle.status == 'active'
-    reviewable = package.status == 'submitted' and requirement.area.cycle.status == 'active' and not certification_is_open(requirement) and (
+    writable = requirement.area.cycle.status == 'active' and not requirement.area.cycle.archived_at and not requirement.archived_at
+    editable = package.status == 'draft' and package.owner_id == user.id and writable
+    reviewable = package.status == 'submitted' and writable and not certification_is_open(requirement) and (
         areas_for(user, REVIEW_ROLES).filter(pk=requirement.area_id).exists()) and user.id != package.owner_id and not any(
             entry.version.uploaded_by_id == user.id or scan_status(entry.version) != 'clean' for entry in package.items.all())
     return {'id': package.id, 'requirement': requirement.id, 'requirement_title': requirement.title,
@@ -313,9 +319,9 @@ def package_data(package, user):
             'decision': {'outcome': package.decision.outcome, 'comment': package.decision.comment,
                          'reviewer': package.decision.reviewer.get_full_name() or package.decision.reviewer.username,
                          'created_at': package.decision.created_at} if hasattr(package, 'decision') else None,
-            'can_edit': editable, 'can_submit': editable, 'can_withdraw': package.status == 'submitted' and package.owner_id == user.id and requirement.area.cycle.status == 'active',
+            'can_edit': editable, 'can_submit': editable, 'can_withdraw': package.status == 'submitted' and package.owner_id == user.id and writable,
             'can_review': reviewable,
-            'can_resubmit': package.status in ('approved', 'revisions_requested', 'withdrawn') and requirement.area.cycle.status == 'active' and (is_active_assignee(user, requirement) or is_scoped_coordinator(user, requirement.area)),
+            'can_resubmit': package.status in ('approved', 'revisions_requested', 'withdrawn') and writable and (is_active_assignee(user, requirement) or is_scoped_coordinator(user, requirement.area)),
             'requires_override': is_scoped_coordinator(user, requirement.area) and not is_active_assignee(user, requirement)}
 
 
@@ -366,6 +372,8 @@ def submission_data(sub, user):
             and scan_status(sub.version) == 'clean'
             and sub.version.uploaded_by_id != user.id and sub.submitted_by_id != user.id
             and sub.mapping.item.requirement.area.cycle.status == 'active'
+            and not sub.mapping.item.requirement.archived_at
+            and not sub.mapping.item.requirement.area.cycle.archived_at
             and areas_for(user, REVIEW_ROLES).filter(pk=sub.mapping.item.requirement.area_id).exists(),
         'decision': {'outcome': decision.outcome, 'comment': decision.comment,
                      'reviewer': decision.reviewer.get_full_name() or decision.reviewer.username,
@@ -402,12 +410,21 @@ def doc_data(doc, user):
 
 class CyclesView(APIView):
     def get(self, request):
+        archived = request.query_params.get('archived', '')
+        if archived not in ('', '1'):
+            raise ValidationError({'archived': 'Use 1 to include archived cycles.'})
         records = Cycle.objects.filter(areas__in=areas_for(request.user)).distinct().order_by('-id')
+        if not archived:
+            records = records.filter(archived_at__isnull=True)
         return Response([{**{'id': cycle.id, 'title': cycle.title, 'program': cycle.program,
                             'instrument': cycle.instrument, 'status': cycle.status, 'is_demo': cycle.is_demo,
-                            'closed_at': cycle.closed_at},
-                          'can_close': cycle.status == 'active' and has_cyclewide_coordinator(request.user, cycle),
-                          'can_reopen': cycle.status == 'closed' and has_cyclewide_coordinator(request.user, cycle)}
+                            'closed_at': cycle.closed_at, 'archived_at': cycle.archived_at,
+                             'archived_by': cycle.archived_by_id if has_cyclewide_coordinator(request.user, cycle) else None,
+                             'archive_reason': cycle.archive_reason if has_cyclewide_coordinator(request.user, cycle) else ''},
+                          'can_close': cycle.status == 'active' and not cycle.archived_at and has_cyclewide_coordinator(request.user, cycle),
+                          'can_reopen': cycle.status == 'closed' and not cycle.archived_at and has_cyclewide_coordinator(request.user, cycle),
+                          'can_archive': cycle.status == 'closed' and not cycle.archived_at and has_cyclewide_coordinator(request.user, cycle),
+                          'can_restore': bool(cycle.archived_at) and has_cyclewide_coordinator(request.user, cycle)}
                          for cycle in records])
 
 
@@ -420,6 +437,8 @@ class CycleTransitionView(APIView):
         if not has_cyclewide_coordinator(request.user, cycle):
             raise PermissionDenied('You do not have permission to manage this accreditation cycle.')
         data = payload(CycleTransitionInput, request).validated_data
+        if cycle.archived_at:
+            raise ValidationError('Restore the archived cycle before changing its lifecycle.')
         if self.action == 'close':
             if cycle.status != 'active':
                 raise ValidationError('Only an active cycle can be closed.')
@@ -442,6 +461,38 @@ class CloseCycleView(CycleTransitionView):
 
 class ReopenCycleView(CycleTransitionView):
     action = 'reopen'
+
+
+class CycleArchiveView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        cycle = get_object_or_404(Cycle.objects.select_for_update(), pk=pk)
+        if not has_cyclewide_coordinator(request.user, cycle):
+            raise PermissionDenied('A cycle-wide Coordinator grant is required.')
+        reason = payload(CycleTransitionInput, request).validated_data['rationale']
+        if cycle.status != 'closed' or cycle.archived_at:
+            raise ValidationError('Only a closed, unarchived cycle can be archived.')
+        cycle.archived_at, cycle.archived_by, cycle.archive_reason = timezone.now(), request.user, reason
+        cycle.save(update_fields=['archived_at', 'archived_by', 'archive_reason'])
+        for area in cycle.areas.all():
+            audit(request.user, area, 'cycle_archived', cycle.title, cycle=cycle.id, reason=reason)
+        return Response({'detail': 'Cycle archived; records remain available in archived views.', 'archived_at': cycle.archived_at})
+
+
+class CycleRestoreView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        cycle = get_object_or_404(Cycle.objects.select_for_update(), pk=pk)
+        if not has_cyclewide_coordinator(request.user, cycle):
+            raise PermissionDenied('A cycle-wide Coordinator grant is required.')
+        reason = payload(CycleTransitionInput, request).validated_data['rationale']
+        if cycle.status != 'closed' or not cycle.archived_at:
+            raise ValidationError('Only an archived closed cycle can be restored.')
+        cycle.archived_at, cycle.archived_by, cycle.archive_reason = None, None, ''
+        cycle.save(update_fields=['archived_at', 'archived_by', 'archive_reason'])
+        for area in cycle.areas.all():
+            audit(request.user, area, 'cycle_restored', cycle.title, cycle=cycle.id, reason=reason)
+        return Response({'detail': 'Cycle restored to Closed. Reopen separately to resume work.', 'archived_at': None})
 
 
 class AreasView(APIView):
@@ -527,6 +578,13 @@ class RequirementsView(APIView):
             qs = qs.filter(area__cycle_id=request.query_params['cycle'])
         if query_id(request, 'area'):
             qs = qs.filter(area_id=request.query_params['area'])
+        archived = request.query_params.get('archived', '')
+        if archived not in ('', '1'):
+            raise ValidationError({'archived': 'Use 1 to show archived records.'})
+        if archived:
+            qs = qs.filter(Q(archived_at__isnull=False) | Q(area__cycle__archived_at__isnull=False))
+        else:
+            qs = qs.filter(archived_at__isnull=True, area__cycle__archived_at__isnull=True)
         q = query_text(request, 'search')
         qs = qs.filter(Q(title__icontains=q) | Q(code__icontains=q) | Q(description__icontains=q) | Q(responsible__icontains=q))
         records = [req_data(r, request.user) for r in qs]
@@ -557,6 +615,7 @@ class RequirementsView(APIView):
         require_area(request.user, req.area, ['coordinator'])
         lock_active_cycles(req.area.cycle_id)
         req = Requirement.objects.select_for_update().get(pk=pk)
+        require_unarchived_requirement(req)
         serializer = payload(RequirementInput, request, instance=req, partial=True)
         data = serializer.validated_data
         substantive = ('description' in data and data['description'] != req.description) or (
@@ -584,6 +643,40 @@ class RequirementsView(APIView):
         audit(request.user, req.area, 'requirement_updated', req.title, before=before,
               after={k: str(getattr(req, k)) for k in data if hasattr(req, k)})
         return Response(req_data(req, request.user, True))
+
+
+class RequirementArchiveView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        req = get_object_or_404(scoped_requirements(request.user), pk=pk)
+        require_area(request.user, req.area, ['coordinator'])
+        reason = payload(CycleTransitionInput, request).validated_data['rationale']
+        lock_active_cycles(req.area.cycle_id)
+        req = Requirement.objects.select_for_update().select_related('area__cycle').get(pk=pk)
+        require_area(request.user, req.area, ['coordinator'])
+        if req.archived_at:
+            raise ValidationError('This requirement is already archived.')
+        req.archived_at, req.archived_by, req.archive_reason = timezone.now(), request.user, reason
+        req.save(update_fields=['archived_at', 'archived_by', 'archive_reason'])
+        audit(request.user, req.area, 'requirement_archived', req.title, requirement=req.id, reason=reason)
+        return Response({'detail': 'Requirement archived; its records remain available in archived views.', 'archived_at': req.archived_at})
+
+
+class RequirementRestoreView(APIView):
+    @transaction.atomic
+    def post(self, request, pk):
+        req = get_object_or_404(scoped_requirements(request.user), pk=pk)
+        require_area(request.user, req.area, ['coordinator'])
+        reason = payload(CycleTransitionInput, request).validated_data['rationale']
+        lock_active_cycles(req.area.cycle_id)
+        req = Requirement.objects.select_for_update().select_related('area__cycle').get(pk=pk)
+        require_area(request.user, req.area, ['coordinator'])
+        if not req.archived_at:
+            raise ValidationError('This requirement is not archived.')
+        req.archived_at, req.archived_by, req.archive_reason = None, None, ''
+        req.save(update_fields=['archived_at', 'archived_by', 'archive_reason'])
+        audit(request.user, req.area, 'requirement_restored', req.title, requirement=req.id, reason=reason)
+        return Response({'detail': 'Requirement restored to current monitoring.', 'archived_at': None})
 
 
 class ItemsView(APIView):
@@ -818,6 +911,7 @@ class RequirementAssignmentsView(APIView):
         require_area(request.user, requirement.area, ['coordinator'])
         lock_active_cycles(requirement.area.cycle_id)
         requirement = Requirement.objects.select_for_update().get(pk=requirement.pk)
+        require_unarchived_requirement(requirement)
         data = payload(RequirementAssignmentInput, request).validated_data
         candidate = get_object_or_404(User.objects.filter(is_active=True), pk=data['user'])
         if candidate.id not in [entry['id'] for entry in assignment_candidates(requirement)]:
@@ -960,6 +1054,7 @@ class ReviewsView(APIView):
         sub = get_object_or_404(Submission.objects.filter(mapping__item__requirement__area__in=areas_for(request.user, REVIEW_ROLES)), pk=data['submission'])
         area = sub.mapping.item.requirement.area
         lock_active_cycles(area.cycle_id)
+        require_unarchived_requirement(sub.mapping.item.requirement)
         if certification_is_open(sub.mapping.item.requirement):
             raise ValidationError('Reopen the requirement before reviewing changed supporting evidence.')
         EvidenceMapping.objects.select_for_update().get(pk=sub.mapping_id)
@@ -1067,6 +1162,7 @@ class PackagesView(APIView):
         package = get_object_or_404(visible_packages_for(request.user), pk=pk)
         lock_active_cycles(package.requirement.area.cycle_id)
         package = PackageAttempt.objects.select_for_update().get(pk=pk)
+        require_unarchived_requirement(package.requirement)
         if package.status != 'draft' or package.owner_id != request.user.id:
             raise PermissionDenied('Only the owner may delete an unsubmitted draft.')
         for entry in package.items.all():
@@ -1119,6 +1215,7 @@ class PackageWithdrawView(APIView):
         package = get_object_or_404(visible_packages_for(request.user), pk=pk)
         lock_active_cycles(package.requirement.area.cycle_id)
         package = PackageAttempt.objects.select_for_update().get(pk=pk)
+        require_unarchived_requirement(package.requirement)
         data = payload(PackageActionInput, request).validated_data
         if package.status != 'submitted' or package.owner_id != request.user.id:
             raise PermissionDenied('Only the submitter may withdraw a package before review.')
@@ -1139,6 +1236,7 @@ class PackageReviewView(APIView):
         package = get_object_or_404(PackageAttempt.objects.filter(requirement__area__in=areas_for(request.user, REVIEW_ROLES)), pk=pk)
         lock_active_cycles(package.requirement.area.cycle_id)
         package = PackageAttempt.objects.select_for_update().select_related('requirement__area__cycle').get(pk=pk)
+        require_unarchived_requirement(package.requirement)
         data = payload(PackageReviewInput, request).validated_data
         if package.status != 'submitted':
             raise ValidationError('This package is no longer awaiting review. Refresh the page.')
@@ -1202,6 +1300,7 @@ class RequirementCertificationsView(APIView):
         require_area(request.user, requirement.area, ['coordinator'])
         lock_active_cycles(requirement.area.cycle_id)
         requirement = with_evidence(Requirement.objects.select_for_update()).get(pk=requirement.pk)
+        require_unarchived_requirement(requirement)
         data = payload(CertificationInput, request).validated_data
         result = requirement_result(requirement)
         latest = result['latest_certification']
@@ -1297,6 +1396,7 @@ def report_rows(request):
     area_id = query_id(request, 'area')
     requested_status = request.query_params.get('status', '')
     requested_overdue = request.query_params.get('overdue', '')
+    requested_archived = request.query_params.get('archived', '')
     sort = request.query_params.get('sort', 'newest')
     direction = request.query_params.get('direction', 'desc')
     if sort not in REPORT_SORTS:
@@ -1307,6 +1407,8 @@ def report_rows(request):
         raise ValidationError({'status': 'Choose a valid requirement status.'})
     if requested_overdue not in ('', '1'):
         raise ValidationError({'overdue': 'Use 1 to show overdue requirements.'})
+    if requested_archived not in ('', '1'):
+        raise ValidationError({'archived': 'Use 1 to show archived records.'})
     authorized = areas_for(request.user)
     if cycle_id:
         authorized = authorized.filter(cycle_id=cycle_id)
@@ -1321,9 +1423,10 @@ def report_rows(request):
         qs = qs.filter(area__cycle_id=cycle_id)
     if area_id:
         qs = qs.filter(area_id=area_id)
-    population = list(qs.order_by('area__title', 'code'))
+    population = list(qs.filter(archived_at__isnull=True, area__cycle__archived_at__isnull=True).order_by('area__title', 'code'))
+    row_source = qs.filter(Q(archived_at__isnull=False) | Q(area__cycle__archived_at__isnull=False)) if requested_archived else population
     rows = []
-    for requirement in population:
+    for requirement in row_source:
         result = requirement_result(requirement)
         if requested_status and result['status'] != requested_status:
             continue
@@ -1334,22 +1437,22 @@ def report_rows(request):
     nonnull = [entry for entry in rows if report_sort_key(entry, sort) is not None]
     nulls = [entry for entry in rows if report_sort_key(entry, sort) is None]
     rows = sorted(nonnull, key=lambda entry: report_sort_key(entry, sort), reverse=direction == 'desc') + nulls
-    return cycle, scope_areas, area_id, requested_status, bool(requested_overdue), population, rows
+    return cycle, scope_areas, area_id, requested_status, bool(requested_overdue), bool(requested_archived), population, rows
 
 
 def report_data(request):
-    cycle, scope_areas, area_id, requested_status, requested_overdue, population, rows = report_rows(request)
+    cycle, scope_areas, area_id, requested_status, requested_overdue, requested_archived, population, rows = report_rows(request)
     readiness = summary(population)
     return {
         **readiness,
         'numerator': readiness['complete'], 'denominator': readiness['total'],
         'filtered_row_count': len(rows),
         'population_label': ('Readiness for all active applicable requirements in the selected authorized area; '
-                             'status and overdue filters change rows only.' if area_id else
+                             'status, overdue and archive filters change rows only.' if area_id else
                              'Readiness for all active applicable requirements in the selected authorized cycle; '
-                             'status and overdue filters change rows only.' if cycle else
+                             'status, overdue and archive filters change rows only.' if cycle else
                              'Readiness for all active applicable requirements across authorized cycles; '
-                             'status and overdue filters change rows only.'),
+                             'status, overdue and archive filters change rows only.'),
         'calculated_at': timezone.now(),
         'timezone': settings.TIME_ZONE,
         'scope': 'Your authorized areas',
@@ -1358,10 +1461,11 @@ def report_data(request):
         'selected_filters': {'cycle_id': cycle.id if cycle else None,
                              'area_id': int(area_id) if area_id else None,
                              'area': next((area['title'] for area in scope_areas if str(area['id']) == area_id), None),
-                             'status': requested_status or None, 'overdue': requested_overdue},
+                             'status': requested_status or None, 'overdue': requested_overdue, 'archived': requested_archived},
         'rows': [{'id': requirement.id, 'code': requirement.code, 'title': requirement.title,
                   'area': requirement.area.title, 'responsible': requirement.responsible,
                   'deadline': requirement.deadline, 'status': result['status'], 'overdue': result['overdue'],
+                   'archived': bool(requirement.archived_at or requirement.area.cycle.archived_at),
                   'approved_items': result['approved_items'], 'required_items': result['required_items']}
                  for requirement, result in rows],
     }
@@ -1391,6 +1495,7 @@ class ComplianceReportView(APIView):
             ('Area filter', data['selected_filters']['area'] or 'All authorized areas'),
             ('Status filter', data['selected_filters']['status'] or 'All statuses'),
             ('Overdue filter', 'Overdue only' if data['selected_filters']['overdue'] else 'All deadlines'),
+            ('Archive view', 'Archived records' if data['selected_filters']['archived'] else 'Current records'),
             ('Overdue count (population)', data['overdue_count']),
             ('Readiness population', data['population_label']),
             ('Numerator (complete)', data['numerator']),
@@ -1406,11 +1511,11 @@ class ComplianceReportView(APIView):
         for label, value in metadata:
             writer.writerow([csv_cell(label), csv_cell(value)])
         writer.writerow([])
-        writer.writerow(['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue'])
+        writer.writerow(['Area', 'Code', 'Requirement', 'Responsible', 'Deadline', 'Approved evidence', 'Status', 'Overdue', 'Archived'])
         for row in data['rows']:
             writer.writerow([csv_cell(row['area']), csv_cell(row['code']), csv_cell(row['title']),
                              csv_cell(row['responsible']), row['deadline'] or '',
-                             f"{row['approved_items']}/{row['required_items']}", row['status'], 'Yes' if row['overdue'] else 'No'])
+                             f"{row['approved_items']}/{row['required_items']}", row['status'], 'Yes' if row['overdue'] else 'No', 'Yes' if row['archived'] else 'No'])
         return response
 
 
@@ -1430,7 +1535,7 @@ class SearchView(APIView):
             except (ValueError, AttributeError):
                 raise ValidationError({'documents_after': 'Use a valid document cursor.'})
         cycle_id = query_id(request, 'cycle')
-        requirement_qs = scoped_requirements(request.user)
+        requirement_qs = scoped_requirements(request.user).filter(archived_at__isnull=True, area__cycle__archived_at__isnull=True)
         document_qs = documents_for(request.user).select_related('area', 'area__cycle')
         if cycle_id:
             requirement_qs = requirement_qs.filter(area__cycle_id=cycle_id)

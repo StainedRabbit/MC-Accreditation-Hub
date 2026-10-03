@@ -28,6 +28,9 @@ class Cycle(models.Model):
     status = models.CharField(max_length=10, choices=[('draft', 'Draft'), ('active', 'Active'), ('closed', 'Closed')], default='draft')
     is_demo = models.BooleanField(default=False)
     closed_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="archived_cycles")
+    archive_reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -81,6 +84,9 @@ class Requirement(models.Model):
     active = models.BooleanField(default=False)
     applicable = models.BooleanField(default=True)
     exclusion_reason = models.TextField(blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="archived_requirements")
+    archive_reason = models.TextField(blank=True)
     criteria_revision = models.PositiveIntegerField(default=1)
     # Pre-F07 requirements retain their item-level write path until their first
     # package draft. New requirements use packages from the start.

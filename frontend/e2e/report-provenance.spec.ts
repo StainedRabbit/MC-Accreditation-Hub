@@ -68,7 +68,7 @@ test("report provenance, filtered population, delayed responses and failed expor
 });
 
 test("cycle and account changes discard delayed search and detail; search fetches details by ID", async ({ page }) => {
-  await page.route("**/api/cycles/", async (route) => {
+  await page.route("**/api/cycles/?archived=1", async (route) => {
     const response = await route.fetch();
     const cycles = await response.json();
     await route.fulfill({ response, json: [...cycles, { ...cycles[0], id: 999999, title: "Fictional second cycle" }] });

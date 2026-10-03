@@ -19,6 +19,11 @@ export type Cycle = {
   status: string;
   is_demo: boolean;
   closed_at: string | null;
+  archived_at: string | null;
+  archived_by: number | null;
+  archive_reason: string;
+  can_archive: boolean;
+  can_restore: boolean;
   can_close: boolean;
   can_reopen: boolean;
 };
@@ -103,6 +108,12 @@ export type Requirement = {
   responsible: string;
   deadline: string | null;
   overdue: boolean;
+  archived_at: string | null;
+  archived_by: number | null;
+  archive_reason: string;
+  archive_history?: Array<{ action: string; reason: string; actor: string; created_at: string }>;
+  can_archive: boolean;
+  can_restore: boolean;
   active: boolean;
   applicable: boolean;
   exclusion_reason: string;
@@ -225,7 +236,7 @@ export type ComplianceReport = Summary & {
   scope: string;
   cycle: { id: number; title: string; instrument: string } | null;
   authorized_areas: Array<{ id: number; cycle_id: number; code: string; title: string }>;
-  selected_filters: { cycle_id: number | null; area_id: number | null; area: string | null; status: string | null; overdue: boolean };
+  selected_filters: { cycle_id: number | null; area_id: number | null; area: string | null; status: string | null; overdue: boolean; archived: boolean };
   rows: Array<{
     id: number;
     code: string;
@@ -235,6 +246,7 @@ export type ComplianceReport = Summary & {
     deadline: string | null;
     status: string;
     overdue: boolean;
+    archived: boolean;
     approved_items: number;
     required_items: number;
   }>;

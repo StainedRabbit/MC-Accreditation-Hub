@@ -8,7 +8,7 @@ academic/evidence access still requires an explicit academic grant.
 from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from .models import Area, Cycle, Document, DocumentVersion, EvidenceMapping, Submission, RequirementAssignment, PackageAttempt
+from .models import Area, Cycle, Document, DocumentVersion, EvidenceMapping, Submission, Requirement, RequirementAssignment, PackageAttempt
 
 
 READ_ROLES = ['coordinator', 'reviewer', 'custodian', 'viewer']
@@ -46,6 +46,7 @@ def is_scoped_coordinator(user, area):
 
 def require_assignee_or_coordinator_override(user, requirement, override_reason, operation):
     """Return True for an explicit Coordinator exception, otherwise require an assignee."""
+    require_unarchived_requirement(requirement)
     if is_active_assignee(user, requirement):
         return False
     if is_scoped_coordinator(user, requirement.area):
@@ -176,5 +177,10 @@ def visible_packages_for(user, queryset=None):
 def lock_active_cycles(*cycle_ids):
     # All mutations acquire cycle locks in a stable order before record locks.
     cycles = list(Cycle.objects.select_for_update().filter(id__in=set(cycle_ids)).order_by('id'))
-    if len(cycles) != len(set(cycle_ids)) or any(c.status != 'active' for c in cycles):
+    if len(cycles) != len(set(cycle_ids)) or any(c.status != 'active' or c.archived_at for c in cycles):
         raise ValidationError('This cycle is not active. Closed and draft cycles are read-only.')
+
+
+def require_unarchived_requirement(requirement):
+    if not Requirement.objects.filter(pk=requirement.pk, archived_at__isnull=True, area__cycle__archived_at__isnull=True).exists():
+        raise ValidationError('Archived records are read-only. Restore the record before changing it.')

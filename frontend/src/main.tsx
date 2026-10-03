@@ -461,6 +461,8 @@ function App() {
   const [packageSort, setPackageSort] = useState<SortState>(newestSort);
   const [submissionSort, setSubmissionSort] = useState<SortState>(newestSort);
   const [reportSort, setReportSort] = useState<SortState>(newestSort);
+  const [showArchivedCycles, setShowArchivedCycles] = useState(false),
+    [showArchivedRequirements, setShowArchivedRequirements] = useState(false);
   const [cycles, setCycles] = useState<Cycle[]>([]),
     [cycle, setCycle] = useState(""),
     [areas, setAreas] = useState<Area[]>([]);
@@ -483,6 +485,7 @@ function App() {
   const [reportArea, setReportArea] = useState(""),
     [reportStatus, setReportStatus] = useState(""),
     [reportOverdue, setReportOverdue] = useState(false),
+    [reportArchived, setReportArchived] = useState(false),
     [report, setReport] = useState<ComplianceReport | null>(null),
     [reportKey, setReportKey] = useState(""),
     [reportLoading, setReportLoading] = useState(false),
@@ -492,7 +495,8 @@ function App() {
   const [requirementForm, setRequirementForm] = useState(false),
     [editing, setEditing] = useState<Requirement | null>(null);
   const [security, setSecurity] = useState(false),
-    [cycleTransition, setCycleTransition] = useState<"close" | "reopen" | null>(null);
+    [cycleTransition, setCycleTransition] = useState<"close" | "reopen" | null>(null),
+    [archiveTransition, setArchiveTransition] = useState<{ kind: "cycle" | "requirement"; action: "archive" | "restore"; id: number; title: string } | null>(null);
   const [areaForm, setAreaForm] = useState<Area | "new" | null>(null);
   const [upload, setUpload] = useState<{
       doc?: Document;
@@ -516,12 +520,13 @@ function App() {
   const detailGeneration = useRef(0);
   const contextRef = useRef({ cycle, userId: user?.id ?? null });
   contextRef.current = { cycle, userId: user?.id ?? null };
-  const selectedReportKey = JSON.stringify([user?.id ?? null, cycle, reportArea, reportStatus, reportOverdue, reportSort]);
+  const selectedReportKey = JSON.stringify([user?.id ?? null, cycle, reportArea, reportStatus, reportOverdue, reportArchived, reportSort]);
   const reportReady = Boolean(report && !reportLoading && !reportError && reportKey === selectedReportKey &&
     report.selected_filters.cycle_id === Number(cycle) &&
     report.selected_filters.area_id === (reportArea ? Number(reportArea) : null) &&
     report.selected_filters.status === (reportStatus || null) &&
-     report.selected_filters.overdue === reportOverdue);
+    report.selected_filters.overdue === reportOverdue &&
+    report.selected_filters.archived === reportArchived);
   function invalidateSearch() {
     searchGeneration.current += 1;
     setSearchResults(null);
@@ -547,6 +552,7 @@ function App() {
     invalidateReport();
     invalidateDetails();
     setCycle("");
+    setArchiveTransition(null);
     setCycles([]);
     setAreas([]);
     setRequirements([]);
@@ -561,6 +567,9 @@ function App() {
     setReportSort(newestSort);
     setOverdueOnly(false);
     setReportOverdue(false);
+    setReportArchived(false);
+    setShowArchivedCycles(false);
+    setShowArchivedRequirements(false);
     setUpload(null);
     setReview(null);
     setPackageEditor(null);
@@ -593,11 +602,12 @@ function App() {
   useEffect(() => {
     let active = true;
     if (user) {
-      api<Cycle[]>("cycles/")
+      api<Cycle[]>("cycles/?archived=1")
         .then((c) => {
           if (!active) return;
           setCycles(c);
-          setCycle(c[0] ? String(c[0].id) : "");
+          setCycle(c.find((entry) => !entry.archived_at) ? String(c.find((entry) => !entry.archived_at)!.id) : c[0] ? String(c[0].id) : "");
+          if (c.length && c.every((entry) => entry.archived_at)) setShowArchivedCycles(true);
         })
         .catch((e) => {
           if (active) setError(e.message);
@@ -616,7 +626,7 @@ function App() {
       const suffix = `?cycle=${cycle}`;
       const [a, r, d, s, p, c] = await Promise.all([
         api<Area[]>("areas/" + suffix),
-        api<Requirement[]>("requirements/" + suffix),
+        api<Requirement[]>("requirements/" + suffix + (showArchivedRequirements || selectedCycle?.archived_at ? "&archived=1" : "")),
         api<Document[]>("documents/" + suffix),
         api<Submission[]>("submissions/" + suffix),
         api<PackageAttempt[]>("packages/" + suffix),
@@ -650,6 +660,7 @@ function App() {
       if (generation === requestGeneration.current) setLoading(false);
     }
   }
+  const selectedCycle = cycles.find((c) => String(c.id) === cycle);
   useEffect(() => {
     if (user && cycle) {
       setDetail(null);
@@ -659,8 +670,8 @@ function App() {
     return () => {
       requestGeneration.current += 1;
     };
-  }, [cycle, user]);
-  const selectedCycle = cycles.find((c) => String(c.id) === cycle);
+  }, [cycle, user, showArchivedRequirements, selectedCycle?.archived_at]);
+  const visibleCycles = cycles.filter((entry) => showArchivedCycles || !entry.archived_at);
   useEffect(() => {
     if (mobile) {
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -736,7 +747,7 @@ function App() {
   async function loadReport() {
     if (!cycle || !user) return;
     const generation = ++reportGeneration.current;
-    const key = JSON.stringify([user.id, cycle, reportArea, reportStatus, reportOverdue, reportSort]);
+    const key = JSON.stringify([user.id, cycle, reportArea, reportStatus, reportOverdue, reportArchived, reportSort]);
     setReportLoading(true);
     setReportError("");
     setReport(null);
@@ -746,6 +757,7 @@ function App() {
       if (reportArea) params.set("area", reportArea);
       if (reportStatus) params.set("status", reportStatus);
       if (reportOverdue) params.set("overdue", "1");
+      if (reportArchived) params.set("archived", "1");
       params.set("sort", reportSort.key);
       params.set("direction", reportSort.direction);
       const result = await api<ComplianceReport>(`reports/compliance/?${params}`);
@@ -765,7 +777,7 @@ function App() {
   }
   useEffect(() => {
     if (page === "reports" && cycle) void loadReport();
-  }, [page, cycle, reportArea, reportStatus, reportOverdue, reportSort, user?.id]);
+  }, [page, cycle, reportArea, reportStatus, reportOverdue, reportArchived, reportSort, user?.id]);
   useEffect(() => {
     if (reportArea && !areas.some((area) => String(area.id) === reportArea)) {
       invalidateReport();
@@ -843,8 +855,25 @@ function App() {
   async function transitionCycle(action: "close" | "reopen", rationale: string) {
     if (!selectedCycle) return;
     const result = await post<{ detail: string }>(`cycles/${selectedCycle.id}/${action}/`, { rationale });
-    setCycles(await api<Cycle[]>("cycles/"));
+    setCycles(await api<Cycle[]>("cycles/?archived=1"));
     setCycleTransition(null);
+    await changed(result.detail);
+  }
+  async function transitionArchive(action: "archive" | "restore", rationale: string) {
+    if (!archiveTransition) return;
+    const target = archiveTransition;
+    const endpoint = target.kind === "cycle" ? `cycles/${target.id}/${action}/` : `requirements/${target.id}/${action}/`;
+    const result = await post<{ detail: string }>(endpoint, { rationale });
+    if (target.kind === "cycle") {
+      setCycles(await api<Cycle[]>("cycles/?archived=1"));
+      if (action === "archive") setShowArchivedCycles(true);
+      setReportArchived(action === "archive");
+      setShowArchivedRequirements(action === "archive");
+      invalidateReport();
+    } else {
+      setShowArchivedRequirements(action === "archive");
+    }
+    setArchiveTransition(null);
     await changed(result.detail);
   }
   if (initializing)
@@ -961,6 +990,7 @@ function App() {
         </select>
       )}
       {page === "requirements" && <label className="check overdue-filter"><input type="checkbox" checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} />Overdue only</label>}
+      {page === "requirements" && !selectedCycle?.archived_at && <label className="check"><input type="checkbox" checked={showArchivedRequirements} onChange={(event) => { setShowArchivedRequirements(event.target.checked); setOverdueOnly(false); setDetail(null); }} />Archived requirements</label>}
     </div>
   );
   return (
@@ -1087,15 +1117,18 @@ function App() {
                 setAreaFilter("");
                 setOverdueOnly(false);
                 setReportOverdue(false);
+                setReportArchived(Boolean(cycles.find((entry) => String(entry.id) === nextCycle)?.archived_at));
+                setShowArchivedRequirements(false);
                 setCycle(nextCycle);
               }}
             >
-              {cycles.map((c) => (
+              {visibleCycles.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.title} {c.status === "closed" ? "(Closed)" : ""}
+                  {c.title} {c.archived_at ? "(Archived)" : c.status === "closed" ? "(Closed)" : ""}
                 </option>
               ))}
             </select>
+            <label className="check"><input type="checkbox" checked={showArchivedCycles} onChange={(event) => { const show = event.target.checked; setShowArchivedCycles(show); if (!show && selectedCycle?.archived_at) setCycle(String(cycles.find((entry) => !entry.archived_at)?.id || "")); }} />Show archived cycles</label>
             <span className="avatar">{initials(user.name)}</span>
           </div>
         </header>
@@ -1107,11 +1140,12 @@ function App() {
               only.
             </div>
           )}
-          {selectedCycle?.status === "closed" && (
+          {selectedCycle?.status === "closed" && !selectedCycle.archived_at && (
             <div className="demo-banner">
-              Archived cycle · Records are read-only.
+              Closed cycle · Records are read-only.
             </div>
           )}
+          {selectedCycle?.archived_at && <div className="demo-banner">Archived cycle · Preserved records are read-only. Archived {dateTime(selectedCycle.archived_at)}. {selectedCycle.archive_reason}</div>}
           <ErrorBox error={error} />
           {notice && (
             <div className="notice" role="status">
@@ -1299,20 +1333,23 @@ function App() {
                   excluded.
                 </small>
               </div>
-              {page === "dashboard" && (selectedCycle?.can_close || selectedCycle?.can_reopen) && (
+              {page === "dashboard" && (selectedCycle?.can_close || selectedCycle?.can_reopen || selectedCycle?.can_archive || selectedCycle?.can_restore) && (
                 <section className="panel cycle-lifecycle">
                   <div>
                     <h3>Cycle lifecycle</h3>
                     <p>{selectedCycle.status === "active" ? "Closing makes all ordinary records read-only." : "Reopening allows authorized staff to resume work."}</p>
                   </div>
-                  <button className={selectedCycle.status === "active" ? "danger" : "secondary"} onClick={() => setCycleTransition(selectedCycle.status === "active" ? "close" : "reopen")}>
+                  {(selectedCycle.can_close || selectedCycle.can_reopen) && <button className={selectedCycle.status === "active" ? "danger" : "secondary"} onClick={() => setCycleTransition(selectedCycle.status === "active" ? "close" : "reopen")}>
                     <LockKeyhole size={16} /> {selectedCycle.status === "active" ? "Close cycle" : "Reopen cycle"}
-                  </button>
+                  </button>}
+                  {selectedCycle.can_archive && <button className="secondary" onClick={() => setArchiveTransition({ kind: "cycle", action: "archive", id: selectedCycle.id, title: selectedCycle.title })}>Archive cycle</button>}
+                  {selectedCycle.can_restore && <button className="secondary" onClick={() => setArchiveTransition({ kind: "cycle", action: "restore", id: selectedCycle.id, title: selectedCycle.title })}>Restore cycle</button>}
                 </section>
               )}
             </>
           )}
           {security && <PasswordChangeModal close={() => setSecurity(false)} changed={changed} />}
+          {archiveTransition && <ArchiveTransitionModal target={archiveTransition} close={() => setArchiveTransition(null)} submit={transitionArchive} />}
           {cycleTransition && selectedCycle && <CycleTransitionModal cycle={selectedCycle} action={cycleTransition} close={() => setCycleTransition(null)} submit={transitionCycle} />}
           {areaForm && selectedCycle && <AreaForm cycle={selectedCycle.id} editing={areaForm === "new" ? null : areaForm} close={() => setAreaForm(null)} saved={async () => { setAreaForm(null); await changed("Accreditation area saved."); }} />}
           {page === "areas" && (
@@ -1431,7 +1468,7 @@ function App() {
                         </td>
                         <td>{r.responsible}</td>
                         <td>
-                          <Badge status={r.status} /> {r.overdue && <span className="badge overdue">Overdue</span>}
+                          <Badge status={r.status} /> {r.overdue && <span className="badge overdue">Overdue</span>} {r.archived_at || selectedCycle?.archived_at ? <span className="badge archived">Archived</span> : null}
                         </td>
                         <td>{date(r.deadline)}</td>
                         <td>
@@ -1478,9 +1515,11 @@ function App() {
                     Edit Requirement
                   </button>
                 )}
+                {detail.can_archive && <button className="secondary" onClick={() => setArchiveTransition({ kind: "requirement", action: "archive", id: detail.id, title: detail.title })}>Archive requirement</button>}
+                {detail.can_restore && <button className="secondary" onClick={() => setArchiveTransition({ kind: "requirement", action: "restore", id: detail.id, title: detail.title })}>Restore requirement</button>}
               </div>
               <div className="panel requirement-summary">
-                <Badge status={detail.status} /> {detail.overdue && <span className="badge overdue">Overdue</span>}
+                <Badge status={detail.status} /> {detail.overdue && <span className="badge overdue">Overdue</span>} {(detail.archived_at || selectedCycle?.archived_at) && <span className="badge archived">Archived</span>}
                 <p>{detail.description}</p>
                 <div className="metadata">
                   <span>
@@ -1496,6 +1535,7 @@ function App() {
                     </strong>
                   </span>
                 </div>
+                {detail.archived_at && <p>Archived {dateTime(detail.archived_at)}. Reason: {detail.archive_reason}</p>}
                 {!detail.applicable && (
                   <p>Exclusion reason: {detail.exclusion_reason}</p>
                 )}
@@ -1563,6 +1603,7 @@ function App() {
                   {detail.can_reopen && <button className="secondary" onClick={() => setCertification({ requirement: detail, outcome: "reopened" })}>Reopen Requirement</button>}
                 </section>
               )}
+              {!!detail.archive_history?.length && <section className="panel"><h2>Archive history</h2>{detail.archive_history.map((event, index) => <p key={index}>{event.action === "requirement_archived" ? "Archived" : "Restored"} by {event.actor} on {dateTime(event.created_at)} · {event.reason}</p>)}</section>}
               <section className="panel certification-history">
                 <div className="section-heading">
                   <div>
@@ -2068,7 +2109,7 @@ function App() {
                   <p>Printable readiness report for {selectedCycle?.title || "your selected cycle"}.</p>
                 </div>
                 <div className="actions no-print">
-                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}${reportOverdue ? "&overdue=1" : ""}&sort=${reportSort.key}&direction=${reportSort.direction}&download=csv`}>
+                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}${reportOverdue ? "&overdue=1" : ""}${reportArchived ? "&archived=1" : ""}&sort=${reportSort.key}&direction=${reportSort.direction}&download=csv`}>
                     <Download size={16} /> Export CSV
                   </a> : <button className="secondary" type="button" disabled><Download size={16} /> Export CSV</button>}
                   <button className="primary" disabled={!reportReady} onClick={() => { if (reportReady) window.print(); }}><Printer size={16} /> Print report</button>
@@ -2088,6 +2129,7 @@ function App() {
                   </select>
                 </label>
                 <label className="check"><input type="checkbox" checked={reportOverdue} onChange={(event) => { invalidateReport(); setReportOverdue(event.target.checked); }} />Overdue only</label>
+                <label className="check"><input type="checkbox" checked={reportArchived} onChange={(event) => { invalidateReport(); setReportArchived(event.target.checked); }} />Archived records</label>
               </section>
               <ErrorBox error={reportError} />
               {reportLoading && <div className="loading-line">Updating report…</div>}
@@ -2097,7 +2139,7 @@ function App() {
                   <p><strong>Instrument:</strong> {report.cycle?.instrument || "Multiple cycles"}</p>
                   <p><strong>Readiness population:</strong> {report.population_label}</p>
                   <p><strong>Authorized scope:</strong> {report.scope} — {report.authorized_areas.map((area) => `${area.code} ${area.title}`).join("; ") || "No authorized areas"}</p>
-                  <p><strong>Selected filters:</strong> Area: {report.selected_filters.area || "All authorized areas"}; status: {report.selected_filters.status ? labels[report.selected_filters.status] || report.selected_filters.status : "All statuses"}; overdue: {report.selected_filters.overdue ? "Overdue only" : "All deadlines"}</p>
+                  <p><strong>Selected filters:</strong> Area: {report.selected_filters.area || "All authorized areas"}; status: {report.selected_filters.status ? labels[report.selected_filters.status] || report.selected_filters.status : "All statuses"}; overdue: {report.selected_filters.overdue ? "Overdue only" : "All deadlines"}; archive: {report.selected_filters.archived ? "Archived records" : "Current records"}</p>
                   <p><strong>Readiness:</strong> {report.numerator} complete / {report.denominator} active applicable; {report.excluded} excluded; {report.overdue_count} overdue. {report.filtered_row_count} displayed rows.</p>
                   <p><strong>Formula:</strong> {report.formula} (version {report.formula_version})</p>
                   <p><strong>Calculated:</strong> {reportDateTime(report.calculated_at)} ({report.timezone})</p>
@@ -2114,11 +2156,11 @@ function App() {
                   <table>
                     <thead><tr>{([ ["Area", "area"], ["Code", "code"], ["Requirement", "requirement"], ["Responsible", "responsible"], ["Evidence", "evidence"], ["Status", "status"], ["Deadline", "deadline"] ] as const).map(([label, field]) =>
                       <SortHeader key={field} label={label} field={field} sort={reportSort} onSort={(key) => setReportSort((old) => nextSort(old, key))} />)}</tr></thead>
-                    <tbody>{report.rows.map((row) => <tr key={row.id}><td>{row.area}</td><td>{row.code}</td><td><strong>{row.title}</strong></td><td>{row.responsible}</td><td>{row.approved_items}/{row.required_items}</td><td><Badge status={row.status} /> {row.overdue && <span className="badge overdue">Overdue</span>}</td><td>{date(row.deadline)}</td></tr>)}</tbody>
+                    <tbody>{report.rows.map((row) => <tr key={row.id}><td>{row.area}</td><td>{row.code}</td><td><strong>{row.title}</strong></td><td>{row.responsible}</td><td>{row.approved_items}/{row.required_items}</td><td><Badge status={row.status} /> {row.overdue && <span className="badge overdue">Overdue</span>} {row.archived && <span className="badge archived">Archived</span>}</td><td>{date(row.deadline)}</td></tr>)}</tbody>
                   </table>
                   {!report.rows.length && <div className="empty">No requirements match this report filter.</div>}
                 </section>
-                <p className="report-formula">Internal preparation measure only. Status and overdue filters change displayed rows, not the readiness denominator.</p>
+                <p className="report-formula">Internal preparation measure only. Status, overdue, and archive filters change displayed rows, not the current readiness denominator.</p>
               </section>}
             </>
           )}
@@ -3155,6 +3197,24 @@ function PasswordRecovery({ close, uid, token }: { close: () => void; uid: strin
     <form onSubmit={submit}><ErrorBox error={error} />{notice && <div className="notice" role="status">{notice}</div>}
       {confirming ? <><label>New password<input name="new_password" type="password" autoComplete="new-password" minLength={12} required /></label><label>Confirm new password<input name="confirm_password" type="password" autoComplete="new-password" minLength={12} required /></label></> : <><p className="muted">Enter your institutional email. If recovery email is not configured, contact an administrator.</p><label>Email address<input name="email" type="email" autoComplete="email" required /></label></>}
       <div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy || Boolean(notice)}>{busy ? "Sending…" : confirming ? "Reset password" : "Send recovery link"}</button></div>
+    </form>
+  </Modal>;
+}
+
+function ArchiveTransitionModal({ target, close, submit }: { target: { kind: "cycle" | "requirement"; action: "archive" | "restore"; id: number; title: string }; close: () => void; submit: (action: "archive" | "restore", rationale: string) => Promise<void> }) {
+  const [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const archiving = target.action === "archive";
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true); setError("");
+    try { await submit(target.action, String(new FormData(e.currentTarget).get("rationale") || "")); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={`${archiving ? "Archive" : "Restore"} ${target.kind}`} close={close}>
+    <form onSubmit={save}>
+      <ErrorBox error={error} />
+      <div className="review-context"><h3>{target.title}</h3><p>{archiving ? "Remove this record from current monitoring. Its evidence, decisions, and audit history remain available under the same access scope." : target.kind === "cycle" ? "Return this cycle to Closed. Reopening is a separate action." : "Return this requirement to current monitoring with its previous status and applicability."}</p></div>
+      <label>Reason for {archiving ? "archiving" : "restoring"}<textarea name="rationale" rows={4} required maxLength={4000} /></label>
+      <div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className={archiving ? "danger" : "primary"} disabled={busy}>{busy ? "Saving…" : `${archiving ? "Archive" : "Restore"} ${target.kind}`}</button></div>
     </form>
   </Modal>;
 }
