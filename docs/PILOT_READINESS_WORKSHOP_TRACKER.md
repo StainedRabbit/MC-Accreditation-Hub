@@ -14,7 +14,7 @@ Use with the [invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md), [
 | Pre-read deadline | Not recorded |
 | Decision recorder | Not assigned |
 | Decision evidence repository | Not assigned |
-| Last updated by / date | Not recorded |
+| Last updated by / date | Codex documentation refresh / 2026-10-03 |
 
 ## Attendance and pre-read
 
@@ -46,7 +46,12 @@ Add rows for each specific missing input, decision owner, or evidence item as in
 
 | Action | Owner | Due checkpoint | Status | Closure evidence |
 |---|---|---|---|---|
-| Identify and confirm named decision approvers | Project Owner | Not scheduled | Open | Names, roles, and authority confirmed |
-| Set date, time, timezone, mode/location, and deadlines | Project Owner | Not scheduled | Open | Invitation logistics complete |
-| Assign decision recorder and evidence repository | Project Owner | Not scheduled | Open | Owner and approved location recorded |
-| Distribute pre-read and update RSVP/pre-read status | Project Owner / decision recorder | Not scheduled | Open | Tracker reflects responses and material receipt |
+| Confirm named decision approvers and authorized alternates for each required role | Project Owner | Before invitation circulation; date not scheduled | Open | Names, roles, and authority confirmed in the attendance table |
+| Set date, start/end time, timezone, mode/location, RSVP deadline, and pre-read deadline | Project Owner | Before invitation circulation; date not scheduled | Open | Invitation logistics complete and consistent with the brief |
+| Assign the decision recorder and approved evidence repository or ticket | Project Owner | Before invitation circulation; date not scheduled | Open | Named recorder and repository reference recorded; no secrets copied into this tracker |
+| Prepare recommendations and evidence gaps for D01, D04, D09–D10, D13, D15–D16, and D20–D22 | Project Owner | Before pre-read deadline; not scheduled | Open | Decision register annotations or secure evidence references ready for review |
+| Prepare approved instrument, workflow, validity, deadline, archive, administration, and report inputs for D01–D08, D13–D16, and D21 | Academic Owner | Before pre-read deadline; not scheduled | Open | Requirements and representative cases ready; unresolved items identified |
+| Prepare access, audit, scanning, sensitivity, retention, legal-hold, disposal, and security/records inputs for D02–D03, D05–D06, D09–D12, and D16–D20 | Security/Records Owner | Before pre-read deadline; not scheduled | Open | Applicable policy references and evidence gaps identified; sensitive details kept in the approved repository |
+| Prepare actual target/network, admin access, recovery, backup, capacity, scanning, and acceptance evidence inputs for D10–D11, D15–D20, and D22 | School IT | Before pre-read deadline; not scheduled | Open | Actual values or named providers and checkpoints recorded; no example values treated as approved |
+| Review the decision register and brief; identify topics lacking authority or evidence | All approvers | Before pre-read deadline; not scheduled | Open | Questions and required referrals listed with an owner and checkpoint |
+| Circulate the completed pre-read through the school's approved channel and update RSVP/pre-read status | Project Owner / decision recorder | After logistics and authority are confirmed; date not scheduled | Open | Tracker reflects invitations, authorized alternates, responses, and material receipt |

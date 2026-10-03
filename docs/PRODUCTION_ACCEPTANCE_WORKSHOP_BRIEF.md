@@ -11,9 +11,17 @@ The Project Owner coordinates scope and delivery. The Academic Owner approves ac
 
 ## Workspace handoff checkpoint
 
-At preparation review, `main` matched `origin/main` at `7c9703f` and the working tree was clean. That commit contains the audit search continuation, dashboard/audit polish, workflow verification, and this workshop brief. The progress record describes the current local slice as dashboard/compliance/audit presentation and interaction polish, including audit search/date filters and cursor continuation. This is a committed local checkpoint; it does not demonstrate School IT target acceptance.
+Before this documentation refresh on 2026-10-03, `main` matched `origin/main` at `d51ce20` and the working tree was clean. That checkpoint includes the audit search continuation and dashboard/audit presentation work, followed by the workshop invitation and readiness tracker updates. The progress record's latest implementation checkpoint is 2026-09-28. This is a committed local checkpoint; it does not demonstrate School IT target acceptance.
 
-The earlier seven-file uncommitted checkpoint note is superseded. The tracked files in that checkpoint were committed, with the workshop brief also included in `7c9703f`; the current working tree no longer contains that pending patch. Existing local verification notes remain repository records, not target-environment acceptance evidence. Unresolved capacity/operations work (D20), target restore and operating controls (D18–D19), and policy/owner decisions below remain open.
+The earlier seven-file uncommitted checkpoint note is superseded. Its tracked files were committed; the current working tree no longer contains that pending patch. Existing local verification notes remain repository records, not target-environment acceptance evidence. Unresolved capacity/operations work (D20), target restore and operating controls (D18–D19), and policy/owner decisions below remain open.
+
+## Current repository review
+
+The 2026-09-17 system review predates substantial later remediation. A fresh static source-and-document pass on 2026-10-03 found that later work appears to implement the scoped role visibility and assignments, cycle-wide lifecycle authority, package workflow, pinned certification evidence and criteria, recovery and shared rate-limit safeguards, report provenance/stale-response protections, audit/search continuation, and stricter backup/release tooling. Historical progress entries describe local synthetic verification for these slices; no application tests or School IT target checks were run for this packet refresh.
+
+The static pass also found bounded follow-up work: upload retries can create duplicate documents or versions after a successful server save whose response is lost (F17); the Reviewer dialog still omits applicable criteria and full file context, while the Coordinator completion dialog now displays criteria and selected evidence (F22); and accessibility gaps remain in small-text contrast, dialog naming, progress semantics, and mobile-navigation state (F24). Overdue monitoring and explicit archive semantics remain unresolved requirements pending D13–D14.
+
+The decision register remains authoritative for all decision statuses and required approvers. D05's review/completion context and evidence requirements, D11–D12's scanning and records controls, and D13–D14's deadline and archive behavior require owner decisions or evidence. Existing provisional choices remain provisional. No School IT target release, live recovery rehearsal, real-file scanning approval, or authorization to use institutional evidence is established by the source review or local progress record.
 
 ## Workshop logistics and ownership
 
