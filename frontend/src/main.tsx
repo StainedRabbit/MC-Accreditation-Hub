@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LayoutDashboard,
@@ -125,10 +125,19 @@ const timeValue = (value: string | null | undefined) => value ? new Date(value).
 function Badge({ status }: { status: string }) {
   return <span className={`badge ${status}`}>{labels[status] || status}</span>;
 }
-function Progress({ value }: { value: number | null }) {
+function Progress({ value, label }: { value: number | null; label: string }) {
+  const percentage = Math.max(0, Math.min(100, Math.round(value ?? 0)));
   return (
-    <div className="progress">
-      <span style={{ width: `${value || 0}%` }} />
+    <div
+      className="progress"
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percentage}
+      aria-valuetext={`${percentage}%`}
+    >
+      <span style={{ width: `${percentage}%` }} />
     </div>
   );
 }
@@ -150,13 +159,46 @@ function Modal({
   close: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const headingId = useId();
+  const focusRestoreFrame = useRef<number | null>(null);
   useEffect(() => {
-    ref.current?.showModal();
+    if (focusRestoreFrame.current !== null) cancelAnimationFrame(focusRestoreFrame.current);
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    headingRef.current?.focus();
+    return () => {
+      if (dialog?.open) dialog.close();
+      focusRestoreFrame.current = requestAnimationFrame(() => {
+        if (opener?.isConnected) opener.focus();
+        else document.querySelector<HTMLElement>("[data-page-heading]")?.focus();
+        focusRestoreFrame.current = null;
+      });
+    };
   }, []);
   return (
-    <dialog ref={ref} onCancel={close}>
+    <dialog
+      ref={ref}
+      aria-labelledby={headingId}
+      onCancel={close}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab" || !ref.current) return;
+        const focusable = Array.from(ref.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )).filter((element) => !element.hidden && getComputedStyle(element).visibility !== "hidden");
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if ((event.shiftKey && (document.activeElement === first || document.activeElement === headingRef.current)) ||
+            (!event.shiftKey && document.activeElement === last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+      }}
+    >
       <div className="modal-heading">
-        <h2>{title}</h2>
+        <h2 id={headingId} ref={headingRef} tabIndex={-1}>{title}</h2>
         <button
           className="icon-button"
           aria-label="Close dialog"
@@ -417,6 +459,9 @@ function App() {
     [sessionMessage, setSessionMessage] = useState("");
   const [page, setPage] = useState("dashboard"),
     [mobile, setMobile] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
   const [requirementSort, setRequirementSort] = useState<SortState>(newestSort);
   const [documentSort, setDocumentSort] = useState<SortState>(newestSort);
   const [packageSort, setPackageSort] = useState<SortState>(newestSort);
@@ -617,6 +662,13 @@ function App() {
     };
   }, [cycle, user]);
   const selectedCycle = cycles.find((c) => String(c.id) === cycle);
+  useEffect(() => {
+    if (mobile) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (mobile) menuCloseButtonRef.current?.focus();
+      }));
+    }
+  }, [mobile]);
   function navigate(next: string) {
     if (next !== page) {
       invalidateSearch();
@@ -630,6 +682,11 @@ function App() {
     setAreaFilter("");
     setStatusFilter("");
     setNotice("");
+    requestAnimationFrame(() => pageHeadingRef.current?.focus());
+  }
+  function closeMobileNavigation() {
+    setMobile(false);
+    requestAnimationFrame(() => menuButtonRef.current?.focus());
   }
   async function runSearch(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -905,7 +962,15 @@ function App() {
   );
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobile ? "open" : ""}`}>
+      <aside
+        className={`sidebar ${mobile ? "open" : ""}`}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && mobile) {
+            event.preventDefault();
+            closeMobileNavigation();
+          }
+        }}
+      >
         <div className="sidebar-brand">
           <span className="logo">MC</span>
           <div>
@@ -914,18 +979,20 @@ function App() {
           </div>
           <button
             className="mobile-only icon-button"
+            ref={menuCloseButtonRef}
             aria-label="Close navigation"
-            onClick={() => setMobile(false)}
+            onClick={closeMobileNavigation}
           >
             <X />
           </button>
         </div>
         <div className="nav-label">MAIN</div>
-        <nav>
+        <nav id="primary-navigation" aria-label="Primary navigation">
           {nav.filter(([key]) => key !== "audit" || user.can_view_security_audit || user.assignments.some((a) => a.role === "coordinator")).map(([key, text, Icon]) => (
             <button
               key={key}
               className={page === key ? "active" : ""}
+              aria-current={page === key ? "page" : undefined}
               onClick={() => navigate(key)}
             >
               <Icon size={19} />
@@ -979,12 +1046,15 @@ function App() {
           <button
             className="mobile-only icon-button"
             aria-label="Open navigation"
+            ref={menuButtonRef}
+            aria-controls="primary-navigation"
+            aria-expanded={mobile}
             onClick={() => setMobile(true)}
           >
             <Menu />
           </button>
           <div>
-            <h2>{title}</h2>
+            <h2 ref={pageHeadingRef} tabIndex={-1} data-page-heading>{title}</h2>
             <p>{subtitles[page]}</p>
           </div>
           <div className="topbar-right">
@@ -1203,7 +1273,7 @@ function App() {
                             {percent(a.percentage)}
                           </strong>
                         </div>
-                        <Progress value={a.percentage} />
+                        <Progress value={a.percentage} label={`${a.title} compliance`} />
                       </div>
                     </button>
                   ))}
@@ -1262,7 +1332,7 @@ function App() {
                     </div>
                     <h3>{a.title}</h3>
                     <small className="area-code">{a.code}</small>
-                    <Progress value={a.percentage} />
+                    <Progress value={a.percentage} label={`${a.title} compliance`} />
                     <div className="area-counts">
                       <div>
                         <b className="green">{a.complete}</b>
@@ -1346,6 +1416,7 @@ function App() {
                                 ? (100 * r.approved_items) / r.required_items
                                 : 0
                             }
+                            label={`${r.code} evidence coverage`}
                           />
                         </td>
                         <td>{r.responsible}</td>

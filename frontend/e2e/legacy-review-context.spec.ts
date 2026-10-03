@@ -61,8 +61,23 @@ test("legacy item review shows current criteria, exact file and prior decision",
 
   await login(reviewer, "reviewer");
   await openRequirement(reviewer);
-  await reviewer.getByRole("button", { name: "Review", exact: true }).click();
+  const reviewButton = reviewer.getByRole("button", { name: "Review", exact: true });
+  await reviewButton.click();
   let review = reviewer.getByRole("dialog");
+  await expect(review).toHaveAttribute("aria-labelledby");
+  await expect(review.locator("h2")).toBeFocused();
+  const closeReview = review.getByRole("button", { name: "Close dialog" });
+  await reviewer.keyboard.press("Tab");
+  await expect(closeReview).toBeFocused();
+  await reviewer.keyboard.press("Shift+Tab");
+  expect(await review.evaluate((dialog) => dialog.contains(document.activeElement))).toBeTruthy();
+  await reviewer.keyboard.press("Tab");
+  await expect(closeReview).toBeFocused();
+  await closeReview.click();
+  await expect(review).toHaveCount(0);
+  await expect(reviewButton).toBeFocused();
+  await reviewButton.click();
+  review = reviewer.getByRole("dialog");
   await expect(review.getByText("Current requirement criteria · revision 1")).toBeVisible();
   await expect(review.getByText(/A dated file with a clear responsible office/)).toBeVisible();
   await expect(review.getByText(/File: legacy-review-v1.pdf · SHA-256/)).toBeVisible();
