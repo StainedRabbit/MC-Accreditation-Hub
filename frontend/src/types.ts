@@ -57,10 +57,14 @@ export type Submission = {
   mapping: number;
   version: number;
   version_number: number;
-  criteria_revision: number;
+  criteria_revision: number | null;
   legacy_submission_mode: boolean;
   document_title: string;
   document: string;
+  original_name: string;
+  checksum: string;
+  valid_until: string | null;
+  uploaded_by: string;
   item_label: string;
   requirement: number;
   requirement_title: string;

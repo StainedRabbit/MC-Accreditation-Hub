@@ -2744,24 +2744,58 @@ function PackageEditor({ requirement, draft, close, saved }: {
 
 
 function PackageReviewForm({ attempt, close, saved }: { attempt: PackageAttempt; close: () => void; saved: () => Promise<void> }) {
-  const [outcome, setOutcome] = useState<"approved" | "revisions_requested">("approved");
-  const [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const [freshAttempt, setFreshAttempt] = useState<PackageAttempt | null>(null);
+  const [requirement, setRequirement] = useState<Requirement | null>(null);
+  const [outcome, setOutcome] = useState<"" | "approved" | "revisions_requested">("");
+  const [error, setError] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      api<PackageAttempt>(`packages/${attempt.id}/`),
+      api<Requirement>(`requirements/${attempt.requirement}/`),
+    ]).then(([current, detail]) => {
+      if (!active) return;
+      setFreshAttempt(current);
+      setRequirement(detail);
+      if (!current.can_review) setError(`This package is ${labels[current.status] || current.status} and can no longer be reviewed. Refresh the review queue.`);
+    }).catch((failure) => {
+      if (active) setError(`Review context is unavailable. Close this dialog and refresh the review queue. ${(failure as Error).message}`);
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [attempt.id, attempt.requirement]);
+  const canRecord = !loading && !error && !!freshAttempt?.can_review && !!requirement && !!outcome;
+  const sourceAttempt = freshAttempt?.source_attempt
+    ? requirement?.packages?.find((entry) => entry.id === freshAttempt.source_attempt)
+    : undefined;
   async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault();
+    if (!canRecord || !freshAttempt) return;
+    setBusy(true); setError("");
     const form = new FormData(event.currentTarget);
-    try { await post(`packages/${attempt.id}/review/`, { outcome, comment: form.get("comment") }); await saved(); }
+    try { await post(`packages/${freshAttempt.id}/review/`, { outcome, comment: form.get("comment") }); await saved(); }
     catch (failure) { setError((failure as Error).message); } finally { setBusy(false); }
   }
-  return <Modal title={`Review package attempt ${attempt.number}`} close={close}><form onSubmit={submit}>
-    <ErrorBox error={error} /><div className="review-context"><h3>{attempt.requirement_title}</h3><p>{attempt.notes || "No package notes"}</p>
-      <p>Submitted criteria revision {attempt.criteria_revision}: {attempt.criteria_snapshot?.description || "No general criteria"}</p>
-      {attempt.criteria_snapshot?.items.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}
-      {attempt.items.map((item) => <p key={item.mapping}>{item.item_label} · {item.document_title} · {item.original_name} · version {item.version_number} · SHA-256 {item.checksum} · {item.note || "No item note"} <a href={`/api/document-versions/${item.version}/download/`}>Download exact version</a></p>)}
-    </div>
-    <label>Decision<select value={outcome} onChange={(event) => setOutcome(event.target.value as "approved" | "revisions_requested")}><option value="approved">Approve package</option><option value="revisions_requested">Request revisions</option></select></label>
-    <label>Review comments {outcome === "revisions_requested" ? "(required)" : "(optional)"}<textarea name="comment" rows={4} required={outcome === "revisions_requested"} /></label>
+  return <Modal title={`Review package attempt ${freshAttempt?.number ?? attempt.number}`} close={close}><form onSubmit={submit}>
+    <ErrorBox error={error} />
+    {loading && <p role="status">Loading current review context…</p>}
+    {freshAttempt && <div className="review-context"><h3>{freshAttempt.requirement_title}</h3>
+      <p>Package owner: {freshAttempt.owner} · Submitted: {freshAttempt.submitted_at ? dateTime(freshAttempt.submitted_at) : "Not recorded"} · Status: {labels[freshAttempt.status] || freshAttempt.status}</p>
+      <p>{freshAttempt.notes || "No package notes"}</p>
+      <h4>Submitted criteria snapshot · revision {freshAttempt.criteria_revision ?? "not recorded"}</h4>
+      <p>{freshAttempt.criteria_snapshot?.description || "No general criteria"}</p>
+      {freshAttempt.criteria_snapshot?.items.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}
+      {requirement && <><h4>Current criteria · revision {requirement.criteria_revision}</h4><p>{requirement.description || "No general criteria"}</p>
+        {requirement.items?.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}</>}
+      <h4>Pinned evidence</h4>
+      {freshAttempt.items.map((item) => <p key={item.mapping}>{item.item_label} · {item.document_title} · {item.original_name} · version {item.version_number} · SHA-256 {item.checksum} · valid until {item.valid_until || "No expiry"} · {item.note || "No item note"} <a href={`/api/document-versions/${item.version}/download/`}>Download exact version</a></p>)}
+      {freshAttempt.source_attempt && <p>Prior attempt {freshAttempt.source_attempt_number}: {sourceAttempt?.decision
+        ? `${labels[sourceAttempt.decision.outcome] || sourceAttempt.decision.outcome} by ${sourceAttempt.decision.reviewer} · ${sourceAttempt.decision.comment || "No comment"}`
+        : sourceAttempt ? `No review decision · status ${labels[sourceAttempt.status] || sourceAttempt.status}` : "Prior attempt decision is not visible to your role."}</p>}
+    </div>}
+    <label>Decision<select required value={outcome} disabled={loading || !!error || !freshAttempt?.can_review} onChange={(event) => setOutcome(event.target.value as "" | "approved" | "revisions_requested")}><option value="">Choose a decision</option><option value="approved">Approve package</option><option value="revisions_requested">Request revisions</option></select></label>
+    <label>Review comments {outcome === "revisions_requested" ? "(required)" : "(optional)"}<textarea name="comment" rows={4} required={outcome === "revisions_requested"} disabled={loading || !!error || !freshAttempt?.can_review} /></label>
     <p className="muted">This decision applies to the whole pinned package attempt. Reject is pending an Academic Owner rule.</p>
-    <div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy}>{busy ? "Recording…" : "Record package decision"}</button></div>
+    <div className="form-actions"><button type="button" className="secondary" onClick={close}>Close</button><button className="primary" disabled={busy || !canRecord}>{busy ? "Recording…" : "Record package decision"}</button></div>
   </form></Modal>;
 }
 
@@ -2775,17 +2809,44 @@ function ReviewForm({
   close: () => void;
   saved: () => Promise<void>;
 }) {
-  const [outcome, setOutcome] = useState("approved"),
+  const [requirement, setRequirement] = useState<Requirement | null>(null),
+    [freshSubmission, setFreshSubmission] = useState<Submission | null>(null),
+    [outcome, setOutcome] = useState<"" | "approved" | "revision_requested" | "rejected">(""),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    api<Requirement>(`requirements/${submission.requirement}/`).then((detail) => {
+      if (!active) return;
+      const mapping = detail.items?.flatMap((item) => item.mappings).find((entry) => entry.id === submission.mapping);
+      const current = mapping?.submissions.find((entry) => entry.id === submission.id);
+      setRequirement(detail);
+      if (!current) {
+        setError("This submission is no longer visible. Close this dialog and refresh the review queue.");
+      } else {
+        setFreshSubmission(current);
+        if (!current.can_review) setError(`This submission is ${labels[current.status] || current.status} and can no longer be reviewed. Refresh the review queue.`);
+      }
+    }).catch((failure) => {
+      if (active) setError(`Review context is unavailable. Close this dialog and refresh the review queue. ${(failure as Error).message}`);
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [submission.id, submission.mapping, submission.requirement]);
+  const mapping = requirement?.items?.flatMap((item) => item.mappings).find((entry) => entry.id === submission.mapping);
+  const previousDecision = mapping?.submissions
+    .filter((entry) => entry.id < submission.id && entry.decision)
+    .sort((a, b) => b.id - a.id)[0]?.decision;
+  const canRecord = !loading && !error && !!freshSubmission?.can_review && !!requirement && !!outcome;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!canRecord || !freshSubmission) return;
     setBusy(true);
     setError("");
     const f = new FormData(e.currentTarget);
     try {
       await post("review-decisions/", {
-        submission: submission.id,
+        submission: freshSubmission.id,
         outcome,
         comment: f.get("comment"),
       });
@@ -2800,15 +2861,28 @@ function ReviewForm({
     <Modal title="Review Evidence" close={close}>
       <form onSubmit={submit}>
         <ErrorBox error={error} />
+        {loading && <p role="status">Loading current review context…</p>}
         <div className="review-context">
-          <h3>{submission.document_title}</h3>
+          <h3>{freshSubmission?.document_title || submission.document_title}</h3>
           <p>
-            Version {submission.version_number} · {submission.item_label}
+            Version {freshSubmission?.version_number ?? submission.version_number} · {freshSubmission?.item_label || submission.item_label}
           </p>
-          <small>{submission.requirement_title}</small>
+          <small>{freshSubmission?.requirement_title || submission.requirement_title}</small>
+          {freshSubmission && <>
+            <p>File: {freshSubmission.original_name} · SHA-256 {freshSubmission.checksum} · valid until {freshSubmission.valid_until || "No expiry"}</p>
+            <p>Uploaded by {freshSubmission.uploaded_by} · submitted by {freshSubmission.submitted_by} · {dateTime(freshSubmission.submitted_at)}</p>
+            <p>Current criteria revision {requirement?.criteria_revision}. Submission criteria revision {freshSubmission.criteria_revision ?? "unknown historical revision"}.</p>
+          </>}
+          {requirement && <section aria-label="Current requirement criteria">
+            <h3>Current requirement criteria · revision {requirement.criteria_revision}</h3>
+            <p>{requirement.description || "No general criteria"}</p>
+            {requirement.items?.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}
+            {freshSubmission?.criteria_revision == null && <p className="muted">This legacy submission has no recorded historical criteria revision. The criteria above are current criteria.</p>}
+          </section>}
+          {previousDecision && <p>Most recent prior decision for this mapping: {labels[previousDecision.outcome] || previousDecision.outcome} by {previousDecision.reviewer} · {previousDecision.comment || "No comment"} · {dateTime(previousDecision.created_at)}</p>}
           <a
             className="link"
-            href={`/api/document-versions/${submission.version}/download/`}
+            href={`/api/document-versions/${freshSubmission?.version ?? submission.version}/download/`}
           >
             <Download size={16} />
             Download this version
@@ -2816,7 +2890,8 @@ function ReviewForm({
         </div>
         <label>
           Decision
-          <select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+          <select required value={outcome} disabled={loading || !!error || !freshSubmission?.can_review} onChange={(e) => setOutcome(e.target.value as "" | "approved" | "revision_requested" | "rejected")}>
+            <option value="">Choose a decision</option>
             <option value="approved">Approve</option>
             <option value="revision_requested">Request revisions</option>
             <option value="rejected">Reject</option>
@@ -2828,6 +2903,7 @@ function ReviewForm({
             name="comment"
             required={outcome !== "approved"}
             rows={4}
+            disabled={loading || !!error || !freshSubmission?.can_review}
             placeholder="Explain your decision or specify the changes needed."
           />
         </label>
@@ -2839,7 +2915,7 @@ function ReviewForm({
           <button type="button" className="secondary" onClick={close}>
             Cancel
           </button>
-          <button className="primary" disabled={busy}>
+          <button className="primary" disabled={busy || !canRecord}>
             {busy ? "Recording…" : "Record Decision"}
           </button>
         </div>

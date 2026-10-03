@@ -208,8 +208,12 @@ test("package attempts preserve draft, withdrawal, revision, review and certific
   await expect(secondQueueRow).toBeVisible({ timeout: 30000 });
   await secondQueueRow.getByRole("button", { name: "Review package" }).click();
   let review = reviewer.getByRole("dialog");
-  await expect(review.getByText(/Submitted criteria revision 1/)).toBeVisible();
-  await expect(review.getByText(/SHA-256/)).toBeVisible();
+  await expect(review.getByText(/Submitted criteria snapshot · revision 1/)).toBeVisible();
+  await expect(review.getByText(/Current criteria · revision 1/)).toBeVisible();
+  await expect(review.getByText(/Package owner:/)).toBeVisible();
+  await expect(review.getByText(/valid until No expiry/)).toBeVisible();
+  await expect(review.getByRole("combobox", { name: "Decision" })).toHaveValue("");
+  await expect(review.getByRole("button", { name: "Record package decision" })).toBeDisabled();
   await review.getByRole("combobox", { name: "Decision" }).selectOption("revisions_requested");
   await review.getByLabel(/Review comments/).fill("Add a signature note.");
   await review.getByRole("button", { name: "Record package decision" }).click();
@@ -231,6 +235,10 @@ test("package attempts preserve draft, withdrawal, revision, review and certific
   await expect(thirdQueueRow).toBeVisible({ timeout: 30000 });
   await thirdQueueRow.getByRole("button", { name: "Review package" }).click();
   review = reviewer.getByRole("dialog");
+  await expect(review.getByText(/Prior attempt 2:/)).toBeVisible();
+  await expect(review.getByRole("combobox", { name: "Decision" })).toHaveValue("");
+  await expect(review.getByRole("button", { name: "Record package decision" })).toBeDisabled();
+  await review.getByRole("combobox", { name: "Decision" }).selectOption("approved");
   await review.getByRole("button", { name: "Record package decision" }).click();
   await coordinator.reload();
   await ready(coordinator);

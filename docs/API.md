@@ -40,7 +40,7 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. Health, C
 | GET `document-versions/{id}/download/` | Permission-checked file attachment; no-store cache policy |
 | GET `document-versions/{id}/preview/` | Permission-checked inline PDF/JPEG/PNG preview; no-store cache policy; viewing is audited as `version_viewed` |
 | GET/POST `evidence-mappings/` | List scoped mappings / `{item,document,override_reason?}`; assignment and stewardship are enforced; a Coordinator exception requires a reason and is audited. Existing pair returns the existing mapping. |
-| GET/POST `submissions/` | Preserved item-level submission history (`?cycle=id`) / `{mapping,version,override_reason?}` only for migrated legacy requirements not yet converted to package mode. New requirements use package attempts. |
+| GET/POST `submissions/` | Preserved item-level submission history (`?cycle=id`) includes only currently visible submissions and adds the exact version's `original_name`, `checksum`, `valid_until`, and `uploaded_by` metadata / `{mapping,version,override_reason?}` only for migrated legacy requirements not yet converted to package mode. New requirements use package attempts. |
 | GET/POST `review-decisions/` | List scoped decisions / `{submission,outcome,comment}` |
 | GET `compliance/?cycle=id` | `{total,complete,for_verification,needs_revision,ready_for_completion_review,in_progress,missing,excluded,percentage,formula,formula_version:3,calculated_at,scope}` |
 | GET `audit/?kind=academic&cycle=id&area=id&actor=id&search=text&action=name&from_date=YYYY-MM-DD&to_date=YYYY-MM-DD&limit=50&before=id` | Coordinator-only academic audit in current explicit scope; newest first, up to 100 per page, with `results` and `next_before` cursor |

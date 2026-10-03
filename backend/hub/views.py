@@ -349,9 +349,12 @@ def certification_candidate(sub):
 
 def submission_data(sub, user):
     decision = getattr(sub, 'decision', None)
+    version = sub.version
     current = sub.mapping.submissions.order_by('-id').first().id == sub.id
     return {'id': sub.id, 'mapping': sub.mapping_id, 'version': sub.version_id, 'version_number': sub.version.number,
         'criteria_revision': sub.criteria_revision,
+        'original_name': version.original_name, 'checksum': version.checksum,
+        'valid_until': version.valid_until, 'uploaded_by': version.uploaded_by.get_full_name() or version.uploaded_by.username,
         'document_title': sub.mapping.document.title, 'document': str(sub.mapping.document_id),
         'item_label': sub.mapping.item.label, 'requirement': sub.mapping.item.requirement_id,
         'requirement_title': sub.mapping.item.requirement.title, 'submitted_at': sub.submitted_at,

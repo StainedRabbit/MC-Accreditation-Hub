@@ -103,6 +103,9 @@ def main():
         run_quiet('Temporary schema migration', [sys.executable, '-B', 'backend/manage.py',
                                                    'migrate', '--noinput'], env)
         run_quiet('Fictional seed', [sys.executable, '-B', 'backend/manage.py', 'seed_demo'], env)
+        if not sys.argv[1:] or 'legacy-review-context.spec.ts' in sys.argv[1:]:
+            run_quiet('Legacy review browser fixture', [sys.executable, '-B', 'backend/manage.py',
+                                                        'seed_legacy_review_e2e'], env)
         backend = subprocess.Popen([sys.executable, '-B', 'backend/manage.py', 'runserver',
                                     f'127.0.0.1:{backend_port}', '--noreload'], cwd=ROOT, env=env,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

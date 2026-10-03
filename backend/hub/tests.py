@@ -374,6 +374,26 @@ class WorkflowTests(WorkflowFixture, TestCase):
         sub = self.submit(doc)
         self.assertEqual(self.decide(sub, user=self.custodian).status_code, 403)
 
+    def test_review_submission_metadata_is_scoped_and_revoked_grants_hide_context(self):
+        doc = self.upload(valid_until=timezone.localdate() + timedelta(days=30), filename='review-context.pdf')
+        submission = self.submit(doc)
+        self.client.force_authenticate(self.reviewer)
+        response = self.client.get(f'/api/submissions/?cycle={self.cycle.id}')
+        self.assertEqual(response.status_code, 200)
+        visible = next(entry for entry in response.data if entry['id'] == submission['id'])
+        version = DocumentVersion.objects.get(pk=submission['version'])
+        self.assertTrue(visible['can_review'])
+        self.assertEqual(visible['original_name'], 'review-context.pdf')
+        self.assertEqual(visible['checksum'], version.checksum)
+        self.assertEqual(visible['valid_until'], version.valid_until)
+        self.assertEqual(visible['uploaded_by'], self.custodian.username)
+
+        grant = RoleAssignment.objects.get(user=self.reviewer, role='reviewer', area=self.area)
+        grant.delete()
+        detail = self.client.get(f'/api/requirements/{self.requirement.id}/')
+        self.assertEqual(detail.status_code, 404)
+        self.assertEqual(self.client.get(f'/api/submissions/?cycle={self.cycle.id}').data, [])
+
     def test_mappings_require_access_to_source_and_destination(self):
         doc = self.upload()
         self.client.force_authenticate(self.outsider)
