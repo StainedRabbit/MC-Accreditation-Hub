@@ -762,7 +762,25 @@ function App() {
     try {
       await post(`packages/${packageId}/${action}/`, action === "withdraw" ? { confirm: true } : overrideReason ? { override_reason: overrideReason } : {});
       await changed(action === "submit" ? "Package submitted for review." : action === "withdraw" ? "Package withdrawn; its history is preserved." : "New draft attempt created.");
-    } catch (error) { setError((error as Error).message); }
+    } catch (error) {
+      if (action === "submit") {
+        try {
+          const current = await api<PackageAttempt>(`packages/${packageId}/`);
+          if (current.owner_id === user?.id && current.submitted_at && current.status !== "draft") {
+            await changed(current.status === "submitted"
+              ? "Package submitted for review. Its saved status was recovered."
+              : `Package attempt is now ${labels[current.status] || current.status}.`);
+            return;
+          }
+        } catch {
+          // Keep the original submit error if the status lookup is unavailable.
+        }
+      }
+      const uncertain = !(error instanceof ApiError) || error.status >= 500;
+      setError(action === "submit" && uncertain
+        ? "We couldn't confirm the package submission. Refresh to check its status before retrying."
+        : (error as Error).message);
+    }
   }
   async function transitionCycle(action: "close" | "reopen", rationale: string) {
     if (!selectedCycle) return;
