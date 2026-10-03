@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
@@ -38,6 +39,16 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 PRIVATE_MEDIA_ROOT = Path(os.getenv('PRIVATE_MEDIA_ROOT', str(BASE_DIR.parent / 'private-media')))
+# Configure only after School IT approves a local scanner. JSON argv; no shell or remote upload.
+EVIDENCE_SCANNER_COMMAND = json.loads(os.getenv('EVIDENCE_SCANNER_COMMAND', '[]'))
+EVIDENCE_SCANNER_ID = os.getenv('EVIDENCE_SCANNER_ID', '')
+EVIDENCE_SCANNER_TIMEOUT = int(os.getenv('EVIDENCE_SCANNER_TIMEOUT', '30'))
+if (bool(EVIDENCE_SCANNER_COMMAND) != bool(EVIDENCE_SCANNER_ID) or
+        not isinstance(EVIDENCE_SCANNER_COMMAND, list) or
+        any(not isinstance(arg, str) for arg in EVIDENCE_SCANNER_COMMAND) or
+        (EVIDENCE_SCANNER_COMMAND and EVIDENCE_SCANNER_COMMAND.count('{file}') != 1) or
+        len(EVIDENCE_SCANNER_ID) > 120 or EVIDENCE_SCANNER_TIMEOUT < 1):
+    raise ImproperlyConfigured('Set an approved scanner ID and JSON argument array with one {file}; timeout must be positive.')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'

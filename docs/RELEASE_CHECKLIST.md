@@ -11,6 +11,9 @@ The F25 local synthetic tests use real Django cookie sessions and CSRF requests 
 - [ ] A fresh Linux checkout passed `python3 -B -m unittest discover -s deploy/tests -v`; executable script modes, LF, and installed operator access match the documented commands. Local Windows/Git Bash results do not complete this target check.
 - [ ] Nginx validates and serves HTTPS; HTTP redirects to HTTPS; `/api/health/` returns `{"status":"ok"}`.
 - [ ] Login, refresh, logout, a scoped list, and a denied cross-scope URL behave as expected.
+- [ ] For real evidence, D11 and D12 have formal Security/Records Owner, Academic Owner, and School IT approvals with references in the decision register and tracker; otherwise operate with synthetic evidence only.
+- [ ] School IT configured its approved local scanner, named the operator, and recorded target tests for clean, infected, timeout/outage, historical unscanned, and checksum-mismatched versions. Quarantined versions cannot be previewed, downloaded, mapped, submitted, reviewed, or certified.
+- [ ] The approved D12 class-based schedule defines permitted evidence, access, retention triggers/periods, holds, authorized disposal, and backup/log handling; the operational settings match it. No archive action or automatic purge is treated as disposal approval.
 - [ ] An authorized protected evidence download succeeds as an attachment; a guessed unauthorized download URL fails; Nginx has no `private-media` alias.
 - [ ] A closed cycle rejects ordinary writes; authorized reopen and its audit event are recorded.
 - [ ] The named backup operator/platform, separate backup role, destination and failure-domain copy, encryption/key recovery, retention, RPO/RTO, alerts/incident owner and rehearsal frequency were approved under D19.

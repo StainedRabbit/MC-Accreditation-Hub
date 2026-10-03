@@ -180,6 +180,18 @@ class DocumentVersion(ImmutableRecord):
         ]
 
 
+class DocumentScan(ImmutableRecord):
+    """Append-only scanner verdict for exact stored bytes; the latest verdict governs release."""
+    version = models.ForeignKey(DocumentVersion, on_delete=models.PROTECT, related_name='scans')
+    result = models.CharField(max_length=12, choices=[('clean', 'Clean'), ('infected', 'Infected'), ('error', 'Error')])
+    checksum = models.CharField(max_length=64)
+    scanner_id = models.CharField(max_length=120)
+    scanned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-id']
+
+
 class EvidenceMapping(models.Model):
     item = models.ForeignKey(EvidenceItem, on_delete=models.PROTECT, related_name='mappings')
     document = models.ForeignKey(Document, on_delete=models.PROTECT, related_name='mappings')
