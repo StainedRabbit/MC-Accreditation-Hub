@@ -14,7 +14,7 @@ Use with the [invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md), [
 | Pre-read deadline | Not recorded |
 | Decision recorder | Not assigned |
 | Decision evidence repository | Not assigned |
-| Last updated by / date | Codex documentation refresh / 2026-10-03 |
+| Last updated by / date | Codex D16 preparation / 2026-10-04 |
 
 ## Attendance and pre-read
 
@@ -43,6 +43,7 @@ Record readiness as `Ready`, `Needs evidence`, `Needs another authority`, or `Pe
 | D13 overdue and timezone rule | Academic Owner; Project Owner | Needs evidence | Confirm closure-date freeze, next-day threshold, treatment of undated/draft/excluded/completed/reopened work, and report display; review local tests | Not recorded | Not assigned | Not scheduled |
 | D14 archive and restoration rule | Project Owner; Academic Owner; Security/Records Owner | Needs evidence | Confirm closed-cycle archive, active-cycle requirement archive, reasoned restore, scoped history, current-count exclusions, and preservation without disposal; review local tests | Not recorded | Not assigned | Not scheduled |
 | D15 constrained launch administration | Project Owner; Academic Owner; School IT | Needs evidence | Approve [operator matrix and runbook](LAUNCH_ADMINISTRATION.md); assign separate named account, grant, cycle, credential and security-audit operators; verify management network, shell/actor correlation, reasoned audit, grant revocation and break-glass controls on target | Not recorded | Not assigned | Not scheduled |
+| D16 reconciled version 1 baseline | Project Owner; Academic Owner; School IT; Security/Records Owner for security/records scope | Needs evidence | Review the [conditional proposal](D16_VERSION_1_BASELINE_PROPOSAL.md); resolve D01–D15 first; supply approved instrument/scope, exact amendments or deferrals, and approver evidence before assigning a baseline version | Not recorded | Not assigned | Not scheduled |
 | D17 assisted credential recovery | School IT; Security/Records Owner | Needs evidence | Approve identity-verification authority, secure delivery, credential-operator assignment and target test before real assisted recovery | Not recorded | Not assigned | Not scheduled |
 | Workshop logistics and decision-record completeness | Project Owner | Pending | Named approvers and decision recorder not assigned | Not recorded | Not assigned | Not scheduled |
 
@@ -60,5 +61,5 @@ Add rows for each specific missing input, decision owner, or evidence item as in
 | Prepare access, audit, scanning, sensitivity, retention, legal-hold, disposal, and security/records inputs for D02–D03, D05–D06, D09–D12, and D16–D20 | Security/Records Owner | Before pre-read deadline; not scheduled | Open | Applicable policy references and evidence gaps identified; sensitive details kept in the approved repository |
 | Prepare actual target/network, admin access, recovery, backup, capacity, scanning, and acceptance evidence inputs for D10–D11, D15–D20, and D22 | School IT | Before pre-read deadline; not scheduled | Open | Actual values or named providers and checkpoints recorded; no example values treated as approved |
 | Record D15 operator assignments and target tests; define D17 identity check and secure delivery | School IT; Project Owner; Security/Records Owner for D17 | Before D15/D17 approval; not scheduled | Open | Approved evidence reference, named owners, target test results and checkpoint; no credentials or unrestricted network details here |
-| Review the decision register and brief; identify topics lacking authority or evidence | All approvers | Before pre-read deadline; not scheduled | Open | Questions and required referrals listed with an owner and checkpoint |
+| Review the decision register, brief, and D16 proposal; identify topics lacking authority or evidence | All approvers | Before pre-read deadline; not scheduled | Open | Conditional baseline questions and required referrals listed with an owner and checkpoint |
 | Circulate the completed pre-read through the school's approved channel and update RSVP/pre-read status | Project Owner / decision recorder | After logistics and authority are confirmed; date not scheduled | Open | Tracker reflects invitations, authorized alternates, responses, and material receipt |
