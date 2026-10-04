@@ -1,11 +1,26 @@
 """Safe, append-only audit writes and request-local correlation."""
 import uuid
 from contextvars import ContextVar
+from contextlib import contextmanager
 
 from .models import AuditEvent
 
 
 _context = ContextVar('hub_audit_request', default=None)
+_suppress_model_events = ContextVar('hub_suppress_model_events', default=False)
+
+
+@contextmanager
+def suppress_model_audit():
+    marker = _suppress_model_events.set(True)
+    try:
+        yield
+    finally:
+        _suppress_model_events.reset(marker)
+
+
+def model_audit_suppressed():
+    return _suppress_model_events.get()
 _secret_keys = ('password', 'token', 'secret', 'session', 'authorization', 'cookie', 'file_content', 'reset_url')
 
 

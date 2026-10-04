@@ -1675,7 +1675,8 @@ class AuditView(APIView):
                 full_name = Trim(Concat(F('actor__first_name'), Value(' '), F('actor__last_name')))
                 qs = qs.annotate(sort_value=Lower(Coalesce(NullIf(full_name, Value('')), F('actor__username'), Value('System'))))
             elif sort == 'scope':
-                area_text = Coalesce(Cast(F('area_id'), CharField()), F('detail_area_id'))
+                area_text = Coalesce(Cast(F('area_id'), CharField()),
+                                     Cast(F('detail_area_id'), CharField()), output_field=CharField())
                 qs = qs.annotate(sort_value=Lower(Case(
                     When(area__isnull=False, then=Concat(Value('Area #'), area_text)),
                     When(action__in=['area_created', 'area_updated', 'area_deleted'],

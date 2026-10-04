@@ -12,6 +12,7 @@ class User(AbstractUser):
 
     class Meta:
         constraints = [models.UniqueConstraint(Lower('email'), name='user_email_ci')]
+        permissions = [('reset_user_password', 'Can reset a user password with a reason')]
 
 
 class AuthRateBucket(models.Model):
@@ -32,6 +33,9 @@ class Cycle(models.Model):
     archived_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="archived_cycles")
     archive_reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        permissions = [('provision_cycle', 'Can provision an initial cycle') ]
 
     def __str__(self):
         return self.title
@@ -60,6 +64,7 @@ class RoleAssignment(models.Model):
     role = models.CharField(max_length=20, choices=ROLES)
 
     class Meta:
+        permissions = [('manage_role_grants', 'Can add or revoke scoped academic grants')]
         constraints = [models.UniqueConstraint(fields=['user', 'cycle', 'area', 'role'], name='unique_assignment', nulls_distinct=False),
                        models.CheckConstraint(condition=~models.Q(role__in=['custodian', 'reviewer']) | models.Q(area__isnull=False), name='area_required_for_staff')]
 

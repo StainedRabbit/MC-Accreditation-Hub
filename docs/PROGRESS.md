@@ -2,7 +2,7 @@
 
 ## Current slice
 
-The current local presentation and interaction slice polishes the Dashboard, Compliance Monitoring, and Audit Trail using the 18 uploaded reference screenshots. Seven headline metrics and two compact workflow counters retain all nine existing values, status names, and the defined compliance formula. Audit events use scannable rows/cards with expandable details, request correlation, and explicitly labelled Asia/Manila timestamps; search and action filters refresh as the user types, and inclusive date filters are available. Upload Evidence filters assigned requirements by code, title, or area. The Evidence Repository displays the latest PDF or image inline with authorized version previews; DOCX and XLSX remain download-only. The F15 cursor fix remains complete; D20 capacity and broader collection performance remain unresolved.
+D15 Option A is implemented locally: constrained reasoned Django account administration, separate named-operator commands for academic grants and initial cycle provisioning, and a separately permitted password-change route for assisted recovery. Custom permissions are migrated; successful actions write one safe security event. The [launch administration runbook](LAUNCH_ADMINISTRATION.md) lists required School IT assignments and target checks. D15 remains Pending Decision and D17 assisted recovery remains provisional; no real operator or institutional procedure is inferred.
 
 ## Completed work
 
@@ -12,6 +12,7 @@ The current local presentation and interaction slice polishes the Dashboard, Com
 - Protected file validation and attachment download. Supported files are PDF, DOCX, XLSX, PNG, and JPEG up to 25 MB.
 - Figma-style login, authenticated shell, dashboard, areas, requirements/detail, repository/version history, review queue, and audit view.
 - Fictional demo seed command and manual local preview instructions. No real institutional evidence is seeded.
+- D15 local administration controls constrain ordinary Django account admins, remove role-grant editing in admin, require separate permissions and reasons for grant/cycle/credential operators, and keep product roles separate from staff access. New ordinary accounts have unusable passwords until approved credential setup. D15 approval and D17 recovery procedure remain open.
 - `RequirementCertification` is append-only. It records a Coordinator's rationale-backed `complete` or `reopened` decision without changing existing evidence, version, review, or audit records.
 - Scoped `GET`/`POST /api/requirements/{id}/certifications/` endpoints and revised compliance statuses/counts are available. Only Coordinators in the requirement's scope can post certification actions.
 - The React requirement detail now clearly shows Ready for Completion Review, immutable certification history, and Coordinator-only Complete/Reopen controls. Both actions require a rationale and use the existing API.
@@ -103,6 +104,8 @@ The current local presentation and interaction slice polishes the Dashboard, Com
 
 - D14 archive lifecycle checkpoint on 2026-10-04: closed cycles and active-cycle requirements now have distinct, reasoned archive/restore actions with scoped historical views and audit records. Current lists, readiness, and overdue monitoring exclude archived records; report JSON/CSV can display archived rows separately. A migration leaves existing records unarchived. Eleven focused PostgreSQL tests, four isolated browser tests, the frontend build, Django checks, and migration consistency checks passed locally. D14 remains Pending Decision for Project Owner, Academic Owner, and Security/Records Owner approval; archive does not authorize disposal.
 
+- D15 launch administration checkpoint on 2026-10-04: eight focused admin PostgreSQL tests and one audit scope-sort regression test passed after correcting an existing mixed CharField/TextField expression in the audit view. The isolated browser admin-path test passed with disposable fictional accounts; the frontend build and Django check passed. The grant and cycle commands record one reasoned event per successful operation, with failed operations leaving none. Target management-network checks, actual operator assignments, shell/actor correlation, break-glass custody, and D17 identity-verification/secure-delivery evidence remain for School IT and the required approvers.
+
 ## Known incomplete or broken work
 
 - The app permits controlled cross-area mapping, while the older plan defers cross-area sharing. That policy remains unresolved and is outside the current certification change.
@@ -114,7 +117,7 @@ The current local presentation and interaction slice polishes the Dashboard, Com
 - D09 Option A is a **Provisional Project Owner Decision — formal approval pending**. Security/Records Owner, School IT and Academic Owner must ratify event fields, security capability assignment, scoped academic access and preservation procedures. D12 still governs sensitivity, retention, holds and disposal; no retention period or automatic purge is assumed.
 
 - D21 Option B is a **Provisional Project Owner Decision — formal approval pending**. The Academic Owner and Project Owner must approve the selected cycle/area readiness population, status-filter row behavior, and provenance wording before reports are used as school readiness evidence.
-- D22 Option B is a **Provisional Project Owner Decision — local synthetic stage only; School IT confirmation pending**. Local checks do not establish a school target environment or production acceptance. D16 baseline, D18 proxy/admin network, D19 backup/restore ownership, D20 capacity/operations, and D11/D12 real-file scanning and records policy remain unresolved. F18 account-provisioning collision prevention and final content/input limits remain subject to owner review.
+- D22 Option B is a **Provisional Project Owner Decision — local synthetic stage only; School IT confirmation pending**. Local checks do not establish a school target environment or production acceptance. D16 baseline, D18 proxy/admin network, D19 backup/restore ownership, D20 capacity/operations, and D11/D12 real-file scanning and records policy remain unresolved. F18 final account-identifier policy and content/input limits remain subject to owner review; the constrained admin form now rejects cross-account username/email collisions locally.
 
 ## Next exact task
 

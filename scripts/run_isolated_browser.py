@@ -103,6 +103,9 @@ def main():
         run_quiet('Temporary schema migration', [sys.executable, '-B', 'backend/manage.py',
                                                    'migrate', '--noinput'], env)
         run_quiet('Fictional seed', [sys.executable, '-B', 'backend/manage.py', 'seed_demo'], env)
+        if 'admin-hardening.spec.ts' in sys.argv[1:]:
+            run_quiet('Admin browser fixture', [sys.executable, '-B', 'backend/manage.py',
+                                                'seed_admin_e2e'], env)
         if not sys.argv[1:] or 'legacy-review-context.spec.ts' in sys.argv[1:]:
             run_quiet('Legacy review browser fixture', [sys.executable, '-B', 'backend/manage.py',
                                                         'seed_legacy_review_e2e'], env)

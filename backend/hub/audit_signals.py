@@ -3,7 +3,7 @@ from django.db.models.signals import pre_save, post_save, post_delete, m2m_chang
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
 from django.dispatch import receiver
 
-from .audit import current_actor, write_audit
+from .audit import current_actor, write_audit, model_audit_suppressed
 from .models import User, RoleAssignment, Cycle, Area
 
 
@@ -15,6 +15,8 @@ def remember_account_state(sender, instance, **kwargs):
 
 @receiver(post_save, sender=User)
 def account_changed(sender, instance, created, **kwargs):
+    if model_audit_suppressed():
+        return
     if created:
         write_audit(current_actor(), None, 'account_created', f'user:{instance.pk}')
         return
@@ -38,6 +40,8 @@ def remember_grant_state(sender, instance, **kwargs):
 
 @receiver(post_save, sender=RoleAssignment)
 def grant_saved(sender, instance, created, **kwargs):
+    if model_audit_suppressed():
+        return
     if created:
         write_audit(current_actor(), None, 'grant_created', f'grant:{instance.pk}',
                     user_id=instance.user_id, role=instance.role,
@@ -53,6 +57,8 @@ def grant_saved(sender, instance, created, **kwargs):
 
 @receiver(post_delete, sender=RoleAssignment)
 def grant_removed(sender, instance, **kwargs):
+    if model_audit_suppressed():
+        return
     write_audit(current_actor(), None, 'grant_revoked', f'grant:{instance.pk}',
                 user_id=instance.user_id, role=instance.role,
                 cycle_id=instance.cycle_id, area_id=instance.area_id)
@@ -78,12 +84,16 @@ def admin_login_failed(sender, request, **kwargs):
 
 @receiver(post_save, sender=Cycle)
 def cycle_created(sender, instance, created, **kwargs):
+    if model_audit_suppressed():
+        return
     if created:
         write_audit(current_actor(), None, 'cycle_created', f'cycle:{instance.pk}')
 
 
 @receiver(post_save, sender=Area)
 def area_created(sender, instance, created, **kwargs):
+    if model_audit_suppressed():
+        return
     if created:
         # Keep the event addressable by cycle and area while allowing an empty area to be deleted.
         write_audit(current_actor(), None, 'area_created', f'area:{instance.pk}',
@@ -93,6 +103,8 @@ def area_created(sender, instance, created, **kwargs):
 
 @receiver(m2m_changed, sender=User.user_permissions.through)
 def user_permission_changed(sender, instance, action, pk_set, reverse, **kwargs):
+    if model_audit_suppressed():
+        return
     if action in ('post_add', 'post_remove', 'post_clear'):
         write_audit(current_actor(), None, 'account_permission_' + action[5:],
                     f'user:{instance.pk}' if not reverse else f'permission:{instance.pk}',
@@ -101,6 +113,8 @@ def user_permission_changed(sender, instance, action, pk_set, reverse, **kwargs)
 
 @receiver(m2m_changed, sender=User.groups.through)
 def user_group_changed(sender, instance, action, pk_set, reverse, **kwargs):
+    if model_audit_suppressed():
+        return
     if action in ('post_add', 'post_remove', 'post_clear'):
         write_audit(current_actor(), None, 'account_group_' + action[5:],
                     f'user:{instance.pk}' if not reverse else f'group:{instance.pk}',

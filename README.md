@@ -22,7 +22,7 @@ py backend/manage.py runserver 127.0.0.1:8000
 
 In a third PowerShell window, run `npm.cmd run dev --prefix frontend -- --host 127.0.0.1` from the project root. These commands are for this computer's isolated local cluster; use the Fresh installation steps below on other machines. `scripts/start-local.ps1` now fails explicitly because the previous launcher contained only comments and started nothing.
 
-Use `.local/demo-credentials.txt` for the generated local passwords. Demo users are `demo.coordinator`, `demo.custodian`, `demo.reviewer`, `demo.viewer`, and `demo.administrator`. The administrator manages accounts at `/api/admin/`, and deliberately has no implicit accreditation access. Other demo users have sample scope assignments. All seeded records are fictional.
+Use `.local/demo-credentials.txt` for the generated local passwords. Demo users are `demo.coordinator`, `demo.custodian`, `demo.reviewer`, `demo.viewer`, and `demo.administrator`. The fictional demo administrator is a superuser for local demonstration only and has no implicit accreditation access. Other demo users have sample scope assignments. All seeded records are fictional.
 
 The three terminal windows show service output directly. Stop each service with **Ctrl+C** after testing.
 
@@ -76,7 +76,7 @@ Use Existing Document maps a chosen version to an additional evidence item. Ever
 
 | Role | Access |
 |---|---|
-| Administrator | Django account administration; explicit extra assignments required for accreditation access |
+| Administrator | Product role only; no implicit Django staff, account administration, or accreditation access |
 | Coordinator | All evidence/history in explicit scope; only a cycle-wide Coordinator grant may close/reopen a cycle |
 | Reviewer | Submitted evidence and its review context in assigned areas; drafts remain hidden |
 | Custodian | Current Contributor implementation: own document/upload/submission plus approved shared evidence; area write behavior awaits D04 |
@@ -92,7 +92,7 @@ Files are limited to 25 MB and PDF, DOCX, XLSX, PNG, JPEG. Upload endpoints chec
 
 ## Cycles and administration
 
-Accounts and scope assignments are managed in `/api/admin/`. Deactivate users instead of deleting them. Workflow models are read-only in administration so staff cannot bypass version and review invariants.
+Routine account administrators use constrained `/api/admin/` user forms with a required reason. They may create ordinary accounts with unusable passwords, edit ordinary details, and activate/deactivate other ordinary users. Academic grants use the named-operator command below. Staff/superuser permissions, Django groups, credential recovery, and break-glass administration remain separate School IT assignments. See the [launch administration runbook](docs/LAUNCH_ADMINISTRATION.md). Workflow models are read-only in Django admin so staff cannot bypass version and review invariants.
 
 Create a real cycle from an approved JSON structure:
 
@@ -101,7 +101,9 @@ Create a real cycle from an approved JSON structure:
 ```
 
 ```powershell
-python backend/manage.py create_cycle path/to/cycle.json
+python backend/manage.py create_cycle path/to/cycle.json --actor-id PROVISION_OPERATOR_ID --reason "Approved cycle setup request"
+python backend/manage.py manage_grant --actor-id GRANT_OPERATOR_ID --target-id USER_ID --role reviewer --cycle-id CYCLE_ID --area-id AREA_ID --action add --reason "Approved scope request"
+python backend/manage.py manage_grant --actor-id GRANT_OPERATOR_ID --target-id USER_ID --role reviewer --cycle-id CYCLE_ID --area-id AREA_ID --action revoke --reason "Approved scope withdrawal"
 python backend/manage.py close_cycle CYCLE_ID --actor-id STAFF_USER_ID --reason "Operator-approved cycle close rationale"
 ```
 
@@ -109,7 +111,7 @@ Only run `close_cycle` for the intended cycle ID with a named active staff opera
 
 ## Account recovery
 
-Signed-in users can change their own password from Account security in the sidebar. **Administrator-assisted recovery is the pilot path.** The user contacts an authorized school administrator through the established school channel. The administrator verifies identity through the school's approved process, resets the account through account administration, communicates the new credential through an approved private channel, and instructs the user to change it after sign-in. School IT must approve and test that procedure; this repository does not claim that institutional procedure has been completed.
+Signed-in users can change their own password from Account security in the sidebar. **Administrator-assisted recovery is the pilot path.** The user contacts an authorized school administrator through the established school channel. A separately permitted credential operator verifies identity through the school's approved process, uses the reasoned Django admin password route for an ordinary user, communicates the new credential through an approved private channel, and instructs the user to change it after sign-in. School IT must approve and test that procedure; this repository does not claim that institutional procedure has been completed.
 
 Self-service recovery email remains disabled by default. A disabled or incomplete configuration tells users to contact an administrator. School IT must confirm an authenticated encrypted institutional SMTP service and public HTTPS URL before considering enablement. The required settings are:
 
