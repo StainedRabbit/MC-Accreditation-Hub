@@ -1402,6 +1402,25 @@ class StorageReconciliationTests(WorkflowFixture, TestCase):
 
 
 class AuditHistoryTests(WorkflowFixture, TestCase):
+    def test_search_matches_partial_combined_actor_name(self):
+        actor = User.objects.create_user(username='maria.santos', first_name='Maria',
+                                         last_name='Santos', password='Test-password-1234')
+        write_audit(actor, self.area, 'synthetic_review', 'fictional record')
+
+        response = self.client.get('/api/audit/', {'search': 'Maria S'})
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([row['actor'] for row in response.data['results']], ['Maria Santos'])
+
+    def test_action_filter_matches_partial_phrases_with_spaces_or_underscores(self):
+        event = write_audit(self.coordinator, self.area, 'package_approved', 'fictional package')
+
+        for query in ('package appr', 'package_appr'):
+            with self.subTest(query=query):
+                response = self.client.get('/api/audit/', {'action': query})
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual([row['id'] for row in response.data['results']], [event.id])
+
     def test_audit_date_range_is_inclusive_and_validated(self):
         early = write_audit(self.coordinator, self.area, 'synthetic_review', 'fictional early')
         late = write_audit(self.coordinator, self.area, 'synthetic_review', 'fictional late')

@@ -29,7 +29,7 @@ test("audit search changes clear the old cursor and ignore a delayed older page"
       await route.fulfill({ json: { results: [event(85, "stale older record")], next_cursor: null } });
     } else if (search === "fresh" && cursor === "older-70") {
       await route.fulfill({ json: { results: [event(60, "fresh oldest record")], next_cursor: null } });
-    } else if (search === "fresh" && action === "synthetic_new") {
+    } else if (search === "fresh" && action?.replaceAll(" ", "_") === "synthetic_new") {
       await route.fulfill({ json: { results: [event(55, "new action record", "synthetic_new")], next_cursor: null } });
     } else if (search === "fresh") {
       await route.fulfill({ json: { results: [event(80, "fresh recent record"), event(70, "fresh older record")], next_cursor: "older-70" } });
@@ -52,9 +52,13 @@ test("audit search changes clear the old cursor and ignore a delayed older page"
   expect(requested.some((entry) => entry.search === "fresh" && entry.cursor === "older-70")).toBe(true);
   expect(requested.some((entry) => entry.search === "fresh" && entry.cursor === "older-90")).toBe(false);
 
-  await page.getByLabel("Action", { exact: true }).fill("synthetic_new");
+  const actionFilter = page.getByLabel("Action", { exact: true });
+  await actionFilter.fill("");
+  await actionFilter.pressSequentially("synthetic new");
   await expect(page.getByRole("button", { name: "Load older events" })).toHaveCount(0);
   await expect(page.getByText("new action record")).toBeVisible();
+  expect(requested.some((entry) => entry.action === "synthetic n")).toBe(true);
+  expect(requested.some((entry) => entry.action === "synthetic new")).toBe(true);
   await expect(page.getByText("fresh recent record")).toHaveCount(0);
   await page.getByLabel("From date").fill("2026-09-01");
   await page.getByLabel("To date").fill("2026-09-30");

@@ -1635,14 +1635,17 @@ class AuditView(APIView):
             raise ValidationError({'before': 'Use the sort cursor for ordered audit results.'})
         term = query_text(request, 'search')
         if term:
+            qs = qs.annotate(actor_display_name=Trim(Concat(
+                F('actor__first_name'), Value(' '), F('actor__last_name'))))
             qs = qs.filter(Q(record__icontains=term) | Q(action__icontains=term) |
-                           Q(actor__first_name__icontains=term) | Q(actor__last_name__icontains=term) |
+                           Q(actor_display_name__icontains=term) |
                            Q(actor__username__icontains=term))
         action = request.query_params.get('action', '')
         if action:
             if len(action) > 80:
                 raise ValidationError({'action': 'Use 80 characters or fewer.'})
-            qs = qs.filter(action=action)
+            action_term = '_'.join(action.replace('_', ' ').split())
+            qs = qs.filter(action__icontains=action_term)
         raw_limit = request.query_params.get('limit', '50')
         if not raw_limit.isdigit() or not 1 <= int(raw_limit) <= 100:
             raise ValidationError({'limit': 'Use a page size from 1 to 100.'})
