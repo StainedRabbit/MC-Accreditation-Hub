@@ -5,9 +5,9 @@ Status: Internal preparation draft. No workshop date, named approvers, approval 
 
 ## Purpose and authority
 
-Use this brief to prepare one joint decision workshop for the Academic Owner, Project Owner, School IT, and Security/Records Owner. The [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) remains the source of truth for decision wording, options, recommendations, and required approvers. This brief does not record an approval, authorize real institutional evidence, or establish production acceptance.
+Use this brief to prepare two decision sessions for the Academic Owner, Project Owner, School IT, and Security/Records Owner. The [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) remains the source of truth for decision wording, options, recommendations, and required approvers. This brief does not record an approval, authorize real institutional evidence, or establish production acceptance.
 
-The Project Owner coordinates scope and delivery. The Academic Owner approves academic workflow and instrument requirements. School IT approves operating environments and release evidence. The Security/Records Owner approves evidence visibility, sensitivity, retention, and security controls. Where the register names multiple approvers, each approves their part. The register does not name individuals; assign names at the workshop and do not infer sign-off from a provisional choice or implementation already in the repository.
+The Project Owner coordinates scope and delivery. The Academic Owner approves academic workflow and instrument requirements. School IT approves operating environments and release evidence. The Security/Records Owner approves evidence visibility, sensitivity, retention, and security controls. Where the register names multiple approvers, each approves their part. The register does not name individuals; confirm names and decision authority before sending invitations and do not infer sign-off from a provisional choice or implementation already in the repository.
 
 ## Workspace handoff checkpoint
 
@@ -21,7 +21,7 @@ Open implementation and policy reconciliation is explicit in the D16 proposal. D
 
 ## Workshop logistics and ownership
 
-Complete the role-to-person assignments and meeting details before circulating an invitation. The Project Owner owns scheduling, confirming decision authority, and maintaining the outcome record. No names, date, meeting mode, or target values are inferred here.
+Complete the role-to-person assignments and meeting details before circulating an invitation. The Project Owner owns scheduling, confirming decision authority, and maintaining the outcome record. No names, dates, meeting mode, or target values are inferred here. Session 2 should be 3–5 business days after Session 1 if required participants are available; this is a planning target, not a booked date.
 
 | Role / function | Named attendee | Workshop responsibility | Pre-read complete |
 |---|---|---|---|
@@ -31,14 +31,26 @@ Complete the role-to-person assignments and meeting details before circulating a
 | Security/Records Owner | Not assigned | Approve visibility, file security, sensitivity, records, and audit requirements | Not recorded |
 | School IT | Not assigned | Approve environment, operations, recovery, and target acceptance controls | Not recorded |
 
-| Workshop date/time and timezone | Not scheduled |
-| Meeting mode / location | Not recorded |
+| Session 1 date / start–end / timezone (2 hours 15 minutes) | Not scheduled; Asia/Manila |
+| Session 2 date / start–end / timezone (1 hour 45 minutes) | Not scheduled; Asia/Manila |
+| Meeting mode / location for each session | Not recorded |
+| Invitation circulation / response / pre-read dates | Not scheduled |
 | Decision evidence repository or ticket | Not assigned |
 | Follow-up checkpoint | Not scheduled |
 
-Review the [D16 version 1 baseline proposal](D16_VERSION_1_BASELINE_PROPOSAL.md) as a conditional pre-read. Use [the pilot readiness outcome template](PILOT_READINESS_OUTCOME_TEMPLATE.md) to record actual workshop outcomes and the resulting versioned baseline/backlog. Keep this brief and the decision register as preparation/source material; do not record approval by filling a template before the required approvers have approved it.
+### Relative preparation checkpoints
 
-Use the [workshop invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md) to circulate the pre-read and request the required inputs. Fill its recipient, date, time, mode, and response deadline fields before sending.
+| Checkpoint | Project Owner / recorder action | Completion evidence |
+|---|---|---|
+| 10 business days before Session 1 | Confirm named approvers or authorized alternates, recorder, both session logistics, and approved decision-evidence location. | [Readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md) has names, authority, location, and dates. |
+| 7 business days before Session 1 | Fill and circulate the [two-session invitation](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md) and linked pre-read. | Invitation date/channel and each recipient's RSVP status are recorded. |
+| 2 business days before Session 1 | Check attendance for both sessions, authority, pre-read completion, and evidence gaps. Give each gap an owner and checkpoint. | Tracker is current; unresolved topics remain pending in the session record. |
+
+The Project Owner sets actual response and pre-read dates before circulation. If the preparation checkpoints have already passed when a date is proposed, move Session 1 rather than silently shortening owner review.
+
+Review the [D16 version 1 baseline proposal](D16_VERSION_1_BASELINE_PROPOSAL.md) as a conditional pre-read. Copy [the pilot readiness outcome template](PILOT_READINESS_OUTCOME_TEMPLATE.md) for the two-session record; retain the untouched template. Record actual outcomes and the resulting versioned baseline/backlog there. Keep this brief and the decision register as preparation/source material; do not record approval by filling a template before the required approvers have approved it.
+
+Use the [workshop invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md) to circulate the pre-read and request the required inputs. Fill its recipient, both dates/times, mode, response deadline, and pre-read deadline fields before sending.
 
 Track attendance, authorized alternates, pre-read completion, and missing evidence in the [workshop readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md). Store references to sensitive School IT material in the approved evidence repository; do not place secrets or unrestricted network details in the shared tracker.
 
@@ -52,14 +64,22 @@ Track attendance, authorized alternates, pre-read completion, and missing eviden
 
 ## Proposed agenda
 
-1. **Opening and authority (10 min):** confirm roles, scope, decision-recording method, and that recommendations are not approvals.
-2. **Academic/access decisions (45–60 min):** decide or ratify D01–D08 and D09–D15 in register order. Give each decision its required approver(s); record dissent, conditions, or deferral without converting silence into consent.
-3. **Acceptance baseline (20–30 min):** use outcomes from the prior decisions to resolve and ratify D16. Record any requirement changes and their owner.
-4. **School IT and operations (45–60 min):** resolve D17–D20; confirm actual values, operating owners, and evidence needed for target checks. Treat D17–D18 provisional selections as unapproved until their listed approvers confirm them.
-5. **Reports and acceptance evidence (20 min):** ratify D21 and resolve D22's environment, reviewers, and evidence record. D22 target acceptance depends on the approved D16 baseline and D18–D20 target/operating criteria.
-6. **Read-back and actions (10 min):** read back each decision status, conditions, approvers, evidence gaps, accountable owner, and next checkpoint. Keep pending any decision without its required approval evidence.
+**Session 1 — workflow and baseline (2 hours 15 minutes)**
 
-The timeboxes are planning estimates, not a scheduled meeting length. Split a topic for follow-up if owners lack evidence; do not force a decision to meet the agenda.
+1. **Opening and authority (10 min):** confirm roles, scope, decision-recording method, and that recommendations are not approvals.
+2. **Academic, access, and records decisions (65 min):** decide or ratify D01–D15 in register order. Give each decision its required approver(s); record dissent, conditions, or deferral without converting silence into consent.
+3. **Version 1 baseline (30 min):** consider D16 only against approved D01–D15 outcomes. Record requirement changes and owners; assign a baseline number only if D16 receives its required approvals.
+4. **Reports (20 min):** decide D21's population, status-filter, and provenance rule with its required approvers.
+5. **Read-back (10 min):** confirm each decision status, conditions, evidence gaps, action owner, and checkpoint.
+
+**Session 2 — operations and acceptance (1 hour 45 minutes)**
+
+1. **Opening (10 min):** confirm Session 1 outcomes and any changes in authority or evidence.
+2. **School IT and operations (65 min):** resolve D17–D20; record actual values or a named provider and checkpoint for missing values. Treat D17–D18 provisional selections as unapproved until their listed approvers confirm them.
+3. **Acceptance record (20 min):** resolve D22's target environment, reviewers, and evidence location. D22 target acceptance depends on the approved D16 baseline and D18–D20 target/operating criteria.
+4. **Read-back (10 min):** confirm remaining decisions, owners, evidence gaps, and follow-up checkpoints.
+
+The timeboxes are planning estimates. Split a topic for follow-up if owners lack evidence; do not force a decision to meet the agenda.
 
 ## Decision matrix
 
@@ -92,8 +112,8 @@ The status and provisional selection below reflect the register and progress not
 
 ### Required gates and sequencing
 
-- Resolve D01–D08 and D09–D15, then ratify D16. If an upstream choice remains open, mark dependent baseline items conditional or deferred.
-- Prepare D17–D22 in parallel where independent. D18 values, D19 recovery ownership/evidence, and D20 capacity/operations feed D22; D16 defines the behavior against which target results are judged.
+- Resolve D01–D15 in Session 1, then consider D16 and D21. If an upstream choice remains open, keep D16 pending and mark dependent baseline items conditional rather than assigning a version number.
+- Prepare D17–D20 and D22 for Session 2 in parallel. D18 values, D19 recovery ownership/evidence, and D20 capacity/operations feed D22; D16 defines the behavior against which target results are judged.
 - D11 and D12 must be resolved before real institutional evidence is accepted. D18's restricted test choice is not production approval; D22's local synthetic stage is not School IT target acceptance.
 - F10/F12 are policy-independent technical fixes, not a substitute for D19 policy or an actual target restore. Preserve the register's separate verification boundary.
 - Record missing evidence as an action with an owner and due checkpoint, not as an approved option. No decision is approved until the listed role(s) and approval evidence are recorded.
@@ -120,6 +140,6 @@ Deferred questions / action owner / due checkpoint: Not recorded
 
 ## Follow-up and document validation
 
-After the workshop, update the decision register and outcome template only from actual recorded approvals and evidence. Track implementation and verification in separate fields/checkpoints; do not treat a selected option as proof of a fix. Issue a numbered baseline only after D16 approval evidence exists. Revise progress claims only after the approved outcomes and their verification are known. Target operation, real evidence, and school acceptance remain gated by the approved environment, operating controls, and completed evidence.
+After each session, update the decision register, tracker, and copied outcome record only from actual recorded approvals and evidence. Each D01–D22 item must end with either required approval evidence or a pending status, named owner, missing evidence, and next checkpoint. Derive the immediate implementation backlog from approved changes and explicit deferrals. Track implementation and verification in separate fields/checkpoints; do not treat a selected option as proof of a fix. Issue a numbered baseline only after D16 approval evidence exists. Revise progress claims only after the approved outcomes and their verification are known. Target operation, real evidence, and school acceptance remain gated by the approved environment, operating controls, and completed evidence.
 
 Before circulation, fill the logistics and attendee fields, confirm pre-read owners, verify the decision matrix against the register, and confirm the relative links resolve. No application test run is required for this document.

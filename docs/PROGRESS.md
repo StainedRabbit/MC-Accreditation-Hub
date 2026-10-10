@@ -2,6 +2,8 @@
 
 ## Current slice
 
+The pilot readiness packet is prepared for two decision sessions: D01–D16 and D21 first, then D17–D20 and D22. The brief, invitation draft, tracker, and outcome template now use relative 10/7/2-business-day preparation checkpoints and separate agendas. All people, dates, channels, and evidence locations remain undecided; no invitation was sent, workshop held, approval recorded, or institutional target value inferred.
+
 D15 Option A is implemented locally: constrained reasoned Django account administration, separate named-operator commands for academic grants and initial cycle provisioning, and a separately permitted password-change route for assisted recovery. Custom permissions are migrated; successful actions write one safe security event. The [launch administration runbook](LAUNCH_ADMINISTRATION.md) lists required School IT assignments and target checks. D15 remains Pending Decision and D17 assisted recovery remains provisional; no real operator or institutional procedure is inferred.
 
 ## Completed work
@@ -121,7 +123,7 @@ D15 Option A is implemented locally: constrained reasoned Django account adminis
 
 ## Next exact task
 
-The Project Owner must assign named approvers, schedule the joint workshop, fill and circulate the [invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md), and share the [workshop brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md), [outcome/baseline template](PILOT_READINESS_OUTCOME_TEMPLATE.md), and [readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md). Track attendance, authorized alternates, pre-read completion, and evidence gaps. At the workshop, resolve D01–D08 and D09–D15 with their required approvers, then ratify D16; review D17–D22 and record owners, actual values, conditions, and evidence gaps. In particular, School IT must supply and verify D18 network/admin values, D19 backup/recovery ownership and targets, and D20 pilot scale and operating controls. The Security/Records Owner and Academic Owner must resolve D11/D12 before real evidence is accepted. D22 target reviewers and evidence record need School IT confirmation. Keep unapproved items pending; local synthetic tests are not target acceptance.
+The Project Owner must confirm named approvers or authorized alternates, a recorder, both session dates/channels, and an approved decision-evidence location 10 business days before Session 1. Then fill and circulate the [two-session invitation draft](PILOT_READINESS_WORKSHOP_INVITATION_DRAFT.md) and pre-read 7 business days before Session 1; the recorder checks readiness 2 business days before it. The [brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md), [tracker](PILOT_READINESS_WORKSHOP_TRACKER.md), and [outcome/baseline template](PILOT_READINESS_OUTCOME_TEMPLATE.md) describe Session 1 for D01–D16 and D21, and Session 2 for D17–D20 and D22, targeted 3–5 business days later. Record approvals or pending blockers with a named owner and checkpoint. D11/D12 still gate real evidence; D18–D20 and D22 still gate target acceptance. No session is scheduled until the undecided logistics are supplied.
 
 See the [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) for pending owner and school IT decisions.
 

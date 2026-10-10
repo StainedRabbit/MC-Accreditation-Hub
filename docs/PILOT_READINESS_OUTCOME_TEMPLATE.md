@@ -2,7 +2,7 @@
 
 **Status:** Working template. Not an approval, acceptance baseline, or authorization to accept institutional evidence.
 
-Use this record during and after the joint workshop described in [Production Acceptance Workshop Brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md). The [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) is the source of truth for decision wording, options, and required approvers. Copy this file for the workshop record; keep the untouched template available for later cycles.
+Use a copy of this record during and after both sessions described in [Production Acceptance Workshop Brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md); keep the untouched template available for later cycles. The [Production Acceptance Decision Register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md) is the source of truth for decision wording, options, recommendations, and required approvers. A blank copied record is still a preparation draft, not an approval.
 
 ## Record identity
 
@@ -10,12 +10,15 @@ Use this record during and after the joint workshop described in [Production Acc
 |---|---|
 | Baseline version | Not assigned |
 | Status | Draft — not approved |
-| Workshop date / timezone | Not recorded |
+| Session 1 date / time / timezone | Not recorded; Asia/Manila |
+| Session 2 date / time / timezone | Not recorded; Asia/Manila |
 | Project Owner | Not assigned |
 | Decision recorder | Not assigned |
 | Source release commit reviewed | Not recorded |
 | Decision register revision / commit | Not recorded |
 | Approval evidence location | Not assigned |
+
+**Session split:** Session 1 records D01–D16 and D21. Session 2 records D17–D20 and D22. The Project Owner and recorder reconcile the complete D01–D22 list after Session 2. Attendance and decision authority for each session belong in the [readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md).
 
 ## Approval and scope
 
@@ -32,9 +35,9 @@ Use this record during and after the joint workshop described in [Production Acc
 
 ## Decision outcomes
 
-Copy one complete record per decision from the register. “Provisional” selections remain unapproved until the listed approvers record approval evidence. A deferred or unresolved decision stays open with an owner and checkpoint.
+Copy one complete record per decision from the register. “Provisional” selections remain unapproved until the listed approvers record approval evidence. For every deferred or unresolved decision, enter the missing evidence, a named follow-up owner, and a dated checkpoint. Never convert attendance, a verbal recommendation, or implementation into approval.
 
-| ID | Status | Selected option / amendment / deferral | Required approvers | Names, date, and evidence reference | Conditions / accepted requirement changes | Follow-up owner and checkpoint |
+| ID | Status | Selected option / amendment / deferral | Required approvers | Names, date, and evidence reference | Conditions / accepted requirement changes or missing evidence | Follow-up owner and checkpoint |
 |---|---|---|---|---|---|---|
 | D01 | Not recorded | Not recorded | As listed in register | Not recorded | Not recorded | Not assigned |
 | D02 | Not recorded | Not recorded | As listed in register | Not recorded | Not recorded | Not assigned |
@@ -61,7 +64,7 @@ Copy one complete record per decision from the register. “Provisional” selec
 
 ## Version 1 requirement baseline
 
-Only populate this section after D01–D15 outcomes are approved and D16 is ratified. Include the accepted instrument/scope and make every changed or deferred requirement traceable to its decision ID. Do not infer approval from implemented behavior.
+Only populate this section after D01–D15 outcomes are approved and D16 is ratified with its required approvers' evidence. Include the accepted instrument/scope and make every changed or deferred requirement traceable to its decision ID. Keep D16 pending and the baseline version unassigned while any upstream approval remains open. Do not infer approval from implemented behavior.
 
 | Baseline item | Requirement / behavior | Source decision(s) | Disposition: required / deferred | Rationale and conditions | Approver evidence | Acceptance evidence |
 |---|---|---|---|---|---|---|
@@ -74,6 +77,8 @@ Only populate this section after D01–D15 outcomes are approved and D16 is rati
 ## Implementation backlog
 
 Create one row per approved change needed to meet the version 1 baseline. A code change is not complete until its verification evidence and release commit are recorded. Record explicit deferrals with an owner, reason, and reconsideration checkpoint.
+
+Reconcile this backlog after both sessions: include approved baseline changes, approved operating actions from D17–D20/D22, and explicit deferrals. Do not schedule code work or claim target verification from a workshop outcome alone.
 
 | Item | Source decision / baseline item | Change or operational action | Required / deferred | Dependencies / gate | Owner | Verification method and evidence location | Status / checkpoint | Release commit |
 |---|---|---|---|---|---|---|---|---|
@@ -101,6 +106,8 @@ Keep each gate pending until the required decision, control, and evidence are re
 | Action / unresolved question | Related decision(s) | Owner | Due checkpoint | Evidence / closure condition | Status |
 |---|---|---|---|---|---|
 | Not recorded | Not recorded | Not assigned | Not scheduled | Not recorded | Open |
+
+At the Session 2 read-back, check that every D01–D22 row above has either the required approval evidence or an open action with missing evidence, a named owner, and a next checkpoint. Update the decision register and readiness tracker from the same record after each session.
 
 ## Verification and release record
 

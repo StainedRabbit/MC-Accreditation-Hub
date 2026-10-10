@@ -1,36 +1,43 @@
-# Pilot Readiness Decision Workshop — Invitation Draft
+# Pilot Readiness Decision Workshops — Invitation Draft
 
 **Status:** Draft for Project Owner completion. No invitation has been sent.
 
-Fill in all bracketed fields, confirm decision authority and availability, and send through the school's approved channel. Attach or link the [workshop brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md), [decision register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md), [outcome/baseline template](PILOT_READINESS_OUTCOME_TEMPLATE.md), and [readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md). Do not include real institutional evidence files.
+Fill in all bracketed fields, confirm decision authority and availability for both sessions, and send through the school's approved channel. Attach or link the [workshop brief](PRODUCTION_ACCEPTANCE_WORKSHOP_BRIEF.md), [decision register](PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md), [D16 baseline proposal](D16_VERSION_1_BASELINE_PROPOSAL.md), [outcome/baseline template](PILOT_READINESS_OUTCOME_TEMPLATE.md), and [readiness tracker](PILOT_READINESS_WORKSHOP_TRACKER.md). Do not include real institutional evidence files.
 
 ## Scheduling fields
 
 - **To:** [Named Academic Owner], [Named Project Owner], [Named School IT representative(s)], [Named Security/Records Owner]
 - **Cc / facilitator:** [Names]
-- **Subject:** Graduate School Accreditation Hub — pilot readiness decision workshop
-- **Date and timezone:** [Date, start time, timezone, end time]
-- **Meeting mode / location:** [Approved meeting link or room]
-- **Response deadline:** [Date]
-- **Pre-read deadline:** [Date]
+- **Subject:** Graduate School Accreditation Hub — two pilot readiness decision sessions
+- **Session 1 — workflow and baseline (2 hours 15 minutes):** [Date, start time, end time, Asia/Manila]
+- **Session 2 — operations and acceptance (1 hour 45 minutes):** [Date, start time, end time, Asia/Manila; target 3–5 business days after Session 1]
+- **Meeting mode / location for each session:** [Approved meeting link or room]
+- **Response deadline:** [Date; before the pre-read check]
+- **Pre-read deadline:** [Date; no later than 2 business days before Session 1]
 - **Decision evidence location:** [Approved repository or ticket]
 
 ## Message
 
 Hello,
 
-Please join a joint decision workshop for the Graduate School Accreditation Hub. The goal is to agree the version 1 requirements baseline and identify the implementation and target-verification work needed for a bounded pilot. This meeting does not authorize real institutional evidence or establish production acceptance.
+Please join two decision sessions for the Graduate School Accreditation Hub. The goal is to agree the version 1 requirements baseline and identify the implementation and target-verification work needed for a bounded pilot. These sessions do not authorize real institutional evidence or establish production acceptance.
 
 We will record each decision with its required approvers, conditions, evidence reference, implementation owner, and acceptance evidence. If an owner or required evidence is missing, the decision will remain pending and receive a follow-up owner and checkpoint.
 
-### Agenda
+### Session 1 — workflow and baseline (2 hours 15 minutes)
 
-1. Confirm attendees, decision authority, scope, and decision-recording method.
-2. Resolve D01–D08 and D09–D15 in register order, recording conditions and deferrals.
-3. Ratify D16 using the approved upstream outcomes; mark any unapproved dependency pending.
-4. Resolve D17–D20 and record School IT's actual network, recovery, capacity, and operating values.
-5. Ratify D21 and resolve D22's acceptance environment, reviewers, and evidence record.
-6. Read back approvals, open actions, owners, evidence gaps, and follow-up checkpoints.
+1. Confirm attendees, decision authority, approved instrument and scope, and the decision-recording method (10 minutes).
+2. Resolve D01–D15 in register order, recording conditions and deferrals (65 minutes).
+3. Consider D16 only against approved upstream outcomes; keep unresolved dependencies pending (30 minutes).
+4. Decide D21 report semantics (20 minutes).
+5. Read back decisions, owners, evidence gaps, and follow-up checkpoints (10 minutes).
+
+### Session 2 — operations and acceptance (1 hour 45 minutes)
+
+1. Confirm Session 1 outcomes and remaining authority/evidence gaps (10 minutes).
+2. Resolve D17–D20, including actual School IT target values or named providers and checkpoints (65 minutes).
+3. Resolve D22's target environment, reviewers, and evidence record (20 minutes).
+4. Read back decisions, owners, and follow-up checkpoints (10 minutes).
 
 ### Preparation requested
 
@@ -42,7 +49,7 @@ We will record each decision with its required approvers, conditions, evidence r
 
 Please use synthetic examples only. Do not attach or bring real institutional evidence files to the workshop.
 
-Please reply by **[response deadline]** with your attendance, any alternate decision-authorized attendee, and any pre-read gap that would prevent a decision. If a topic cannot be approved with the available authority or evidence, we will record it as pending rather than infer consent.
+Please reply by **[response deadline]** with your availability for both sessions, any alternate decision-authorized attendee, and any pre-read gap that would prevent a decision. If a topic cannot be approved with the available authority or evidence, we will record it as pending rather than infer consent.
 
 Thank you,
 
@@ -51,8 +58,8 @@ Thank you,
 ## Send checklist
 
 - [ ] All named approvers and any required policy owners are identified.
-- [ ] Date, timezone, duration, mode/location, and response/pre-read deadlines are confirmed.
+- [ ] Both dates, start/end times, Asia/Manila timezone, mode/locations, and response/pre-read deadlines are confirmed.
 - [ ] Decision recorder and evidence repository are assigned.
-- [ ] Brief, register, and blank outcome/baseline template are shared.
-- [ ] Readiness tracker is updated with RSVP, alternate, pre-read, and evidence status.
+- [ ] Brief, register, D16 proposal, and blank outcome/baseline template are shared.
+- [ ] Readiness tracker is updated with RSVP for both sessions, alternates, pre-read, and evidence status.
 - [ ] Invitees are told not to bring or send real institutional evidence.

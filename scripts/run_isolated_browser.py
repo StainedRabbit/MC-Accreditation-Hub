@@ -1,5 +1,7 @@
 """Run Playwright against a disposable fictional database and loopback services."""
 import os
+import hashlib
+import json
 import re
 import secrets
 import shutil
@@ -98,6 +100,11 @@ def main():
                     'E2E_OUTPUT_DIR': str(scratch / 'playwright-results'),
                     'E2E_SCRATCH': str(scratch), 'E2E_ISOLATED_DB_NAME': DB_NAME,
                     'E2E_SAMPLE_PDF': str(sample), 'E2E_PYTHON': sys.executable})
+        env.update({'E2E_SCANNER_GUARD': '1',
+                    'E2E_SAMPLE_SHA256': hashlib.sha256(sample.read_bytes()).hexdigest(),
+                    'EVIDENCE_SCANNER_ID': 'synthetic-isolated-browser-only',
+                    'EVIDENCE_SCANNER_COMMAND': json.dumps([
+                        sys.executable, str(ROOT / 'scripts/isolated_browser_scanner.py'), '{file}'])})
         env['E2E_SYNTHETIC_PASSWORD'] = env['MC_DEMO_PASSWORD']
         env['E2E_NEW_PASSWORD'] = secrets.token_urlsafe(20)
         run_quiet('Temporary schema migration', [sys.executable, '-B', 'backend/manage.py',

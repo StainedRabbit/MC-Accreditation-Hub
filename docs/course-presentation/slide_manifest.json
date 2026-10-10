@@ -1,0 +1,373 @@
+[
+  {
+    "number": 1,
+    "title": "MC Accreditation Hub",
+    "status": "COURSE PROJECT",
+    "source": "Original 11-slide MC_Accreditation_Hub.pptx; README.md",
+    "image": null
+  },
+  {
+    "number": 2,
+    "title": "The accreditation records problem",
+    "status": "PROJECT RATIONALE",
+    "source": "Source presentation, slides 2–3",
+    "image": null
+  },
+  {
+    "number": 3,
+    "title": "Project objectives",
+    "status": "PROJECT SCOPE",
+    "source": "Source presentation, slide 3; docs/MC_Accreditation_Hub.md",
+    "image": null
+  },
+  {
+    "number": 4,
+    "title": "Scope and current state",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "README.md; docs/PROGRESS.md; docs/D16_VERSION_1_BASELINE_PROPOSAL.md",
+    "image": null
+  },
+  {
+    "number": 5,
+    "title": "Users and responsibilities",
+    "status": "LOCAL / PENDING POLICY",
+    "source": "README.md, Rules and access; docs/LAUNCH_ADMINISTRATION.md",
+    "image": null
+  },
+  {
+    "number": 6,
+    "title": "End-to-end evidence workflow",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "backend/hub/models.py; backend/hub/views.py; docs/API.md",
+    "image": null
+  },
+  {
+    "number": 7,
+    "title": "Technology architecture",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "README.md; backend/config/settings.py; frontend/package.json",
+    "image": null
+  },
+  {
+    "number": 8,
+    "title": "Request and evidence data flow",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "backend/hub/access.py; backend/hub/scanning.py; backend/hub/views.py",
+    "image": null
+  },
+  {
+    "number": 9,
+    "title": "Core data relationships",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "backend/hub/models.py; docs/D16_VERSION_1_BASELINE_PROPOSAL.md",
+    "image": null
+  },
+  {
+    "number": 10,
+    "title": "Cycles and requirements",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "backend/hub/models.py; backend/hub/compliance.py; backend/hub/management/commands/seed_demo.py",
+    "image": null
+  },
+  {
+    "number": 11,
+    "title": "Assignment and stewardship",
+    "status": "LOCAL / PROVISIONAL",
+    "source": "backend/hub/models.py; backend/hub/access.py; decision D04",
+    "image": null
+  },
+  {
+    "number": 12,
+    "title": "Protected evidence versions",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "backend/hub/models.py; backend/hub/scanning.py; docs/API.md",
+    "image": null
+  },
+  {
+    "number": 13,
+    "title": "Quarantine and scan boundary",
+    "status": "DEMO / PENDING APPROVAL",
+    "source": "backend/hub/scanning.py; docs/DEPLOYMENT.md; decision D11",
+    "image": null
+  },
+  {
+    "number": 14,
+    "title": "Package attempts",
+    "status": "LOCAL / PROVISIONAL",
+    "source": "backend/hub/models.py; backend/hub/views.py; decision D07",
+    "image": null
+  },
+  {
+    "number": 15,
+    "title": "Independent review",
+    "status": "LOCAL / PROVISIONAL",
+    "source": "frontend/src/main.tsx; backend/hub/views.py; decision D07",
+    "image": null
+  },
+  {
+    "number": 16,
+    "title": "Coordinator certification",
+    "status": "LOCAL / PROVISIONAL",
+    "source": "backend/hub/compliance.py; backend/hub/models.py; decision D05",
+    "image": null
+  },
+  {
+    "number": 17,
+    "title": "Readiness calculation",
+    "status": "LOCAL / PROVISIONAL",
+    "source": "backend/hub/compliance.py; docs/API.md; decision D21",
+    "image": null
+  },
+  {
+    "number": 18,
+    "title": "Live demonstration route",
+    "status": "FICTIONAL DEMO",
+    "source": "docs/course-presentation/screenshots; frontend/course-demo-capture.mjs",
+    "image": null
+  },
+  {
+    "number": 19,
+    "title": "Dashboard before certification",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/02-dashboard-before.png",
+    "image": "02-dashboard-before.png"
+  },
+  {
+    "number": 20,
+    "title": "Requirement and assignment",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/03-requirement-before.png; screenshots/04-assignment.png",
+    "image": "03-requirement-before.png"
+  },
+  {
+    "number": 21,
+    "title": "Evidence mapping and scan state",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/05-evidence-mapped.png; screenshots/06-repository-and-scan.png",
+    "image": "05-evidence-mapped.png"
+  },
+  {
+    "number": 22,
+    "title": "Version history and simulated scan",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/06b-version-history-and-scan.png; scripts/course_demo_scanner.py",
+    "image": "06b-version-history-and-scan.png"
+  },
+  {
+    "number": 23,
+    "title": "Package submission",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/07-package-draft.png; screenshots/08-package-submitted.png",
+    "image": "08-package-submitted.png"
+  },
+  {
+    "number": 24,
+    "title": "Reviewer context",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/10-review-context.png",
+    "image": "10-review-context.png"
+  },
+  {
+    "number": 25,
+    "title": "Completion decision",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/12-certification-dialog.png; screenshots/13-requirement-complete.png",
+    "image": "13-requirement-complete.png"
+  },
+  {
+    "number": 26,
+    "title": "Dashboard after certification",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/14-dashboard-after.png",
+    "image": "14-dashboard-after.png"
+  },
+  {
+    "number": 27,
+    "title": "Reports and provenance",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/15-compliance-report.png; docs/API.md",
+    "image": "15-compliance-report.png"
+  },
+  {
+    "number": 28,
+    "title": "Search, audit, and Viewer boundary",
+    "status": "FICTIONAL DEMO",
+    "source": "screenshots/16-scoped-search.png; screenshots/17-audit-trail.png; screenshots/19-scoped-denial.png",
+    "image": "16-scoped-search.png"
+  },
+  {
+    "number": 29,
+    "title": "Security boundaries",
+    "status": "LOCAL / TARGET PENDING",
+    "source": "README.md; docs/DEPLOYMENT.md; docs/PROGRESS.md",
+    "image": null
+  },
+  {
+    "number": 30,
+    "title": "Accessibility work",
+    "status": "LOCAL TESTED",
+    "source": "docs/PROGRESS.md, F24 checkpoint; frontend/e2e/accessibility-core.spec.ts",
+    "image": null
+  },
+  {
+    "number": 31,
+    "title": "Current verification evidence",
+    "status": "LOCAL TESTED",
+    "source": "docs/course-presentation/EVIDENCE.md",
+    "image": null
+  },
+  {
+    "number": 32,
+    "title": "Evaluation protocol",
+    "status": "METHOD READY",
+    "source": "docs/THESIS_EVALUATION.md",
+    "image": null
+  },
+  {
+    "number": 33,
+    "title": "Results and limitations",
+    "status": "PENDING EVIDENCE",
+    "source": "docs/THESIS_EVALUATION.md; docs/PROGRESS.md",
+    "image": null
+  },
+  {
+    "number": 34,
+    "title": "Institution-owned hosting intent",
+    "status": "PROPOSED",
+    "source": "Source presentation, slide 4; docs/DEPLOYMENT.md; decision D18",
+    "image": null
+  },
+  {
+    "number": 35,
+    "title": "Backup and recovery",
+    "status": "TARGET PENDING",
+    "source": "docs/RESTORE.md; docs/RELEASE_CHECKLIST.md; decision D19",
+    "image": null
+  },
+  {
+    "number": 36,
+    "title": "Sustainable development alignment",
+    "status": "PROJECT RATIONALE",
+    "source": "Source presentation, slide 9",
+    "image": null
+  },
+  {
+    "number": 37,
+    "title": "Next work after the class demo",
+    "status": "NEXT STEPS",
+    "source": "docs/PROGRESS.md; docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 38,
+    "title": "MC Accreditation Hub",
+    "status": "COURSE PROJECT",
+    "source": "Source presentation, slide 11; README.md",
+    "image": null
+  },
+  {
+    "number": 39,
+    "title": "Role and access matrix",
+    "status": "PROVISIONAL POLICY",
+    "source": "backend/hub/access.py; docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 40,
+    "title": "Workflow state reference",
+    "status": "LOCAL / PROVISIONAL",
+    "source": "backend/hub/compliance.py; backend/hub/models.py; decision D07",
+    "image": null
+  },
+  {
+    "number": 41,
+    "title": "Data and API reference",
+    "status": "LOCAL IMPLEMENTATION",
+    "source": "docs/API.md; backend/hub/models.py; backend/config/urls.py",
+    "image": null
+  },
+  {
+    "number": 42,
+    "title": "File and scan policy",
+    "status": "LOCAL / PENDING POLICY",
+    "source": "README.md; backend/hub/files.py; backend/hub/scanning.py; decisions D10–D12",
+    "image": null
+  },
+  {
+    "number": 43,
+    "title": "Report calculation reference",
+    "status": "LOCAL / SAMPLE CORRECTED",
+    "source": "backend/hub/compliance.py; docs/API.md; source presentation, slide 7",
+    "image": null
+  },
+  {
+    "number": 44,
+    "title": "Test and screenshot inventory",
+    "status": "LOCAL EVIDENCE",
+    "source": "docs/course-presentation/EVIDENCE.md; frontend/course-demo-capture.mjs",
+    "image": null
+  },
+  {
+    "number": 45,
+    "title": "Participant evaluation worksheet",
+    "status": "RESULTS PENDING",
+    "source": "docs/THESIS_EVALUATION.md",
+    "image": null
+  },
+  {
+    "number": 46,
+    "title": "Deployment and recovery gates",
+    "status": "TARGET PENDING",
+    "source": "docs/RELEASE_CHECKLIST.md; docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 47,
+    "title": "Corrections to the source deck",
+    "status": "SOURCE RECONCILIATION",
+    "source": "docs/MC_Accreditation_Hub.pptx; docs/PROGRESS.md",
+    "image": null
+  },
+  {
+    "number": 48,
+    "title": "Decisions D01–D05",
+    "status": "APPROVAL PENDING",
+    "source": "docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 49,
+    "title": "Decisions D06–D10",
+    "status": "APPROVAL PENDING",
+    "source": "docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 50,
+    "title": "Decisions D11–D15",
+    "status": "APPROVAL PENDING",
+    "source": "docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 51,
+    "title": "Decisions D16–D19",
+    "status": "APPROVAL PENDING",
+    "source": "docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 52,
+    "title": "Decisions D20–D22",
+    "status": "APPROVAL PENDING",
+    "source": "docs/PRODUCTION_ACCEPTANCE_DECISION_REGISTER.md",
+    "image": null
+  },
+  {
+    "number": 53,
+    "title": "Source and reading map",
+    "status": "SOURCE INDEX",
+    "source": "All named local repository sources",
+    "image": null
+  }
+]
