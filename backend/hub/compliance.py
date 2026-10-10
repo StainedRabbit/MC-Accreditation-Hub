@@ -2,7 +2,6 @@ from django.utils import timezone
 from zoneinfo import ZoneInfo
 
 MANILA = ZoneInfo('Asia/Manila')
-from .scanning import scan_status
 
 
 def submission_criteria_current(submission):
@@ -13,8 +12,6 @@ def submission_criteria_current(submission):
 def submission_state(submission):
     if not submission:
         return 'missing'
-    if scan_status(submission.version) != 'clean':
-        return 'quarantined'
     if not submission_criteria_current(submission):
         return 'outdated'
     decision = getattr(submission, 'decision', None)
@@ -29,7 +26,7 @@ def submission_state(submission):
 
 def item_state(item):
     states = [submission_state(next(iter(mapping.submissions.all()), None)) for mapping in item.mappings.all()]
-    for state in ['approved', 'revision_requested', 'rejected', 'expired', 'outdated', 'quarantined', 'pending']:
+    for state in ['approved', 'revision_requested', 'rejected', 'expired', 'outdated', 'pending']:
         if state in states:
             return state
     return 'missing'
@@ -40,9 +37,7 @@ def certification_has_support(certification):
             certification.criteria_snapshot is not None and
             (certification.evidence.exists() or certification.packages.exists())):
         return False
-    return (all(scan_status(entry.submission.version) == 'clean' for entry in certification.evidence.all()) and
-            all(scan_status(item.version) == 'clean' for entry in certification.packages.all()
-                for item in entry.package.items.all()))
+    return True
 
 
 def package_is_ready(package, requirement):
@@ -53,8 +48,7 @@ def package_is_ready(package, requirement):
     if not required.issubset({entry.mapping.item_id for entry in items}):
         return False
     as_of = timezone.localtime(requirement.area.cycle.closed_at).date() if requirement.area.cycle.status == 'closed' and requirement.area.cycle.closed_at else timezone.localdate()
-    return all(scan_status(entry.version) == 'clean' and
-               (not entry.version.valid_until or entry.version.valid_until >= as_of) for entry in items)
+    return all(not entry.version.valid_until or entry.version.valid_until >= as_of for entry in items)
 
 
 def requirement_overdue(requirement, status):

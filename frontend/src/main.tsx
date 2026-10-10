@@ -1835,7 +1835,7 @@ function App() {
                               >
                                 View
                               </button>
-                              {v?.scan_status === "clean" && (
+                              {v && (
                                 <a className="link" href={v.download_url}>
                                   Download
                                 </a>
@@ -1880,7 +1880,7 @@ function App() {
                 )}
               </div>
               {docDetail.can_delegate_stewardship && <div className="actions"><button className="secondary" onClick={() => setStewardshipDocument(docDetail)}>Delegate stewardship</button></div>}
-              {docDetail.versions[0]?.scan_status === "clean" && ["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
+              {docDetail.versions[0] && ["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
                 <section className="panel" aria-label="Document preview">
                   <h2>Document preview · v{docDetail.versions[0].number}</h2>
                   {docDetail.versions[0].content_type === "application/pdf" ? (
@@ -1890,7 +1890,7 @@ function App() {
                   )}
                 </section>
               )}
-              {docDetail.versions[0]?.scan_status === "clean" && !["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
+              {docDetail.versions[0] && !["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
                 <p className="muted">This file type does not support in-browser preview. Download the file to view it.</p>
               )}
               <section className="panel">
@@ -1904,7 +1904,6 @@ function App() {
                     <span className="file-icon">v{v.number}</span>
                     <div>
                       <strong>{v.original_name}</strong>
-                      <small>Malware scan: {v.scan_status === "clean" ? "passed" : `${v.scan_status} — quarantined`}</small>
                       <small>
                         {v.uploaded_by} · {date(v.uploaded_at)} ·{" "}
                         {(v.size / 1024).toFixed(1)} KB
@@ -1919,13 +1918,13 @@ function App() {
                       </details>
                     </div>
                     <div className="actions">
-                      {v.scan_status === "clean" && ["application/pdf", "image/jpeg", "image/png"].includes(v.content_type) && (
+                      {["application/pdf", "image/jpeg", "image/png"].includes(v.content_type) && (
                         <a className="link" href={`/api/document-versions/${v.id}/preview/`} target="_blank" rel="noreferrer">View</a>
                       )}
-                      {v.scan_status === "clean" && <a className="link" href={v.download_url}>
+                      <a className="link" href={v.download_url}>
                         <Download size={17} />
                         Download
-                      </a>}
+                      </a>
                     </div>
                   </div>
                 ))}
@@ -2587,11 +2586,6 @@ function UploadForm({
         setUploaded(doc);
       }
       setUploadUncertain(false);
-      if (doc.versions[0]?.scan_status !== "clean") {
-        await saved("Evidence saved in quarantine. School IT must complete an approved scan before it can be mapped or used.");
-        pendingUpload.current = null;
-        return;
-      }
       if (context.item) {
         await post<{ id: number }>("evidence-mappings/", {
           item: context.item.id,
@@ -2635,6 +2629,9 @@ function UploadForm({
         }
       }}>
         <ErrorBox error={error} />
+        <p className="muted" role="note">
+          Uploaded files are not malware-scanned. Format validation and checksum checks do not detect malware.
+        </p>
         {context.item && (
           <p className="muted">
             Map evidence for: <strong>{context.item.label}</strong>
@@ -2757,7 +2754,7 @@ function MappingForm({
   close: () => void;
   saved: () => Promise<void>;
 }) {
-  const eligible = documents.filter((d) => d.can_upload && d.versions.some((v) => v.scan_status === "clean")),
+  const eligible = documents.filter((d) => d.can_upload && d.versions.length > 0),
     [docId, setDocId] = useState(eligible[0]?.id || ""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);

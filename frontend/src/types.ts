@@ -190,7 +190,6 @@ export type Version = {
   uploaded_at: string;
   valid_until: string | null;
   download_url: string;
-  scan_status: "pending" | "clean" | "infected" | "error";
 };
 export type Document = {
   id: string;

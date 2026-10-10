@@ -912,7 +912,7 @@ class UploadIdempotencyTests(WorkflowFixture, TestCase):
         self.assertEqual(DocumentVersion.objects.count(), 1)
         self.assertEqual(len(self.stored_files()), 1)
         self.assertEqual(self.uploaded_audits(), 1)
-        self.assertEqual(AuditEvent.objects.filter(action='version_scan_clean').count(), 1)
+        self.assertEqual(AuditEvent.objects.filter(action__startswith='version_scan_').count(), 0)
 
     def test_different_payload_with_same_key_conflicts_without_side_effects(self):
         key = '27da893a-7cb8-4a3b-93d5-5de474fbd19d'
@@ -979,92 +979,50 @@ class UploadIdempotencyTests(WorkflowFixture, TestCase):
         self.assertEqual(response.status_code, 400)
 
 
-class MalwareQuarantineTests(WorkflowFixture, TestCase):
-    def test_unconfigured_scanner_quarantines_upload_and_blocks_file_and_mapping(self):
-        with override_settings(EVIDENCE_SCANNER_COMMAND=[], EVIDENCE_SCANNER_ID=''):
+class DocumentScanningDisabledTests(WorkflowFixture, TestCase):
+    def test_upload_does_not_invoke_configured_scanner_or_return_status(self):
+        with patch('hub.scanning.subprocess.run') as run_scanner:
             document = self.upload()
+        run_scanner.assert_not_called()
         version = document['versions'][0]
-        self.assertEqual(version['scan_status'], 'pending')
+        self.assertNotIn('scan_status', version)
         self.assertEqual(DocumentScan.objects.count(), 0)
-        self.assertEqual(self.client.get(version['download_url']).status_code, 400)
-        self.assertEqual(self.client.get(f"/api/document-versions/{version['id']}/preview/").status_code, 400)
-        mapping = self.client.post('/api/evidence-mappings/',
-            {'item': self.item.id, 'document': document['id']}, format='json')
-        self.assertEqual(mapping.status_code, 400)
-        self.assertEqual(EvidenceMapping.objects.count(), 0)
-        self.assertEqual(AuditEvent.objects.filter(action='version_downloaded').count(), 0)
-        call_command('scan_evidence', '--version-id', str(version['id']), stdout=io.StringIO())
-        self.assertEqual(DocumentScan.objects.get().result, 'clean')
-        self.assertEqual(self.client.get(version['download_url']).status_code, 200)
-        self.assertEqual(self.client.post('/api/evidence-mappings/',
-            {'item': self.item.id, 'document': document['id']}, format='json').status_code, 201)
+        self.assertEqual(AuditEvent.objects.filter(action__startswith='version_scan_').count(), 0)
 
-    def test_infected_and_failed_scans_stay_quarantined_on_both_upload_routes(self):
-        with override_settings(EVIDENCE_SCANNER_COMMAND=[sys.executable, '-c', 'import sys; sys.exit(1)', '{file}']):
-            infected = self.upload()
-        self.assertEqual(infected['versions'][0]['scan_status'], 'infected')
-        with override_settings(EVIDENCE_SCANNER_COMMAND=[sys.executable, '-c', 'import sys; sys.exit(2)', '{file}']):
-            failed = self.upload(infected['id'])
-        self.assertEqual(failed['versions'][0]['scan_status'], 'error')
-        self.assertEqual(DocumentVersion.objects.count(), 2)
-        self.assertEqual(DocumentScan.objects.count(), 2)
-        self.assertEqual(AuditEvent.objects.filter(action='version_scan_infected').count(), 1)
-        self.assertEqual(AuditEvent.objects.filter(action='version_scan_error').count(), 1)
-        for version in failed['versions']:
-            self.assertEqual(self.client.get(version['download_url']).status_code, 400)
-        self.assertEqual(len(list(Path(self.media.name).iterdir())), 2)
-
-    def test_scanner_timeout_stays_quarantined_and_outsider_cannot_probe(self):
-        with override_settings(EVIDENCE_SCANNER_COMMAND=[sys.executable, '-c', 'import time; time.sleep(1)', '{file}'],
-                               EVIDENCE_SCANNER_TIMEOUT=0.01):
-            document = self.upload()
-        version = document['versions'][0]
-        self.assertEqual(version['scan_status'], 'error')
-        self.assertEqual(self.client.get(version['download_url']).status_code, 400)
-        self.client.force_authenticate(self.outsider)
-        self.assertEqual(self.client.get(version['download_url']).status_code, 404)
-        self.assertEqual(self.client.get(f"/api/document-versions/{version['id']}/preview/").status_code, 404)
-
-    def test_package_review_and_completion_reject_quarantined_version(self):
-        document = self.upload()
-        version_id = document['versions'][0]['id']
+    def test_old_scan_states_do_not_gate_file_or_workflow_use(self):
+        states = ['pending', 'clean', 'infected', 'error']
+        documents = [self.upload() for _ in states]
         self.client.force_authenticate(self.custodian)
-        mapping = self.client.post('/api/evidence-mappings/',
-            {'item': self.item.id, 'document': document['id']}, format='json')
-        self.assertEqual(mapping.status_code, 201, mapping.data)
-        draft = self.client.post('/api/packages/', {'requirement': self.requirement.id,
-            'items': [{'mapping': mapping.data['id'], 'version': version_id}]}, format='json')
-        self.assertEqual(draft.status_code, 201, draft.data)
-        submitted = self.client.post(f"/api/packages/{draft.data['id']}/submit/", {}, format='json')
-        self.assertEqual(submitted.status_code, 200, submitted.data)
-        with override_settings(EVIDENCE_SCANNER_COMMAND=[sys.executable, '-c', 'import sys; sys.exit(1)', '{file}']):
-            call_command('scan_evidence', '--version-id', str(version_id), stdout=io.StringIO())
-        self.client.force_authenticate(self.reviewer)
-        blocked = self.client.post(f"/api/packages/{draft.data['id']}/review/",
-            {'outcome': 'approved', 'comment': 'Looks good'}, format='json')
-        self.assertEqual(blocked.status_code, 400)
-        self.assertEqual(PackageDecision.objects.count(), 0)
-        self.client.force_authenticate(self.coordinator)
-        completion = self.client.post(f"/api/requirements/{self.requirement.id}/certifications/",
-            {'outcome': 'complete', 'rationale': 'Complete', 'packages': [draft.data['id']]}, format='json')
-        self.assertEqual(completion.status_code, 400)
-        self.assertEqual(RequirementCertification.objects.count(), 0)
+        for state, document in zip(states, documents):
+            version = DocumentVersion.objects.get(pk=document['versions'][0]['id'])
+            if state != 'pending':
+                DocumentScan.objects.create(version=version, result=state, checksum=version.checksum,
+                                            scanner_id='historical-test-scanner')
+            self.assertNotIn('scan_status', document['versions'][0])
+            self.assertEqual(self.client.get(document['versions'][0]['download_url']).status_code, 200)
+            self.assertEqual(self.client.get(f"/api/document-versions/{version.id}/preview/").status_code, 200)
+            versions = self.client.get(f"/api/documents/{document['id']}/versions/")
+            self.assertEqual(versions.status_code, 200)
+            self.assertNotIn('scan_status', versions.data[0])
+            mapped = self.client.post('/api/evidence-mappings/',
+                {'item': self.item.id, 'document': document['id']}, format='json')
+            self.assertIn(mapped.status_code, [200, 201], mapped.data)
 
-    def test_exact_scanned_bytes_required_and_review_cannot_use_revoked_verdict(self):
+        infected = documents[2]
+        submission = self.submit(infected)
+        approved = self.decide(submission)
+        self.assertEqual(approved.status_code, 201, approved.data)
+        completed = self.certify()
+        self.assertEqual(completed.status_code, 201, completed.data)
+
+    def test_checksum_integrity_and_authorization_still_apply(self):
         document = self.upload()
-        version_id = document['versions'][0]['id']
-        submission = self.submit(document)
-        self.client.force_authenticate(self.reviewer)
-        with override_settings(EVIDENCE_SCANNER_COMMAND=[sys.executable, '-c', 'import sys; sys.exit(1)', '{file}']):
-            call_command('scan_evidence', '--version-id', str(version_id), stdout=io.StringIO())
-        decision = self.decide(submission)
-        self.assertEqual(decision.status_code, 400)
-        self.assertEqual(ReviewDecision.objects.count(), 0)
-        self.assertEqual(AuditEvent.objects.filter(action='approved').count(), 0)
-        with override_settings(EVIDENCE_SCANNER_COMMAND=[sys.executable, '-c', 'import sys; sys.exit(0)', '{file}']):
-            call_command('scan_evidence', '--version-id', str(version_id), stdout=io.StringIO())
-        stored = Path(self.media.name) / str(DocumentVersion.objects.get(pk=version_id).storage_key)
-        stored.write_bytes(b'tampered after scan')
+        version = DocumentVersion.objects.get(pk=document['versions'][0]['id'])
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get(document['versions'][0]['download_url']).status_code, 404)
+        self.client.force_authenticate(self.custodian)
+        stored = Path(self.media.name) / str(version.storage_key)
+        stored.write_bytes(b'tampered after upload')
         self.assertEqual(self.client.get(document['versions'][0]['download_url']).status_code, 400)
         self.assertEqual(AuditEvent.objects.filter(action='version_downloaded').count(), 0)
 
@@ -1174,6 +1132,24 @@ class PackageWorkflowTests(WorkflowFixture, TestCase):
         from django.core.exceptions import ValidationError as ModelValidationError
         with self.assertRaises(ModelValidationError):
             package.save()
+
+    def test_historical_infected_verdict_does_not_block_package_completion(self):
+        doc, mapping = self.mapped()
+        version = DocumentVersion.objects.get(pk=doc['versions'][0]['id'])
+        DocumentScan.objects.create(version=version, result='infected', checksum=version.checksum,
+                                    scanner_id='historical-test-scanner')
+        draft = self.draft([{'mapping': mapping, 'version': version.id}])
+        self.client.force_authenticate(self.custodian)
+        submitted = self.client.post(f'/api/packages/{draft["id"]}/submit/', {}, format='json')
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+        self.client.force_authenticate(self.reviewer)
+        reviewed = self.client.post(f'/api/packages/{draft["id"]}/review/',
+            {'outcome': 'approved', 'comment': 'Reviewed'}, format='json')
+        self.assertEqual(reviewed.status_code, 201, reviewed.data)
+        self.client.force_authenticate(self.coordinator)
+        completed = self.client.post(f'/api/requirements/{self.requirement.id}/certifications/', {
+            'outcome': 'complete', 'rationale': 'Approved package evidence', 'packages': [draft['id']]}, format='json')
+        self.assertEqual(completed.status_code, 201, completed.data)
 
     def test_pending_missing_precedence_withdrawal_and_resubmission_history(self):
         second = EvidenceItem.objects.create(requirement=self.requirement, label='Second mandatory')

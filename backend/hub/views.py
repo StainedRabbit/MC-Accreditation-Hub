@@ -37,7 +37,7 @@ from .serializers import *
 from .files import validate_upload
 from .recovery import recovery_configured
 from .audit import write_audit
-from .scanning import scan_status, require_clean, version_available, verified_file, scan_version
+from .scanning import verified_file
 
 
 def audit(user, area, action, record, **detail):
@@ -237,7 +237,7 @@ def req_data(req, user, detail=False):
              'checksum': version.checksum, 'valid_until': version.valid_until}
             for item in req.items.all() for mapping in visible_mappings_for(user, item.mappings.all())
             if mapping.document.area_id == req.area_id
-            for version in mapping.document.versions.all() if can_version(user, version) and scan_status(version) == 'clean'
+            for version in mapping.document.versions.all() if can_version(user, version)
         ] if result['can_upload'] else []
         result['applicability_history'] = [applicability_data(d) for d in req.applicability_decisions.all()]
         result['archive_history'] = [{'action': e.action, 'reason': e.detail.get('reason', ''), 'actor': e.actor.get_full_name() or e.actor.username if e.actor else 'System', 'created_at': e.created_at} for e in AuditEvent.objects.filter(area=req.area, action__in=['requirement_archived', 'requirement_restored'], detail__requirement=req.id).select_related('actor').order_by('-id')] if is_coordinator else []
@@ -307,7 +307,7 @@ def package_data(package, user):
     editable = package.status == 'draft' and package.owner_id == user.id and writable
     reviewable = package.status == 'submitted' and writable and not certification_is_open(requirement) and (
         areas_for(user, REVIEW_ROLES).filter(pk=requirement.area_id).exists()) and user.id != package.owner_id and not any(
-            entry.version.uploaded_by_id == user.id or scan_status(entry.version) != 'clean' for entry in package.items.all())
+            entry.version.uploaded_by_id == user.id for entry in package.items.all())
     return {'id': package.id, 'requirement': requirement.id, 'requirement_title': requirement.title,
             'number': package.number, 'owner': package.owner.get_full_name() or package.owner.username,
             'owner_id': package.owner_id, 'source_attempt': package.source_attempt_id,
@@ -369,7 +369,6 @@ def submission_data(sub, user):
         'status': submission_state(sub), 'current': current,
         'can_review': current and not decision and submission_state(sub) != 'outdated'
             and not certification_is_open(sub.mapping.item.requirement)
-            and scan_status(sub.version) == 'clean'
             and sub.version.uploaded_by_id != user.id and sub.submitted_by_id != user.id
             and sub.mapping.item.requirement.area.cycle.status == 'active'
             and not sub.mapping.item.requirement.archived_at
@@ -391,7 +390,6 @@ def version_data(version):
             'content_type': version.content_type, 'size': version.size, 'checksum': version.checksum,
             'uploaded_by': version.uploaded_by.get_full_name() or version.uploaded_by.username,
             'uploaded_at': version.uploaded_at, 'valid_until': version.valid_until,
-            'scan_status': scan_status(version),
             'download_url': f'/api/document-versions/{version.id}/download/'}
 
 
@@ -785,7 +783,6 @@ def upload_document(request, document_id=None):
         if storage_path and storage_path.exists():
             storage_path.unlink()
         raise
-    scan_version(version.id)
     return Response(doc_data(doc, request.user), status=201)
 
 
@@ -989,8 +986,8 @@ class MappingsView(APIView):
             request.user, item.requirement, data.get('override_reason'), 'mapping')
         stewardship_override = require_document_steward_or_coordinator_override(
             request.user, doc, data.get('override_reason'), 'mapping')
-        if not any(version_available(version) for version in doc.versions.all()):
-            raise ValidationError('A document needs a clean scanned version before mapping.')
+        if not doc.versions.exists():
+            raise ValidationError('A document needs an uploaded version before mapping.')
         mapping, created = EvidenceMapping.objects.get_or_create(item=item, document=doc, defaults={'created_by': request.user})
         if created:
             audit(request.user, item.requirement.area, 'evidence_mapped', doc.title, mapping=mapping.id, item=item.id,
@@ -1027,7 +1024,6 @@ class SubmissionsView(APIView):
         version = get_object_or_404(DocumentVersion, pk=data['version'], document=mapping.document)
         if not can_version(request.user, version):
             raise PermissionDenied()
-        require_clean(version)
         if mapping.submissions.filter(version=version).exists():
             raise ValidationError('This version has already been submitted. Upload a new version for resubmission.')
         latest = mapping.submissions.first()
@@ -1059,7 +1055,6 @@ class ReviewsView(APIView):
             raise ValidationError('Reopen the requirement before reviewing changed supporting evidence.')
         EvidenceMapping.objects.select_for_update().get(pk=sub.mapping_id)
         sub = Submission.objects.select_for_update().select_related('version').get(pk=sub.pk)
-        require_clean(sub.version)
         if submission_state(sub) == 'outdated':
             raise ValidationError('This submission uses outdated criteria. Submit a new version after the criteria revision.')
         if sub.version.uploaded_by_id == request.user.id or sub.submitted_by_id == request.user.id:
@@ -1085,7 +1080,6 @@ def validated_package_items(user, requirement, entries, override_reason):
         version = get_object_or_404(DocumentVersion, pk=entry['version'], document=mapping.document)
         if not can_version(user, version):
             raise PermissionDenied('The selected version is not visible in your scope.')
-        require_clean(version)
         require_document_steward_or_coordinator_override(user, mapping.document, override_reason, 'package evidence selection')
         if version.valid_until and version.valid_until < timezone.localdate():
             raise ValidationError({'items': 'Expired versions cannot be submitted in a package.'})
@@ -1243,8 +1237,6 @@ class PackageReviewView(APIView):
         if certification_is_open(package.requirement):
             raise ValidationError('Reopen the requirement before reviewing changed supporting evidence.')
         entries = list(package.items.select_related('version', 'mapping__item', 'mapping__document'))
-        for entry in entries:
-            require_clean(entry.version)
         if package.owner_id == request.user.id or any(entry.version.uploaded_by_id == request.user.id for entry in entries):
             raise PermissionDenied('You cannot review your own package or an upload in it.')
         if data['outcome'] == 'approved':
@@ -1314,9 +1306,6 @@ class RequirementCertificationsView(APIView):
                 candidates = {p.id: p for p in requirement.packages.all() if package_is_ready(p, requirement)}
                 if any(pid not in candidates for pid in selected_ids):
                     raise ValidationError({'packages': 'Every selection must be an approved, current package for this requirement.'})
-                for pid in selected_ids:
-                    for entry in candidates[pid].items.all():
-                        require_clean(entry.version)
                 mandatory = {i.id for i in requirement.items.all() if i.mandatory}
                 selected_items = {entry.mapping.item_id for pid in selected_ids for entry in candidates[pid].items.all()}
                 if not mandatory.issubset(selected_items):
@@ -1328,8 +1317,6 @@ class RequirementCertificationsView(APIView):
                 candidates = {s['submission']: s for s in req_data(requirement, request.user, True)['certification_candidates']}
                 if any(sid not in candidates for sid in selected_ids):
                     raise ValidationError({'submissions': 'Every selection must be a current, approved, unexpired submission for this requirement.'})
-                for sid in selected_ids:
-                    require_clean(Submission.objects.select_related('version').get(pk=sid).version)
                 mandatory = {i.id for i in requirement.items.all() if i.mandatory}
                 if not mandatory.issubset({candidates[sid]['item'] for sid in selected_ids}):
                     raise ValidationError({'submissions': 'Select approved evidence for every mandatory item.'})

@@ -12,7 +12,7 @@ The F25 local synthetic tests use real Django cookie sessions and CSRF requests 
 - [ ] Nginx validates and serves HTTPS; HTTP redirects to HTTPS; `/api/health/` returns `{"status":"ok"}`.
 - [ ] Login, refresh, logout, a scoped list, and a denied cross-scope URL behave as expected.
 - [ ] For real evidence, D11 and D12 have formal Security/Records Owner, Academic Owner, and School IT approvals with references in the decision register and tracker; otherwise operate with synthetic evidence only.
-- [ ] School IT configured its approved local scanner, named the operator, and recorded target tests for clean, infected, timeout/outage, historical unscanned, and checksum-mismatched versions. Quarantined versions cannot be previewed, downloaded, mapped, submitted, reviewed, or certified.
+- [ ] The D11 malware-handling policy and any compensating controls are approved and recorded. The current application does not malware-scan uploaded files; confirm this limitation is disclosed to pilot users and that no one represents files as malware-free.
 - [ ] The approved D12 class-based schedule defines permitted evidence, access, retention triggers/periods, holds, authorized disposal, and backup/log handling; the operational settings match it. No archive action or automatic purge is treated as disposal approval.
 - [ ] An authorized protected evidence download succeeds as an attachment; a guessed unauthorized download URL fails; Nginx has no `private-media` alias.
 - [ ] A closed cycle rejects ordinary writes; authorized reopen and its audit event are recorded.

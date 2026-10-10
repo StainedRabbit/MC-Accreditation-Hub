@@ -1,4 +1,4 @@
-"""Fail-closed malware scan gate for immutable evidence versions."""
+"""Dormant malware-scanning implementation for immutable evidence versions."""
 import hashlib
 import io
 import subprocess
@@ -20,17 +20,21 @@ def scan_status(version):
     return latest.result
 
 
-def clean_contents(version):
-    if scan_status(version) != 'clean':
-        raise ValidationError('This evidence version is quarantined until an approved malware scan passes.')
+def checksum_verified_contents(version):
     source = settings.PRIVATE_MEDIA_ROOT / str(version.storage_key)
     try:
         contents = source.read_bytes()
     except OSError:
         raise ValidationError('Stored evidence is unavailable.')
     if hashlib.sha256(contents).hexdigest() != version.checksum:
-        raise ValidationError('Stored evidence no longer matches the scanned checksum.')
+        raise ValidationError('Stored evidence does not match its recorded checksum.')
     return contents
+
+
+def clean_contents(version):
+    if scan_status(version) != 'clean':
+        raise ValidationError('This evidence version is quarantined until an approved malware scan passes.')
+    return checksum_verified_contents(version)
 
 
 def require_clean(version):
@@ -46,8 +50,8 @@ def version_available(version):
 
 
 def verified_file(version):
-    """Return exactly the bytes that received a clean verdict."""
-    return io.BytesIO(clean_contents(version))
+    """Return stored bytes after verifying their recorded checksum."""
+    return io.BytesIO(checksum_verified_contents(version))
 
 
 def scan_version(version_id, *, force=False):
