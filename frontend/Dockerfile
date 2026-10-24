@@ -15,4 +15,4 @@ FROM nginx:stable-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 EXPOSE 8080
-CMD ["/bin/sh", "-c", "sed \"s/listen 8080;/listen ${PORT:-8080};/\" /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "test -n \"$API_PRIVATE_DOMAIN\" || { echo 'API_PRIVATE_DOMAIN is required' >&2; exit 1; }; DNS_RESOLVER=\"$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)\"; case \"$DNS_RESOLVER\" in *:*) DNS_RESOLVER=\"[$DNS_RESOLVER]\" ;; esac; test -n \"$DNS_RESOLVER\" || { echo 'No DNS resolver found in /etc/resolv.conf' >&2; exit 1; }; sed \"s|listen 8080;|listen ${PORT:-8080};|; s|__API_PRIVATE_DOMAIN__|${API_PRIVATE_DOMAIN}|g; s|__RAILWAY_DNS_RESOLVER__|${DNS_RESOLVER}|g\" /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"]
