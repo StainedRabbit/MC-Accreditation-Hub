@@ -9,6 +9,7 @@ from rest_framework.exceptions import ValidationError
 
 from .audit import write_audit
 from .models import DocumentScan, DocumentVersion
+from .storage import read_version_contents
 
 
 def scan_status(version):
@@ -21,13 +22,10 @@ def scan_status(version):
 
 
 def checksum_verified_contents(version):
-    source = settings.PRIVATE_MEDIA_ROOT / str(version.storage_key)
     try:
-        contents = source.read_bytes()
-    except OSError:
+        contents = read_version_contents(version)
+    except ValidationError:
         raise ValidationError('Stored evidence is unavailable.')
-    if hashlib.sha256(contents).hexdigest() != version.checksum:
-        raise ValidationError('Stored evidence does not match its recorded checksum.')
     return contents
 
 

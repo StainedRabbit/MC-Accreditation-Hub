@@ -1,0 +1,13 @@
+.git/
+.local/
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+private-media/
+frontend/
+docs/
+deploy/
+scripts/
+*.sqlite3

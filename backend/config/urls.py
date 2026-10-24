@@ -16,6 +16,8 @@ urlpatterns = [
     path('api/documents/<uuid:pk>/stewardship/', v.DocumentStewardshipView.as_view()),
     path('api/document-versions/<int:pk>/download/', v.DownloadView.as_view()),
     path('api/document-versions/<int:pk>/preview/', v.PreviewView.as_view()),
+    path('api/uploads/prepare/', v.UploadPrepareView.as_view()),
+    path('api/uploads/<uuid:pk>/complete/', v.UploadCompleteView.as_view()),
     path('api/evidence-mappings/', v.MappingsView.as_view()), path('api/submissions/', v.SubmissionsView.as_view()),
     path('api/review-decisions/', v.ReviewsView.as_view()), path('api/compliance/', v.ComplianceView.as_view()),
     path('api/packages/', v.PackagesView.as_view()), path('api/packages/<int:pk>/', v.PackagesView.as_view()),

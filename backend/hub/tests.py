@@ -2,6 +2,7 @@ import io
 import sys
 import csv
 import json
+import hashlib
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -308,11 +309,13 @@ class WorkflowTests(WorkflowFixture, TestCase):
         doc = self.upload()
         sub = self.submit(doc)
         version = doc['versions'][0]['id']
-        preview = self.client.get(f'/api/document-versions/{version}/preview/')
+        with override_settings(CORS_ALLOWED_ORIGINS=['https://hub.school.edu']):
+            preview = self.client.get(f'/api/document-versions/{version}/preview/')
         self.assertEqual(preview.status_code, 200)
         self.assertEqual(preview['Content-Type'], 'application/pdf')
         self.assertTrue(preview['Content-Disposition'].startswith('inline;'))
-        self.assertEqual(preview['X-Frame-Options'], 'SAMEORIGIN')
+        self.assertEqual(preview['Content-Security-Policy'], "frame-ancestors 'self' https://hub.school.edu")
+        self.assertNotIn('X-Frame-Options', preview)
         b''.join(preview.streaming_content)
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get('/api/documents/').status_code, 403)
@@ -1354,6 +1357,137 @@ class RestrictedTestBoundaryTests(TestCase):
         with patch('hub.test_boundary.RestrictedTestBoundaryMiddleware._allowed', side_effect=DatabaseError):
             self.assertEqual(self.client_from().post('/api/auth/login/',
                              {'username': 'absent', 'password': 'incorrect'}).status_code, 503)
+
+
+class PresignedUploadTests(WorkflowFixture, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.custodian)
+        self.contents = pdf_file().read()
+        self.key = '9db268ac-46ee-46ac-ac47-d7d8dbebca39'
+
+    def prepare_body(self, *, title='Synthetic R2 evidence', checksum=None):
+        return {
+            'file_name': 'synthetic.pdf',
+            'file_size': len(self.contents),
+            'checksum': checksum or hashlib.sha256(self.contents).hexdigest(),
+            'title': title,
+            'category': 'Supporting Document',
+            'area': self.area.id,
+            'requirement': self.requirement.id,
+            'valid_until': None,
+            'override_reason': '',
+        }
+
+    def prepare(self, **kwargs):
+        with override_settings(R2_CONFIGURED=True, R2_UPLOAD_URL_TTL=300):
+            with patch('hub.views.create_presigned_upload', return_value=('https://r2.invalid/signed', 'pending/key')):
+                return self.client.post('/api/uploads/prepare/', self.prepare_body(**kwargs), format='json',
+                                        HTTP_IDEMPOTENCY_KEY=self.key)
+
+    def test_prepare_authorizes_before_signing_and_returns_required_headers(self):
+        with override_settings(R2_CONFIGURED=True, R2_UPLOAD_URL_TTL=300):
+            with patch('hub.views.create_presigned_upload', return_value=('https://r2.invalid/signed', 'pending/key')) as sign:
+                response = self.client.post('/api/uploads/prepare/', self.prepare_body(), format='json',
+                                            HTTP_IDEMPOTENCY_KEY=self.key)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['completed'], False)
+        self.assertEqual(response.data['upload_url'], 'https://r2.invalid/signed')
+        self.assertEqual(response.data['headers']['x-amz-meta-sha256'], hashlib.sha256(self.contents).hexdigest())
+        self.assertEqual(UploadIntent.objects.count(), 1)
+        self.assertEqual(DocumentVersion.objects.count(), 0)
+        sign.assert_called_once()
+
+    def test_unauthorized_user_never_receives_a_signed_url(self):
+        self.client.force_authenticate(self.viewer)
+        with override_settings(R2_CONFIGURED=True):
+            with patch('hub.views.create_presigned_upload') as sign:
+                response = self.client.post('/api/uploads/prepare/', self.prepare_body(), format='json',
+                                            HTTP_IDEMPOTENCY_KEY=self.key)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(UploadIntent.objects.count(), 0)
+        sign.assert_not_called()
+
+    def test_same_key_replays_intent_and_different_digest_conflicts(self):
+        with override_settings(R2_CONFIGURED=True, R2_UPLOAD_URL_TTL=300):
+            with patch('hub.views.create_presigned_upload', return_value=('https://r2.invalid/signed', 'pending/key')):
+                first = self.client.post('/api/uploads/prepare/', self.prepare_body(), format='json',
+                                         HTTP_IDEMPOTENCY_KEY=self.key)
+                second = self.client.post('/api/uploads/prepare/', self.prepare_body(), format='json',
+                                          HTTP_IDEMPOTENCY_KEY=self.key)
+                conflict = self.client.post('/api/uploads/prepare/', self.prepare_body(
+                    checksum='0' * 64), format='json', HTTP_IDEMPOTENCY_KEY=self.key)
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.data['upload_id'], first.data['upload_id'])
+        self.assertEqual(conflict.status_code, 409, conflict.data)
+        self.assertEqual(UploadIntent.objects.count(), 1)
+
+    def test_finalize_rechecks_scope_then_validates_and_replays_once(self):
+        with override_settings(R2_CONFIGURED=True, R2_UPLOAD_URL_TTL=300):
+            with patch('hub.views.create_presigned_upload', return_value=('https://r2.invalid/signed', 'pending/key')):
+                prepared = self.client.post('/api/uploads/prepare/', self.prepare_body(), format='json',
+                                            HTTP_IDEMPOTENCY_KEY=self.key)
+            upload_id = prepared.data['upload_id']
+            completion_url = f'/api/uploads/{upload_id}/complete/'
+            with patch('hub.views.pending_upload_contents', return_value=self.contents), \
+                 patch('hub.views.publish_pending_upload') as publish, \
+                 patch('hub.views.delete_r2_object') as delete:
+                first = self.client.post(completion_url, {}, format='json')
+                replay = self.client.post(completion_url, {}, format='json')
+            self.assertEqual(first.status_code, 201, first.data)
+            self.assertEqual(replay.status_code, 201, replay.data)
+            self.assertEqual(first.data['id'], replay.data['id'])
+            self.assertEqual(Document.objects.count(), 1)
+            self.assertEqual(DocumentVersion.objects.count(), 1)
+            version = DocumentVersion.objects.get()
+            self.assertEqual(version.checksum, hashlib.sha256(self.contents).hexdigest())
+            self.assertTrue(AuditEvent.objects.filter(action='version_uploaded', version=version.id).exists())
+            publish.assert_called_once()
+            delete.assert_called_once()
+
+    def test_finalize_rejects_invalid_file_content_before_publishing(self):
+        prepared = self.prepare()
+        with override_settings(R2_CONFIGURED=True):
+            with patch('hub.views.pending_upload_contents', return_value=b'not a PDF'), \
+                 patch('hub.views.delete_r2_object') as delete, \
+                 patch('hub.views.publish_pending_upload') as publish:
+                response = self.client.post(
+                    f'/api/uploads/{prepared.data["upload_id"]}/complete/', {}, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(DocumentVersion.objects.count(), 0)
+        publish.assert_not_called()
+        delete.assert_called_once()
+
+    def test_pending_upload_checks_actual_sha256(self):
+        from rest_framework.exceptions import ValidationError
+        from hub.storage import pending_upload_contents
+
+        prepared = self.prepare()
+        intent = UploadIntent.objects.get(pk=prepared.data['upload_id'])
+        altered_contents = b'x' * intent.size
+        with override_settings(R2_CONFIGURED=True):
+            with patch('hub.storage.read_r2_object', return_value=altered_contents):
+                with self.assertRaises(ValidationError):
+                    pending_upload_contents(intent)
+
+    def test_finalize_denies_revoked_assignment_before_reading_pending_object(self):
+        prepared = self.prepare()
+        RequirementAssignment.objects.filter(requirement=self.requirement, user=self.custodian).update(active=False)
+        with override_settings(R2_CONFIGURED=True):
+            with patch('hub.views.pending_upload_contents') as read_pending:
+                response = self.client.post(f'/api/uploads/{prepared.data["upload_id"]}/complete/', {}, format='json')
+        self.assertEqual(response.status_code, 403)
+        read_pending.assert_not_called()
+        self.assertEqual(DocumentVersion.objects.count(), 0)
+
+    def test_expired_upload_intent_cannot_finalize(self):
+        prepared = self.prepare()
+        UploadIntent.objects.filter(pk=prepared.data['upload_id']).update(expires_at=timezone.now() - timedelta(seconds=1))
+        with override_settings(R2_CONFIGURED=True):
+            with patch('hub.views.pending_upload_contents') as read_pending:
+                response = self.client.post(f'/api/uploads/{prepared.data["upload_id"]}/complete/', {}, format='json')
+        self.assertEqual(response.status_code, 410)
+        read_pending.assert_not_called()
 
 
 class StorageReconciliationTests(WorkflowFixture, TestCase):

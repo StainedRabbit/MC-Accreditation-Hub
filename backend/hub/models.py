@@ -191,6 +191,35 @@ class DocumentVersion(ImmutableRecord):
         ]
 
 
+class UploadIntent(models.Model):
+    """Short-lived authorization for one direct-to-R2 evidence upload."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    uploader = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='upload_intents')
+    storage_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    document = models.ForeignKey(Document, null=True, blank=True, on_delete=models.PROTECT, related_name='upload_intents')
+    area = models.ForeignKey(Area, on_delete=models.PROTECT, related_name='upload_intents')
+    requirement = models.ForeignKey(Requirement, null=True, blank=True, on_delete=models.PROTECT, related_name='upload_intents')
+    title = models.CharField(max_length=180, blank=True)
+    category = models.CharField(max_length=100, default='Supporting Document')
+    original_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=120)
+    size = models.PositiveIntegerField()
+    checksum = models.CharField(max_length=64)
+    valid_until = models.DateField(null=True, blank=True)
+    override_reason = models.TextField(blank=True)
+    idempotency_key = models.UUIDField(null=True, blank=True)
+    request_fingerprint = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_version = models.OneToOneField(DocumentVersion, null=True, blank=True,
+        on_delete=models.PROTECT, related_name='upload_intent')
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['uploader', 'idempotency_key'],
+            name='upload_intent_idempotency_user')]
+
+
 class DocumentScan(ImmutableRecord):
     """Append-only scanner verdict for exact stored bytes; the latest verdict governs release."""
     version = models.ForeignKey(DocumentVersion, on_delete=models.PROTECT, related_name='scans')

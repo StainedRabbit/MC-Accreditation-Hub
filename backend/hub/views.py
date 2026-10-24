@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import timedelta
 import csv
 import hashlib
 import json
@@ -19,6 +20,7 @@ from django.db.models import Q, F, Value, Case, When, CharField, Max
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Cast, Coalesce, Concat, Lower, NullIf, Trim
 from django.http import FileResponse, Http404, HttpResponse
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -38,6 +40,9 @@ from .files import validate_upload
 from .recovery import recovery_configured
 from .audit import write_audit
 from .scanning import verified_file
+from .storage import (create_presigned_upload, delete_r2_object, evidence_object_key,
+                     pending_object_key, pending_upload_contents, publish_pending_upload)
+from .files import validate_upload_metadata
 
 
 def audit(user, area, action, record, **detail):
@@ -792,6 +797,215 @@ class UploadIdempotencyConflict(APIException):
     default_code = 'idempotency_conflict'
 
 
+class UploadStorageUnavailable(APIException):
+    status_code = 503
+    default_detail = 'Direct uploads are not available until private object storage is configured.'
+    default_code = 'upload_storage_unavailable'
+
+
+class UploadIntentExpired(APIException):
+    status_code = 410
+    default_detail = 'This upload has expired. Start a new upload.'
+    default_code = 'upload_expired'
+
+
+def direct_upload_scope(user, data):
+    """Resolve and authorize upload scope before signing and again before finalization."""
+    document_id = data.get('document')
+    if document_id:
+        document = get_object_or_404(
+            Document.objects.filter(area__in=areas_for(user, WRITE_ROLES)), pk=document_id)
+        require_area(user, document.area, WRITE_ROLES)
+        if document.area.cycle.status != 'active':
+            raise ValidationError('This cycle is not active. Closed and draft cycles are read-only.')
+        overridden = require_document_steward_or_coordinator_override(
+            user, document, data.get('override_reason'), 'version replacement')
+        return {'document': document, 'area': document.area, 'requirement': None, 'overridden': overridden}
+
+    if not data.get('title') or not data.get('area') or not data.get('requirement'):
+        raise ValidationError('A document title, owning area, and requirement are required.')
+    area = get_object_or_404(areas_for(user, WRITE_ROLES), pk=data['area'])
+    requirement = get_object_or_404(Requirement.objects.filter(area=area), pk=data['requirement'])
+    if area.cycle.status != 'active':
+        raise ValidationError('This cycle is not active. Closed and draft cycles are read-only.')
+    overridden = require_assignee_or_coordinator_override(
+        user, requirement, data.get('override_reason'), 'upload')
+    return {'document': None, 'area': area, 'requirement': requirement, 'overridden': overridden}
+
+
+def upload_intent_data(intent):
+    return {
+        'document': str(intent.document_id) if intent.document_id else None,
+        'area': intent.area_id,
+        'requirement': intent.requirement_id,
+        'title': intent.title,
+        'category': intent.category,
+        'valid_until': intent.valid_until,
+        'override_reason': intent.override_reason,
+    }
+
+
+def direct_upload_fingerprint(document_id, data, name, content_type, size, checksum):
+    return upload_request_fingerprint(document_id, data, name, content_type, size, checksum)
+
+
+def prepared_upload_response(intent, *, status=201):
+    if intent.completed_version_id:
+        return Response({'completed': True, 'document': doc_data(intent.completed_version.document, intent.uploader)}, status=status)
+    if timezone.now() >= intent.expires_at:
+        raise UploadIntentExpired()
+    try:
+        upload_url, _ = create_presigned_upload(intent.storage_key, intent.content_type, intent.checksum)
+    except Exception as error:
+        raise UploadStorageUnavailable() from error
+    return Response({
+        'completed': False,
+        'upload_id': str(intent.id),
+        'upload_url': upload_url,
+        'expires_at': timezone.now() + timedelta(seconds=settings.R2_UPLOAD_URL_TTL),
+        'headers': {'Content-Type': intent.content_type, 'x-amz-meta-sha256': intent.checksum},
+    }, status=status)
+
+
+class UploadPrepareView(APIView):
+    def post(self, request):
+        data = payload(UploadPrepareInput, request).validated_data
+        if not settings.R2_CONFIGURED:
+            raise UploadStorageUnavailable()
+        name, content_type = validate_upload_metadata(data['file_name'], data['file_size'])
+        data['file_name'] = name
+        idempotency_key = upload_idempotency_key(request)
+        document_id = data.get('document')
+        fingerprint = direct_upload_fingerprint(
+            document_id, data, name, content_type, data['file_size'], data['checksum'])
+
+        # Do not let a retry bypass a changed grant or stewardship decision.
+        scope = direct_upload_scope(request.user, data)
+        if idempotency_key:
+            existing_version = DocumentVersion.objects.select_related('document').filter(
+                uploaded_by=request.user, idempotency_key=idempotency_key).first()
+            if existing_version:
+                if existing_version.idempotency_fingerprint != fingerprint:
+                    raise UploadIdempotencyConflict()
+                if not can_version(request.user, existing_version):
+                    raise Http404
+                return Response({'completed': True, 'document': doc_data(existing_version.document, request.user)}, status=201)
+            existing_intent = UploadIntent.objects.filter(
+                uploader=request.user, idempotency_key=idempotency_key).first()
+            if existing_intent:
+                if existing_intent.request_fingerprint != fingerprint:
+                    raise UploadIdempotencyConflict()
+                direct_upload_scope(request.user, upload_intent_data(existing_intent))
+                return prepared_upload_response(existing_intent)
+
+        try:
+            with transaction.atomic():
+                lock_active_cycles(scope['area'].cycle_id)
+                scope = direct_upload_scope(request.user, data)
+                intent = UploadIntent.objects.create(
+                    uploader=request.user,
+                    document=scope['document'], area=scope['area'], requirement=scope['requirement'],
+                    title=data.get('title', ''), category=data.get('category', 'Supporting Document'),
+                    original_name=name, content_type=content_type, size=data['file_size'], checksum=data['checksum'],
+                    valid_until=data.get('valid_until'), override_reason=data.get('override_reason', ''),
+                    idempotency_key=idempotency_key, request_fingerprint=fingerprint,
+                    expires_at=timezone.now() + timedelta(hours=24),
+                )
+        except IntegrityError:
+            if idempotency_key:
+                intent = UploadIntent.objects.filter(uploader=request.user, idempotency_key=idempotency_key).first()
+                if intent and intent.request_fingerprint == fingerprint:
+                    direct_upload_scope(request.user, upload_intent_data(intent))
+                    return prepared_upload_response(intent)
+                if intent:
+                    raise UploadIdempotencyConflict()
+            raise
+        return prepared_upload_response(intent)
+
+
+class UploadCompleteView(APIView):
+    def post(self, request, pk):
+        intent = get_object_or_404(
+            UploadIntent.objects.select_related('document', 'area__cycle', 'requirement', 'completed_version__document'),
+            pk=pk, uploader=request.user)
+        if intent.completed_version_id:
+            if not can_version(request.user, intent.completed_version):
+                raise Http404
+            return Response(doc_data(intent.completed_version.document, request.user), status=201)
+        if timezone.now() >= intent.expires_at:
+            raise UploadIntentExpired()
+        direct_upload_scope(request.user, upload_intent_data(intent))
+
+        try:
+            uploaded_contents = pending_upload_contents(intent)
+            upload = SimpleUploadedFile(intent.original_name, uploaded_contents, content_type=intent.content_type)
+            name, content_type, contents, checksum = validate_upload(upload)
+        except ValidationError:
+            try:
+                delete_r2_object(pending_object_key(intent.storage_key))
+            except Exception:
+                pass
+            raise
+        fingerprint = direct_upload_fingerprint(
+            intent.document_id, upload_intent_data(intent), name, content_type, len(contents), checksum)
+        if fingerprint != intent.request_fingerprint:
+            try:
+                delete_r2_object(pending_object_key(intent.storage_key))
+            except Exception:
+                pass
+            raise UploadIdempotencyConflict()
+
+        published = False
+        try:
+            with transaction.atomic():
+                intent = UploadIntent.objects.select_for_update().select_related(
+                    'document', 'area__cycle', 'requirement', 'completed_version__document').get(
+                        pk=intent.pk, uploader=request.user)
+                if intent.completed_version_id:
+                    if not can_version(request.user, intent.completed_version):
+                        raise Http404
+                    return Response(doc_data(intent.completed_version.document, request.user), status=201)
+                if timezone.now() >= intent.expires_at:
+                    raise UploadIntentExpired()
+                scope_data = upload_intent_data(intent)
+                scope = direct_upload_scope(request.user, scope_data)
+                lock_active_cycles(scope['area'].cycle_id)
+                scope = direct_upload_scope(request.user, scope_data)
+                publish_pending_upload(intent)
+                published = True
+                document = scope['document']
+                if document is None:
+                    document = Document.objects.create(
+                        title=intent.title, category=intent.category, area=scope['area'],
+                        custodian=request.user, steward=request.user)
+                last = document.versions.order_by('-number').first()
+                version = DocumentVersion.objects.create(
+                    document=document, number=last.number + 1 if last else 1,
+                    storage_key=intent.storage_key, original_name=name, content_type=content_type,
+                    size=len(contents), checksum=checksum, uploaded_by=request.user,
+                    valid_until=intent.valid_until, idempotency_key=intent.idempotency_key,
+                    idempotency_fingerprint=fingerprint if intent.idempotency_key else '')
+                intent.completed_version = version
+                intent.completed_at = timezone.now()
+                intent.save(update_fields=['completed_version', 'completed_at'])
+                audit(request.user, document.area, 'version_uploaded', document.title,
+                      version=version.id, number=version.number, steward=document.steward_id,
+                      override=scope['overridden'],
+                      override_reason=intent.override_reason if scope['overridden'] else '')
+        except Exception:
+            if published:
+                try:
+                    delete_r2_object(evidence_object_key(intent.storage_key))
+                except Exception:
+                    pass
+            raise
+        try:
+            delete_r2_object(pending_object_key(intent.storage_key))
+        except Exception:
+            pass
+        return Response(doc_data(document, request.user), status=201)
+
+
 def upload_idempotency_key(request):
     value = request.headers.get('Idempotency-Key')
     if value is None:
@@ -890,7 +1104,8 @@ class PreviewView(APIView):
                                 filename=version.original_name, content_type=version.content_type)
         response['Cache-Control'] = 'private, no-store'
         response['X-Content-Type-Options'] = 'nosniff'
-        response['X-Frame-Options'] = 'SAMEORIGIN'
+        response['Content-Security-Policy'] = "frame-ancestors 'self' " + ' '.join(settings.CORS_ALLOWED_ORIGINS)
+        response.xframe_options_exempt = True
         return response
 
 

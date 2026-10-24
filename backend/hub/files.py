@@ -11,13 +11,23 @@ TYPES = {'.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-off
          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg'}
 
 
+def validate_upload_metadata(filename, size):
+    if not isinstance(size, int) or size < 1 or size > 25 * 1024 * 1024:
+        raise ValidationError('Choose a nonempty file no larger than 25 MB.')
+    name = Path(str(filename).replace('\\', '/')).name
+    suffix = Path(name).suffix.lower()
+    if not name or suffix not in TYPES:
+        raise ValidationError('Supported files: PDF, DOCX, XLSX, PNG, and JPEG.')
+    return name[:255], TYPES[suffix]
+
+
 def validate_upload(upload):
     if not upload or upload.size == 0 or upload.size > 25 * 1024 * 1024:
         raise ValidationError('Choose a nonempty file no larger than 25 MB.')
-    name = Path(upload.name.replace('\\', '/')).name
-    suffix = Path(name).suffix.lower()
-    if suffix not in TYPES:
+    name, expected_content_type = validate_upload_metadata(upload.name, upload.size)
+    if not name:
         raise ValidationError('Supported files: PDF, DOCX, XLSX, PNG, and JPEG.')
+    suffix = Path(name).suffix.lower()
     data = upload.read()
     try:
         if suffix == '.pdf':
@@ -54,4 +64,4 @@ def validate_upload(upload):
                     raise ValueError()
     except Exception:
         raise ValidationError('The file content is invalid, encrypted, or does not match its extension.')
-    return name[:255], TYPES[suffix], data, hashlib.sha256(data).hexdigest()
+    return name, expected_content_type, data, hashlib.sha256(data).hexdigest()

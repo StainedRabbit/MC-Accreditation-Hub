@@ -3,17 +3,23 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / '.env')
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 DEBUG = os.getenv('DJANGO_DEBUG', '0') == '1'
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if host.strip()]
+RAILWAY_PUBLIC_DOMAIN = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').strip()
+if RAILWAY_PUBLIC_DOMAIN and RAILWAY_PUBLIC_DOMAIN not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RAILWAY_PUBLIC_DOMAIN)
 INSTALLED_APPS = ['django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
                   'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
-                  'rest_framework', 'hub.apps.HubConfig']
+                  'rest_framework', 'corsheaders', 'hub.apps.HubConfig']
 MIDDLEWARE = ['hub.test_boundary.RestrictedTestBoundaryMiddleware',
-              'django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
+              'django.middleware.security.SecurityMiddleware', 'whitenoise.middleware.WhiteNoiseMiddleware',
+              'corsheaders.middleware.CorsMiddleware',
+              'django.contrib.sessions.middleware.SessionMiddleware',
               'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware',
               'django.contrib.auth.middleware.AuthenticationMiddleware', 'django.contrib.messages.middleware.MessageMiddleware',
               'hub.audit.AuditContextMiddleware',
@@ -26,6 +32,8 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {'default': {'ENGINE': 'django.db.backends.postgresql', 'NAME': os.getenv('PGDATABASE', 'mc_hub'),
     'USER': os.getenv('PGUSER', 'mc_hub'), 'PASSWORD': os.getenv('PGPASSWORD', ''),
     'HOST': os.getenv('PGHOST', '127.0.0.1'), 'PORT': os.getenv('PGPORT', '5432')}}
+if os.getenv('PGSSLMODE'):
+    DATABASES['default']['OPTIONS'] = {'sslmode': os.environ['PGSSLMODE']}
 AUTH_USER_MODEL = 'hub.User'
 AUTH_PASSWORD_VALIDATORS = [
  {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -38,7 +46,23 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+}
 PRIVATE_MEDIA_ROOT = Path(os.getenv('PRIVATE_MEDIA_ROOT', str(BASE_DIR.parent / 'private-media')))
+R2_ACCOUNT_ID = os.getenv('R2_ACCOUNT_ID', '')
+R2_ACCESS_KEY_ID = os.getenv('R2_ACCESS_KEY_ID', '')
+R2_SECRET_ACCESS_KEY = os.getenv('R2_SECRET_ACCESS_KEY', '')
+R2_BUCKET_NAME = os.getenv('R2_BUCKET_NAME', '')
+R2_ENDPOINT_URL = os.getenv('R2_ENDPOINT_URL') or (
+    f'https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com' if R2_ACCOUNT_ID else '')
+R2_CONFIGURED = all((R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME))
+if any((R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME)) and not R2_CONFIGURED:
+    raise ImproperlyConfigured('R2 requires R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET_NAME.')
+R2_UPLOAD_URL_TTL = int(os.getenv('R2_UPLOAD_URL_TTL', '300'))
+if not 60 <= R2_UPLOAD_URL_TTL <= 900:
+    raise ImproperlyConfigured('R2_UPLOAD_URL_TTL must be between 60 and 900 seconds.')
 # Configure only after School IT approves a local scanner. JSON argv; no shell or remote upload.
 EVIDENCE_SCANNER_COMMAND = json.loads(os.getenv('EVIDENCE_SCANNER_COMMAND', '[]'))
 EVIDENCE_SCANNER_ID = os.getenv('EVIDENCE_SCANNER_ID', '')
@@ -51,12 +75,19 @@ if (bool(EVIDENCE_SCANNER_COMMAND) != bool(EVIDENCE_SCANNER_ID) or
     raise ImproperlyConfigured('Set an approved scanner ID and JSON argument array with one {file}; timeout must be positive.')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = os.getenv('DJANGO_SESSION_COOKIE_SAMESITE', 'Lax')
+if SESSION_COOKIE_SAMESITE not in {'Lax', 'Strict', 'None'}:
+    raise ImproperlyConfigured('DJANGO_SESSION_COOKIE_SAMESITE must be Lax, Strict, or None.')
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_AGE = 8 * 60 * 60
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
-CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',')
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv(
+    'CSRF_TRUSTED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if origin.strip()]
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if origin.strip()]
+CORS_ALLOW_CREDENTIALS = True
+CORS_URLS_REGEX = r'^/api/.*$'
+CORS_ALLOW_HEADERS = (*default_headers, 'idempotency-key')
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'
@@ -67,7 +98,8 @@ TEST_ADMIN_NETWORKS = os.getenv('TEST_ADMIN_NETWORKS', '')
 TEST_AUTH_LIMIT_PER_MINUTE = int(os.getenv('TEST_AUTH_LIMIT_PER_MINUTE', '10'))
 if RESTRICTED_TEST_MODE and (DEBUG or '*' in ALLOWED_HOSTS):
     raise ImproperlyConfigured('Restricted test mode requires DEBUG=0 and explicit allowed hosts.')
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if RESTRICTED_TEST_MODE else None
+TRUST_PROXY_SSL_HEADER = os.getenv('DJANGO_TRUST_PROXY_SSL', '0') == '1'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if (RESTRICTED_TEST_MODE or TRUST_PROXY_SSL_HEADER) else None
 SECURE_SSL_REDIRECT = os.getenv('DJANGO_SECURE_SSL_REDIRECT', '0') == '1'
 SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_SECURE_HSTS_SECONDS', '0'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0

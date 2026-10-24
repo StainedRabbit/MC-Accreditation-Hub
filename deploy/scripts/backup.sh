@@ -47,7 +47,14 @@ final_sidecar="$final_bundle.sha256"
 
 pg_dump --format=custom --no-owner --no-acl --file="$work_dir/database.dump" "$PGDATABASE"
 pg_dump --schema-only --no-owner --no-acl --file="$work_dir/schema.sql" "$PGDATABASE"
-tar -C "$PRIVATE_MEDIA_ROOT" -czf "$work_dir/evidence.tar.gz" .
+if [[ -n "${R2_BUCKET_NAME:-}" ]]; then
+    : "${MC_PYTHON:?MC_PYTHON must point to the Django virtualenv Python when R2 backups are enabled}"
+    mkdir -- "$work_dir/evidence"
+    "$MC_PYTHON" "$app_root/backend/manage.py" export_evidence --output-dir "$work_dir/evidence"
+    tar -C "$work_dir/evidence" -czf "$work_dir/evidence.tar.gz" .
+else
+    tar -C "$PRIVATE_MEDIA_ROOT" -czf "$work_dir/evidence.tar.gz" .
+fi
 cp -- "$MC_ENV_FILE" "$work_dir/environment.env"
 chmod 600 "$work_dir/environment.env"
 (cd "$work_dir" && sha256sum database.dump schema.sql evidence.tar.gz environment.env > SHA256SUMS)

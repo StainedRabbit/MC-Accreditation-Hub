@@ -1,4 +1,18 @@
 let csrf = "";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
+export function apiUrl(path: string): string {
+  const endpoint = path.startsWith("/api/")
+    ? path
+    : `/api/${path.replace(/^\/+/, "")}`;
+  return API_BASE_URL ? new URL(endpoint, `${API_BASE_URL}/`).toString() : endpoint;
+}
+
+export function apiHref(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return apiUrl(path);
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -14,7 +28,7 @@ export async function api<T>(
   if (method !== "GET") {
     let res: Response;
     try {
-      res = await fetch("/api/auth/csrf/", { credentials: "same-origin" });
+      res = await fetch(apiUrl("auth/csrf/"), { credentials: "include" });
     } catch {
       throw new Error("Unable to reach the server to prepare this request.");
     }
@@ -24,9 +38,9 @@ export async function api<T>(
       throw new Error("Unable to prepare this request. Please try again.");
     csrf = bootstrap.csrfToken;
   }
-  const res = await fetch(`/api/${path}`, {
+  const res = await fetch(apiUrl(path), {
     ...options,
-    credentials: "same-origin",
+    credentials: "include",
     headers: {
       ...(options.body instanceof FormData
         ? {}
@@ -41,7 +55,7 @@ export async function api<T>(
     .catch(() => ({ detail: "The server returned an unexpected response." }));
   if (!res.ok) {
     if (res.status === 403 && !path.startsWith("auth/")) {
-      const session = await fetch("/api/auth/me/");
+      const session = await fetch(apiUrl("auth/me/"), { credentials: "include" });
       if (!session.ok) window.dispatchEvent(new Event("session-expired"));
     }
     throw new ApiError(

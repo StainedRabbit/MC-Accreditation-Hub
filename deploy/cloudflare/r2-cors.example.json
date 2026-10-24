@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://hub.example.edu"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["Content-Type", "x-amz-meta-sha256"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]

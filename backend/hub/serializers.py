@@ -111,6 +111,25 @@ class UploadInput(serializers.Serializer):
     override_reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=4000)
 
 
+class UploadPrepareInput(serializers.Serializer):
+    file_name = serializers.CharField(max_length=1024)
+    file_size = serializers.IntegerField(min_value=1, max_value=25 * 1024 * 1024)
+    checksum = serializers.RegexField(r'^[a-f0-9]{64}$')
+    document = serializers.UUIDField(required=False)
+    valid_until = serializers.DateField(required=False, allow_null=True)
+    title = serializers.CharField(max_length=180, required=False, allow_blank=False)
+    category = serializers.CharField(max_length=100, required=False, default='Supporting Document')
+    area = serializers.IntegerField(required=False, min_value=1)
+    requirement = serializers.IntegerField(required=False, min_value=1)
+    override_reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=4000)
+
+    def validate_file_name(self, value):
+        from .files import validate_upload_metadata
+        # The size validator owns the limit; using 1 here rejects only empty names/extensions.
+        name, _ = validate_upload_metadata(value, 1)
+        return name
+
+
 class MappingInput(serializers.Serializer):
     item = serializers.IntegerField()
     document = serializers.UUIDField()

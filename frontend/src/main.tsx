@@ -27,7 +27,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { ApiError, api, post } from "./api";
+import { ApiError, api, apiHref, apiUrl, post } from "./api";
 import "@fontsource-variable/inter";
 import type {
   User,
@@ -1037,7 +1037,7 @@ function App() {
         {user.is_staff && (
           <a
             className="admin-link"
-            href="/api/admin/"
+            href={apiUrl("admin/")}
             target="_blank"
             rel="noreferrer"
           >
@@ -1650,7 +1650,7 @@ function App() {
                   <Badge status={attempt.status} /><div><strong>Attempt {attempt.number}</strong><span>{attempt.owner} · {dateTime(attempt.created_at)}</span>
                     <p>{attempt.notes || "No package notes"}</p>
                     {attempt.source_attempt && <p>Resubmitted from attempt #{attempt.source_attempt_number}</p>}
-                    {attempt.items.map((entry) => <p key={entry.mapping}>{entry.item_label} · {entry.document_title} · {entry.original_name} · version {entry.version_number} · SHA-256 {entry.checksum} · {entry.note || "No item note"} <a href={`/api/document-versions/${entry.version}/download/`}>Download</a></p>)}
+                    {attempt.items.map((entry) => <p key={entry.mapping}>{entry.item_label} · {entry.document_title} · {entry.original_name} · version {entry.version_number} · SHA-256 {entry.checksum} · {entry.note || "No item note"} <a href={apiUrl(`document-versions/${entry.version}/download/`)}>Download</a></p>)}
                     {attempt.decision && <p>{attempt.decision.reviewer}: {attempt.decision.outcome} · {attempt.decision.comment || "Approved"}</p>}
                     {attempt.withdrawal_reason && <p>Withdrawal reason: {attempt.withdrawal_reason}</p>}
                     <div className="actions">
@@ -1736,7 +1736,7 @@ function App() {
                             <div className="actions">
                               <a
                                 className="link"
-                                href={`/api/document-versions/${s.version}/download/`}
+                                href={apiUrl(`document-versions/${s.version}/download/`)}
                               >
                                 Download
                               </a>
@@ -1884,9 +1884,9 @@ function App() {
                 <section className="panel" aria-label="Document preview">
                   <h2>Document preview · v{docDetail.versions[0].number}</h2>
                   {docDetail.versions[0].content_type === "application/pdf" ? (
-                    <iframe title={`Preview of ${docDetail.versions[0].original_name}`} src={`/api/document-versions/${docDetail.versions[0].id}/preview/`} style={{ width: "100%", height: "75vh", border: "1px solid #d1d5db", borderRadius: 8 }} />
+                    <iframe title={`Preview of ${docDetail.versions[0].original_name}`} src={apiUrl(`document-versions/${docDetail.versions[0].id}/preview/`)} style={{ width: "100%", height: "75vh", border: "1px solid #d1d5db", borderRadius: 8 }} />
                   ) : (
-                    <img alt={`Preview of ${docDetail.versions[0].original_name}`} src={`/api/document-versions/${docDetail.versions[0].id}/preview/`} style={{ display: "block", maxWidth: "100%", maxHeight: "75vh", margin: "0 auto", objectFit: "contain" }} />
+                    <img alt={`Preview of ${docDetail.versions[0].original_name}`} crossOrigin="use-credentials" src={apiUrl(`document-versions/${docDetail.versions[0].id}/preview/`)} style={{ display: "block", maxWidth: "100%", maxHeight: "75vh", margin: "0 auto", objectFit: "contain" }} />
                   )}
                 </section>
               )}
@@ -1919,9 +1919,9 @@ function App() {
                     </div>
                     <div className="actions">
                       {["application/pdf", "image/jpeg", "image/png"].includes(v.content_type) && (
-                        <a className="link" href={`/api/document-versions/${v.id}/preview/`} target="_blank" rel="noreferrer">View</a>
+                        <a className="link" href={apiUrl(`document-versions/${v.id}/preview/`)} target="_blank" rel="noreferrer">View</a>
                       )}
-                      <a className="link" href={v.download_url}>
+                      <a className="link" href={apiHref(v.download_url)}>
                         <Download size={17} />
                         Download
                       </a>
@@ -2024,7 +2024,7 @@ function App() {
                             )}
                             <a
                               className="link"
-                              href={`/api/document-versions/${s.version}/download/`}
+                              href={apiUrl(`document-versions/${s.version}/download/`)}
                             >
                               Download
                             </a>
@@ -2108,7 +2108,7 @@ function App() {
                   <p>Printable readiness report for {selectedCycle?.title || "your selected cycle"}.</p>
                 </div>
                 <div className="actions no-print">
-                  {reportReady ? <a className="secondary" href={`/api/reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}${reportOverdue ? "&overdue=1" : ""}${reportArchived ? "&archived=1" : ""}&sort=${reportSort.key}&direction=${reportSort.direction}&download=csv`}>
+                  {reportReady ? <a className="secondary" href={apiUrl(`reports/compliance/?cycle=${cycle}${reportArea ? `&area=${reportArea}` : ""}${reportStatus ? `&status=${reportStatus}` : ""}${reportOverdue ? "&overdue=1" : ""}${reportArchived ? "&archived=1" : ""}&sort=${reportSort.key}&direction=${reportSort.direction}&download=csv`)}>
                     <Download size={16} /> Export CSV
                   </a> : <button className="secondary" type="button" disabled><Download size={16} /> Export CSV</button>}
                   <button className="primary" disabled={!reportReady} onClick={() => { if (reportReady) window.print(); }}><Printer size={16} /> Print report</button>
@@ -2554,6 +2554,7 @@ function UploadForm({
   close: () => void;
   saved: (message: string) => Promise<void>;
 }) {
+  const useDirectR2Uploads = import.meta.env.VITE_R2_DIRECT_UPLOADS === "true";
   const [error, setError] = useState(""),
     [requirementSearch, setRequirementSearch] = useState(""),
     [busy, setBusy] = useState(false),
@@ -2562,6 +2563,63 @@ function UploadForm({
     [uploadOperationKey, setUploadOperationKey] = useState(() => crypto.randomUUID());
   const pendingUpload = useRef<{ key: string; form: FormData } | null>(null);
   const fieldsLocked = busy || uploadUncertain || !!uploaded;
+  async function uploadDirectToR2(form: FormData, key: string): Promise<Document> {
+    const file = form.get("file");
+    if (!(file instanceof File) || !file.name) throw new Error("Choose a file to upload.");
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    const checksum = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const body: Record<string, unknown> = {
+      file_name: file.name,
+      file_size: file.size,
+      checksum,
+      valid_until: String(form.get("valid_until") || "") || null,
+      override_reason: String(form.get("override_reason") || ""),
+    };
+    if (context.doc) {
+      body.document = context.doc.id;
+    } else {
+      body.title = String(form.get("title") || "");
+      body.category = String(form.get("category") || "Supporting Document");
+      body.area = Number(form.get("area") || context.area || 0);
+      body.requirement = Number(form.get("requirement") || context.requirement || 0);
+    }
+    const prepared = await api<{
+      completed: boolean;
+      document?: Document;
+      upload_id?: string;
+      upload_url?: string;
+      headers?: Record<string, string>;
+    }>("uploads/prepare/", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Idempotency-Key": key },
+    });
+    if (prepared.completed && prepared.document) return prepared.document;
+    if (!prepared.upload_id || !prepared.upload_url || !prepared.headers)
+      throw new Error("The server returned an incomplete upload authorization.");
+    let uploadedResponse: Response;
+    try {
+      uploadedResponse = await fetch(prepared.upload_url, {
+        method: "PUT",
+        headers: prepared.headers,
+        body: file,
+      });
+    } catch {
+      throw new Error("Unable to reach private file storage. Retry this same upload.");
+    }
+    if (!uploadedResponse.ok) {
+      throw new ApiError(
+        uploadedResponse.status === 403
+          ? "The short-lived upload link expired. Retry this same upload to refresh it."
+          : "Private file storage did not accept the upload.",
+        uploadedResponse.status,
+      );
+    }
+    return api<Document>(`uploads/${prepared.upload_id}/complete/`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!pendingUpload.current) {
@@ -2577,10 +2635,12 @@ function UploadForm({
     try {
       const doc =
         uploaded ||
-        (await api<Document>(
-          context.doc ? `documents/${context.doc.id}/versions/` : "documents/",
-          { method: "POST", body: f, headers: { "Idempotency-Key": key } },
-        ));
+        (useDirectR2Uploads
+          ? await uploadDirectToR2(f, key)
+          : await api<Document>(
+              context.doc ? `documents/${context.doc.id}/versions/` : "documents/",
+              { method: "POST", body: f, headers: { "Idempotency-Key": key } },
+            ));
       savedDocument = doc;
       if (!uploaded) {
         setUploaded(doc);
@@ -2915,7 +2975,7 @@ function PackageReviewForm({ attempt, close, saved }: { attempt: PackageAttempt;
       {requirement && <><h4>Current criteria · revision {requirement.criteria_revision}</h4><p>{requirement.description || "No general criteria"}</p>
         {requirement.items?.map((item) => <p key={item.id}>{item.label}{item.mandatory ? " (mandatory)" : ""}: {item.criteria || "No item criteria"}</p>)}</>}
       <h4>Pinned evidence</h4>
-      {freshAttempt.items.map((item) => <p key={item.mapping}>{item.item_label} · {item.document_title} · {item.original_name} · version {item.version_number} · SHA-256 {item.checksum} · valid until {item.valid_until || "No expiry"} · {item.note || "No item note"} <a href={`/api/document-versions/${item.version}/download/`}>Download exact version</a></p>)}
+      {freshAttempt.items.map((item) => <p key={item.mapping}>{item.item_label} · {item.document_title} · {item.original_name} · version {item.version_number} · SHA-256 {item.checksum} · valid until {item.valid_until || "No expiry"} · {item.note || "No item note"} <a href={apiUrl(`document-versions/${item.version}/download/`)}>Download exact version</a></p>)}
       {freshAttempt.source_attempt && <p>Prior attempt {freshAttempt.source_attempt_number}: {sourceAttempt?.decision
         ? `${labels[sourceAttempt.decision.outcome] || sourceAttempt.decision.outcome} by ${sourceAttempt.decision.reviewer} · ${sourceAttempt.decision.comment || "No comment"}`
         : sourceAttempt ? `No review decision · status ${labels[sourceAttempt.status] || sourceAttempt.status}` : "Prior attempt decision is not visible to your role."}</p>}
@@ -3010,7 +3070,7 @@ function ReviewForm({
           {previousDecision && <p>Most recent prior decision for this mapping: {labels[previousDecision.outcome] || previousDecision.outcome} by {previousDecision.reviewer} · {previousDecision.comment || "No comment"} · {dateTime(previousDecision.created_at)}</p>}
           <a
             className="link"
-            href={`/api/document-versions/${freshSubmission?.version ?? submission.version}/download/`}
+            href={apiUrl(`document-versions/${freshSubmission?.version ?? submission.version}/download/`)}
           >
             <Download size={16} />
             Download this version
@@ -3111,7 +3171,7 @@ function CertificationForm({
             Approved package attempt {attempt.number} · {attempt.items.map((item) => `${item.item_label}: ${item.original_name} v${item.version_number} SHA-256 ${item.checksum}`).join(" · ")}
           </label>) : requirement.certification_candidates?.map((candidate) => <label className="check" key={candidate.submission}>
             <input type="checkbox" checked={selected.includes(candidate.submission)} onChange={(event) => setSelected(event.target.checked ? [...selected, candidate.submission] : selected.filter((id) => id !== candidate.submission))} />
-            <span>{candidate.item_label} · {candidate.document_title} · {candidate.original_name} · version {candidate.version_number} (#{candidate.version}) · submission #{candidate.submission} · SHA-256 {candidate.checksum} · valid until {candidate.valid_until || "No expiry"} · submission criteria {candidate.submission_criteria_revision ?? "legacy unknown"} <a href={`/api/document-versions/${candidate.version}/download/`} onClick={(event) => event.stopPropagation()}>Download selected version</a></span>
+            <span>{candidate.item_label} · {candidate.document_title} · {candidate.original_name} · version {candidate.version_number} (#{candidate.version}) · submission #{candidate.submission} · SHA-256 {candidate.checksum} · valid until {candidate.valid_until || "No expiry"} · submission criteria {candidate.submission_criteria_revision ?? "legacy unknown"} <a href={apiUrl(`document-versions/${candidate.version}/download/`)} onClick={(event) => event.stopPropagation()}>Download selected version</a></span>
           </label>)}
         </div>}
         <label>
