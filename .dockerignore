@@ -6,7 +6,6 @@ __pycache__/
 .env
 .env.*
 private-media/
-frontend/
 docs/
 deploy/
 scripts/
