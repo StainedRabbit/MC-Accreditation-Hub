@@ -39,6 +39,7 @@ from .serializers import *
 from .files import validate_upload
 from .recovery import recovery_configured
 from .audit import write_audit
+from .audit import suppress_model_audit
 from .scanning import verified_file
 from .storage import (create_presigned_upload, delete_r2_object, evidence_object_key,
                      pending_object_key, pending_upload_contents, publish_pending_upload)
@@ -522,8 +523,76 @@ class AreasView(APIView):
         return Response(area_data(area, request.user), status=201)
 
 
+class AreaAccessView(APIView):
+    def area_for_manager(self, request, pk):
+        area = get_object_or_404(Area.objects.select_related('cycle'), pk=pk)
+        if not has_cyclewide_coordinator(request.user, area.cycle):
+            raise PermissionDenied('A cycle-wide Coordinator grant is required.')
+        return area
+
+    def get(self, request, pk):
+        area = self.area_for_manager(request, pk)
+        grants = RoleAssignment.objects.filter(area=area, role__in=['reviewer', 'custodian', 'viewer']).select_related('user')
+        users = User.objects.filter(Q(is_active=True) | Q(assignments__area=area)).exclude(pk=request.user.pk).distinct().order_by('username')
+        return Response({'assignments': [{'user': g.user_id, 'name': g.user.get_full_name() or g.user.username,
+                                        'username': g.user.username, 'role': g.role} for g in grants],
+                         'candidates': [{'id': u.pk, 'name': u.get_full_name() or u.username, 'username': u.username} for u in users]})
+
+    @transaction.atomic
+    def post(self, request, pk):
+        data = payload(AreaAccessInput, request).validated_data
+        area = self.area_for_manager(request, pk)
+        cycle = Cycle.objects.select_for_update().get(pk=area.cycle_id)
+        if not has_cyclewide_coordinator(request.user, cycle):
+            raise PermissionDenied('A cycle-wide Coordinator grant is required.')
+        if cycle.status != 'active' or cycle.archived_at:
+            raise ValidationError('Assignments can be changed only in an active cycle.')
+        if data['user'] == request.user.pk:
+            raise ValidationError('You cannot change your own assignment.')
+        user = get_object_or_404(User, pk=data['user'])
+        if data['action'] == 'add' and not user.is_active:
+            raise ValidationError('Activate the user before adding access.')
+        scope = dict(user=user, cycle=cycle, area=area, role=data['role'])
+        grant = RoleAssignment.objects.filter(**scope).first()
+        if data['action'] == 'add' and grant:
+            raise ValidationError('This assignment already exists.')
+        if data['action'] == 'remove' and not grant:
+            raise ValidationError('This assignment no longer exists.')
+        with suppress_model_audit():
+            if grant:
+                grant_id = grant.pk
+                grant.delete()
+            else:
+                grant_id = RoleAssignment.objects.create(**scope).pk
+        audit(request.user, area, 'grant_created' if data['action'] == 'add' else 'grant_revoked',
+              f'grant:{grant_id}', target_user_id=user.pk, target_cycle_id=cycle.pk,
+              target_area_id=area.pk, role=data['role'], reason=data['reason'])
+        return Response({'detail': 'Assignment updated.'})
+
+
+class AreaCommentsView(APIView):
+    def get(self, request, pk):
+        area = get_object_or_404(areas_for(request.user), pk=pk)
+        comments = area.comments.select_related('author').order_by('created_at', 'id')
+        return Response([{'id': c.pk, 'author': c.author.get_full_name() or c.author.username,
+                          'text': c.text, 'created_at': c.created_at} for c in comments])
+
+    @transaction.atomic
+    def post(self, request, pk):
+        area = get_object_or_404(areas_for(request.user, ['viewer']).select_related('cycle'), pk=pk)
+        cycle = Cycle.objects.select_for_update().get(pk=area.cycle_id)
+        if cycle.status != 'active' or cycle.archived_at:
+            raise ValidationError('Comments can be added only in an active cycle.')
+        require_area(request.user, area, ['viewer'])
+        data = payload(AreaCommentInput, request).validated_data
+        comment = AreaComment.objects.create(area=area, author=request.user, text=data['text'])
+        audit(request.user, area, 'area_comment_created', f'comment:{comment.pk}')
+        return Response({'id': comment.pk, 'author': request.user.get_full_name() or request.user.username,
+                         'text': comment.text, 'created_at': comment.created_at}, status=201)
+
+
 def area_has_records(area):
-    return (RoleAssignment.objects.filter(area=area).exists() or
+    return (AreaComment.objects.filter(area=area).exists() or RoleAssignment.objects.filter(area=area).exists() or
             Requirement.objects.filter(area=area).exists() or
             Document.objects.filter(area=area).exists() or
             AuditEvent.objects.filter(area=area).exists())

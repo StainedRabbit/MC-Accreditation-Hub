@@ -79,6 +79,13 @@ class RoleAssignment(models.Model):
         super().save(*args, **kwargs)
 
 
+class AreaComment(models.Model):
+    area = models.ForeignKey(Area, on_delete=models.PROTECT, related_name='comments')
+    author = models.ForeignKey(User, on_delete=models.PROTECT)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class Requirement(models.Model):
     area = models.ForeignKey(Area, on_delete=models.PROTECT, related_name='requirements')
     code = models.CharField(max_length=40)

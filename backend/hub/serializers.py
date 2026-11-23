@@ -3,6 +3,17 @@ from django.contrib.auth.password_validation import validate_password
 from .models import Requirement, EvidenceItem, Area
 
 
+class AreaAccessInput(serializers.Serializer):
+    user = serializers.IntegerField(min_value=1)
+    role = serializers.ChoiceField(choices=['reviewer', 'custodian', 'viewer'])
+    action = serializers.ChoiceField(choices=['add', 'remove'])
+    reason = serializers.CharField(max_length=1000, trim_whitespace=True)
+
+
+class AreaCommentInput(serializers.Serializer):
+    text = serializers.CharField(max_length=4000, trim_whitespace=True)
+
+
 class AreaInput(serializers.ModelSerializer):
     class Meta:
         model = Area

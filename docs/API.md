@@ -17,6 +17,8 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. Health, C
 | POST `cycles/{id}/reopen/` | Cycle-wide Coordinator only `{rationale}`; restores a non-archived closed cycle to active and logs each authorized area |
 | POST `cycles/{id}/archive/` / `restore/` | Cycle-wide Coordinator only `{rationale}`; archive requires Closed, restore returns to Closed; actions are audited per area |
 | GET `areas/?cycle=id` | Scoped areas, permission flags, and compliance totals |
+| GET/POST `areas/{id}/access/` | Cycle-wide Coordinator: list area assignments and candidates / `{user,role,action:"add"|"remove",reason}` for Reviewer, Custodian, or Viewer. Each change is audited. |
+| GET/POST `areas/{id}/comments/` | Assigned area users can read comments; assigned Viewers can post `{text}` while the cycle is active. |
 | POST `areas/` | Cycle-wide Coordinator in an active cycle `{cycle,code,title,icon,order}`; audits the new area |
 | PATCH `areas/{id}/` | Scoped Coordinator in an active cycle; edit `code`, `title`, `icon`, or `order` |
 | DELETE `areas/{id}/` | Scoped Coordinator in an active cycle; only when no assignments, requirements, documents, or area-linked audit history exists |

@@ -498,6 +498,8 @@ function App() {
     [cycleTransition, setCycleTransition] = useState<"close" | "reopen" | null>(null),
     [archiveTransition, setArchiveTransition] = useState<{ kind: "cycle" | "requirement"; action: "archive" | "restore"; id: number; title: string } | null>(null);
   const [areaForm, setAreaForm] = useState<Area | "new" | null>(null);
+  const [areaAccess, setAreaAccess] = useState<Area | null>(null);
+  const [areaComments, setAreaComments] = useState<Area | null>(null);
   const [upload, setUpload] = useState<{
       doc?: Document;
       item?: Item;
@@ -576,6 +578,8 @@ function App() {
     setPackageReview(null);
     setCertification(null);
     setAreaForm(null);
+    setAreaAccess(null);
+    setAreaComments(null);
     setMappingItem(null);
     setAssignmentRequirement(null);
     setStewardshipDocument(null);
@@ -1352,6 +1356,8 @@ function App() {
           {archiveTransition && <ArchiveTransitionModal target={archiveTransition} close={() => setArchiveTransition(null)} submit={transitionArchive} />}
           {cycleTransition && selectedCycle && <CycleTransitionModal cycle={selectedCycle} action={cycleTransition} close={() => setCycleTransition(null)} submit={transitionCycle} />}
           {areaForm && selectedCycle && <AreaForm cycle={selectedCycle.id} editing={areaForm === "new" ? null : areaForm} close={() => setAreaForm(null)} saved={async () => { setAreaForm(null); await changed("Accreditation area saved."); }} />}
+          {areaAccess && <AreaAccessForm area={areaAccess} close={() => setAreaAccess(null)} />}
+          {areaComments && <AreaComments area={areaComments} canComment={user.assignments.some((grant) => grant.role === "viewer" && grant.cycle_id === areaComments.cycle && (grant.area_id === null || grant.area_id === areaComments.id)) && selectedCycle?.status === "active" && !selectedCycle.archived_at} close={() => setAreaComments(null)} />}
           {page === "areas" && (
             <>
               <div className="page-heading">
@@ -1379,6 +1385,7 @@ function App() {
                     </div>
                     <h3>{a.title}</h3>
                     <small className="area-code">{a.code}</small>
+                    <p><strong>{a.total === 0 ? "N/A" : a.complete === a.total ? "Complete" : "In progress"}</strong></p>
                     <Progress value={a.percentage} label={`${a.title} compliance`} />
                     <div className="area-counts">
                       <div>
@@ -1400,8 +1407,10 @@ function App() {
                   </button>
                   {a.can_manage && <div className="area-card-actions">
                     <button className="secondary" onClick={() => setAreaForm(a)}><Pencil size={15} /> Edit</button>
+                    {canAddArea && <button className="secondary" onClick={() => setAreaAccess(a)}>Assign users</button>}
                     {a.can_delete && <button className="danger" onClick={() => void deleteArea(a)}><Trash2 size={15} /> Delete</button>}
                   </div>}
+                  <div className="area-card-actions"><button className="secondary" onClick={() => setAreaComments(a)}>Area comments</button></div>
                   </div>
                 ))}
               </div>
@@ -1967,6 +1976,7 @@ function App() {
                 </div>
               </div>
               <div className="panel table-wrap"><h2>Requirement packages</h2>
+                <p className="muted">Custodians must submit a package before review. Reviewers cannot review their own evidence. Select Review package to approve it or request revisions.</p>
                 <table><thead><tr>
                   <SortHeader label="Requirement" field="requirement" sort={packageSort} onSort={(key) => setPackageSort((old) => nextSort(old, key))} />
                   <SortHeader label="Attempt" field="attempt" sort={packageSort} onSort={(key) => setPackageSort((old) => nextSort(old, key))} />
@@ -2502,6 +2512,46 @@ function RequirementForm({
       </form>
     </Modal>
   );
+}
+
+function AreaAccessForm({ area, close }: { area: Area; close: () => void }) {
+  type Grant = { user: number; name: string; username: string; role: string };
+  type Access = { assignments: Grant[]; candidates: AssignmentCandidate[] };
+  const [data, setData] = useState<Access | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const load = () => api<Access>(`areas/${area.id}/access/`).then(setData);
+  useEffect(() => { load().catch((e) => setError(e.message)); }, [area.id]);
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true); setError(""); const form = new FormData(e.currentTarget);
+    try { await post(`areas/${area.id}/access/`, { user: Number(form.get("user")), role: form.get("role"), action: form.get("action"), reason: form.get("reason") }); await load(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={`Assign users: ${area.title}`} close={close}><form onSubmit={submit}>
+    <ErrorBox error={error} />
+    <p>After adding a Custodian here, assign them to each requirement they will work on.</p>
+    <p>Cycle-wide Viewer or Coordinator access is managed separately and is not removed here.</p>
+    <p><strong>Current area assignments:</strong> {data?.assignments.length ? data.assignments.map((g) => `${g.name} (${g.username}) — ${g.role}`).join(", ") : "None"}</p>
+    <label>User<select name="user" required disabled={!data}><option value="">Select user</option>{data?.candidates.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select></label>
+    <label>Role<select name="role"><option value="custodian">Custodian</option><option value="reviewer">Reviewer</option><option value="viewer">Viewer</option></select></label>
+    <label>Action<select name="action"><option value="add">Add access</option><option value="remove">Remove access</option></select></label>
+    <label>Reason<textarea name="reason" required maxLength={1000} /></label>
+    <div className="form-actions"><button type="button" className="secondary" onClick={close}>Close</button><button className="primary" disabled={!data || busy}>{busy ? "Saving…" : "Save assignment"}</button></div>
+  </form></Modal>;
+}
+
+function AreaComments({ area, canComment, close }: { area: Area; canComment: boolean; close: () => void }) {
+  type Comment = { id: number; author: string; text: string; created_at: string };
+  const [comments, setComments] = useState<Comment[]>([]), [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const load = () => api<Comment[]>(`areas/${area.id}/comments/`).then(setComments);
+  useEffect(() => { load().catch((e) => setError(e.message)); }, [area.id]);
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const form = e.currentTarget; setBusy(true); setError("");
+    try { await post(`areas/${area.id}/comments/`, { text: new FormData(form).get("text") }); form.reset(); await load(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={`Area comments: ${area.title}`} close={close}><ErrorBox error={error} />
+    {comments.length ? comments.map((c) => <div key={c.id}><strong>{c.author}</strong> <small>{new Date(c.created_at).toLocaleString()}</small><p>{c.text}</p></div>) : <p>No comments yet.</p>}
+    {canComment && <form onSubmit={submit}><label>Comment<textarea name="text" required maxLength={4000} /></label><button className="primary" disabled={busy}>{busy ? "Sending…" : "Post comment"}</button></form>}
+  </Modal>;
 }
 
 function AssignmentForm({ requirement, close, saved }: { requirement: Requirement; close: () => void; saved: () => Promise<void> }) {
