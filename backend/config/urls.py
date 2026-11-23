@@ -3,6 +3,9 @@ from django.urls import path
 from hub import views as v
 
 urlpatterns = [
+    path('api/notifications/', v.NotificationsView.as_view()),
+    path('api/notifications/read-all/', v.NotificationsView.as_view()),
+    path('api/notifications/<int:pk>/read/', v.NotificationsView.as_view()),
     path('api/admin/', admin.site.urls),
     path('api/health/', v.HealthView.as_view()), path('api/auth/csrf/', v.CsrfView.as_view()), path('api/auth/login/', v.LoginView.as_view()),
     path('api/auth/logout/', v.LogoutView.as_view()), path('api/auth/me/', v.MeView.as_view()),

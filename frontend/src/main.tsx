@@ -26,6 +26,7 @@ import {
   LockKeyhole,
   Pencil,
   Trash2,
+  Bell,
 } from "lucide-react";
 import { ApiError, api, apiHref, apiUrl, post } from "./api";
 import "@fontsource-variable/inter";
@@ -447,12 +448,49 @@ function AuditTrail({ cycle, security }: { cycle: string; security: boolean }) {
   </>;
 }
 
+type WorkNotification = { id: number; kind: string; message: string; requirement_id: number; requirement_title: string; cycle_id: number; area_title: string; created_at: string; read_at: string | null };
+type NotificationInbox = { unread_count: number; results: WorkNotification[] };
+
+function Notifications({ onOpen }: { onOpen: (item: WorkNotification) => void }) {
+  const [data, setData] = useState<NotificationInbox | null>(null);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try { const result = await api<NotificationInbox>("notifications/"); if (active) { setData(result); setError(""); } }
+      catch { if (active) setError("Unable to load notifications. Please try again."); }
+    }
+    void load();
+    const timer = window.setInterval(load, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+  async function mark(path: string) {
+    setBusy(true);
+    try { await post(path, {}); setData(await api<NotificationInbox>("notifications/")); setError(""); return true; }
+    catch { setError("Unable to update notifications. Please try again."); return false; }
+    finally { setBusy(false); }
+  }
+  return <div className="notifications">
+    <button className="notification-bell" type="button" aria-label={`Notifications${data?.unread_count ? `, ${data.unread_count} unread` : ""}`} aria-expanded={open} aria-controls="notification-inbox" onClick={() => setOpen(!open)}><Bell size={20}/>{!!data?.unread_count && <span className="notification-count">{data.unread_count > 99 ? "99+" : data.unread_count}</span>}</button>
+    {open && <section className="notification-panel" id="notification-inbox" aria-label="Notifications" onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
+      <div className="notification-heading"><strong>Notifications</strong><button type="button" className="link" disabled={busy || !data?.unread_count} onClick={() => void mark("notifications/read-all/")}>Mark all read</button></div>
+      {error && <p role="alert">{error}</p>}
+      {!data && !error && <p>Loading notifications…</p>}
+      {data && !data.results.length && <p>No notifications yet.</p>}
+      <ul>{data?.results.map(item => <li key={item.id} className={item.read_at ? "" : "unread"}><button type="button" disabled={busy} onClick={async () => { if (item.read_at || await mark(`notifications/${item.id}/read/`)) { setOpen(false); onOpen(item); } }}><strong>{item.message}</strong><span>{item.requirement_title} · {item.area_title}</span><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></button></li>)}</ul>
+    </section>}
+  </div>;
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [initializing, setInitializing] = useState(true),
     [sessionMessage, setSessionMessage] = useState("");
   const [page, setPage] = useState("dashboard"),
     [mobile, setMobile] = useState(false);
+  const [notificationTarget, setNotificationTarget] = useState<{ requirement: number; cycle: string } | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuCloseButtonRef = useRef<HTMLButtonElement>(null);
   const pageHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -589,6 +627,7 @@ function App() {
     setLoading(false);
     setError("");
     setNotice("");
+    setNotificationTarget(null);
   }
   useEffect(() => {
     api<User>("auth/me/")
@@ -803,6 +842,13 @@ function App() {
       if (generation === detailGeneration.current) setError((e as Error).message);
     }
   }
+  useEffect(() => {
+    if (notificationTarget && cycle === notificationTarget.cycle) {
+      const id = notificationTarget.requirement;
+      setNotificationTarget(null);
+      void openRequirement(id);
+    }
+  }, [notificationTarget, cycle]);
   async function openDocument(id: string) {
     const generation = ++detailGeneration.current;
     const key = { cycle, userId: user?.id ?? null };
@@ -1095,6 +1141,12 @@ function App() {
             <p>{subtitles[page]}</p>
           </div>
           <div className="topbar-right">
+            <Notifications key={user.id} onOpen={(item) => {
+              const targetCycle = String(item.cycle_id);
+              if (cycles.find(entry => entry.id === item.cycle_id)?.archived_at) setShowArchivedCycles(true);
+              setNotificationTarget({ requirement: item.requirement_id, cycle: targetCycle });
+              if (cycle !== targetCycle) setCycle(targetCycle);
+            }} />
             <select
               aria-label="Accreditation cycle"
               value={cycle}

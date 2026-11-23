@@ -15,6 +15,22 @@ class User(AbstractUser):
         permissions = [('reset_user_password', 'Can reset a user password with a reason')]
 
 
+class Notification(models.Model):
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    requirement = models.ForeignKey('Requirement', on_delete=models.CASCADE, related_name='notifications')
+    kind = models.CharField(max_length=40)
+    event_key = models.CharField(max_length=100)
+    package = models.ForeignKey('PackageAttempt', null=True, blank=True, on_delete=models.CASCADE)
+    submission = models.ForeignKey('Submission', null=True, blank=True, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        constraints = [models.UniqueConstraint(fields=['recipient', 'event_key'], name='unique_recipient_notification_event')]
+        indexes = [models.Index(fields=['recipient', 'read_at', '-created_at'], name='notification_inbox_idx')]
+
+
 class AuthRateBucket(models.Model):
     """PostgreSQL-backed test throttling shared by every application worker."""
     key = models.CharField(max_length=64, unique=True)

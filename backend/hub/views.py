@@ -44,10 +44,41 @@ from .scanning import verified_file
 from .storage import (create_presigned_upload, delete_r2_object, evidence_object_key,
                      pending_object_key, pending_upload_contents, publish_pending_upload)
 from .files import validate_upload_metadata
+from .notifications import notify, notify_reviewers, scoped_users, visible_notifications
 
 
 def audit(user, area, action, record, **detail):
     write_audit(user, area, action, record, **detail)
+
+
+class NotificationsView(APIView):
+    def get(self, request):
+        rows = visible_notifications(request.user)
+        labels = {'assigned': 'You were assigned a requirement', 'review_requested': 'Evidence is ready for review',
+                  'review_decided': 'Your evidence received a review decision',
+                  'ready_for_completion': 'A requirement is ready for completion review',
+                  'requirement_completed': 'A requirement was completed',
+                  'requirement_reopened': 'A requirement was reopened'}
+        return Response({'unread_count': sum(row.read_at is None for row in rows), 'results': [
+            {'id': row.pk, 'kind': row.kind, 'message': labels[row.kind],
+             'requirement_id': row.requirement_id, 'requirement_title': row.requirement.title,
+             'cycle_id': row.requirement.area.cycle_id, 'area_title': row.requirement.area.title,
+             'created_at': row.created_at, 'read_at': row.read_at} for row in rows[:100]]})
+
+    def post(self, request, pk=None):
+        rows = visible_notifications(request.user)
+        if pk is not None:
+            rows = [row for row in rows if row.pk == pk]
+            if not rows:
+                raise Http404
+        Notification.objects.filter(pk__in=[row.pk for row in rows], read_at__isnull=True).update(read_at=timezone.now())
+        return Response(status=204)
+
+
+def notify_if_ready(requirement, actor, event_key, previous_status):
+    fresh = with_evidence(Requirement.objects).get(pk=requirement.pk)
+    if previous_status != 'ready_for_completion_review' and requirement_result(fresh)['status'] == 'ready_for_completion_review':
+        notify(fresh, scoped_users(fresh, ['coordinator']), actor, 'ready_for_completion', event_key)
 
 
 def payload(serializer_class, request, **kwargs):
@@ -688,6 +719,7 @@ class RequirementsView(APIView):
         lock_active_cycles(req.area.cycle_id)
         req = Requirement.objects.select_for_update().get(pk=pk)
         require_unarchived_requirement(req)
+        previous_status = requirement_result(with_evidence(Requirement.objects).get(pk=req.pk))['status']
         serializer = payload(RequirementInput, request, instance=req, partial=True)
         data = serializer.validated_data
         substantive = ('description' in data and data['description'] != req.description) or (
@@ -714,6 +746,7 @@ class RequirementsView(APIView):
                   decision=decision.id, applicable=req.applicable, reason=decision.reason)
         audit(request.user, req.area, 'requirement_updated', req.title, before=before,
               after={k: str(getattr(req, k)) for k in data if hasattr(req, k)})
+        notify_if_ready(req, request.user, f'requirement:{req.pk}:updated:{timezone.now().isoformat()}', previous_status)
         return Response(req_data(req, request.user, True))
 
 
@@ -1217,6 +1250,7 @@ class RequirementAssignmentsView(APIView):
         audit(request.user, requirement.area,
               'requirement_reassigned' if data['replace'] else 'requirement_assigned', requirement.title,
               assignment=assignment.id, assignee=candidate.id, replace=data['replace'], reason=data['reason'])
+        notify(requirement, [candidate], request.user, 'assigned', f'assignment:{assignment.id}:{assignment.updated_at.isoformat()}')
         return Response(assignment_data(assignment), status=201 if created else 200)
 
 
@@ -1320,6 +1354,7 @@ class SubmissionsView(APIView):
         audit(request.user, mapping.item.requirement.area, 'evidence_submitted', mapping.document.title, submission=sub.id,
               version=version.id, override=requirement_override or stewardship_override,
               override_reason=data.get('override_reason', '') if requirement_override or stewardship_override else '')
+        notify_reviewers(mapping.item.requirement, request.user, f'submission:{sub.pk}:submitted', submission=sub)
         return Response(submission_data(sub, request.user), status=201)
 
 
@@ -1347,8 +1382,12 @@ class ReviewsView(APIView):
             raise ValidationError('This submission has already been reviewed or superseded. Refresh the page.')
         if data['outcome'] == 'approved' and sub.version.valid_until and sub.version.valid_until < timezone.localdate():
             raise ValidationError('Expired evidence cannot be approved.')
-        ReviewDecision.objects.create(submission=sub, reviewer=request.user, outcome=data['outcome'], comment=data['comment'])
+        requirement = sub.mapping.item.requirement
+        previous_status = requirement_result(with_evidence(Requirement.objects).get(pk=requirement.pk))['status']
+        decision = ReviewDecision.objects.create(submission=sub, reviewer=request.user, outcome=data['outcome'], comment=data['comment'])
         audit(request.user, area, data['outcome'], sub.mapping.document.title, submission=sub.id, version=sub.version_id, comment=data['comment'])
+        notify(requirement, [sub.submitted_by], request.user, 'review_decided', f'review:{decision.pk}', submission=sub)
+        notify_if_ready(requirement, request.user, f'review:{decision.pk}:ready', previous_status)
         return Response(submission_data(Submission.objects.get(pk=sub.pk), request.user), status=201)
 
 
@@ -1484,6 +1523,7 @@ class PackageSubmitView(APIView):
         package.status = 'submitted'
         package.save(update_fields=['criteria_revision', 'criteria_snapshot', 'submitted_at', 'status'])
         audit(request.user, requirement.area, 'package_submitted', requirement.title, package=package.id, attempt=package.number)
+        notify_reviewers(requirement, request.user, f'package:{package.pk}:submitted', package=package)
         return Response(package_data(package, request.user))
 
 
@@ -1499,12 +1539,14 @@ class PackageWithdrawView(APIView):
             raise PermissionDenied('Only the submitter may withdraw a package before review.')
         if not data['confirm']:
             raise ValidationError({'confirm': 'Confirm withdrawal of this submitted attempt.'})
+        previous_status = requirement_result(with_evidence(Requirement.objects).get(pk=package.requirement_id))['status']
         package.status = 'withdrawn'
         package.withdrawal_reason = data.get('reason', '')
         package.resolved_at = timezone.now()
         package.save(update_fields=['status', 'withdrawal_reason', 'resolved_at'])
         audit(request.user, package.requirement.area, 'package_withdrawn', package.requirement.title,
               package=package.id, reason=package.withdrawal_reason)
+        notify_if_ready(package.requirement, request.user, f'package:{package.pk}:withdrawn:ready', previous_status)
         return Response(package_data(package, request.user))
 
 
@@ -1531,13 +1573,16 @@ class PackageReviewView(APIView):
                 raise ValidationError('Missing mandatory evidence requires a revision request.')
             if any(entry.version.valid_until and entry.version.valid_until < timezone.localdate() for entry in entries):
                 raise ValidationError('Expired evidence cannot be approved.')
+        previous_status = requirement_result(with_evidence(Requirement.objects).get(pk=package.requirement_id))['status']
         package.status = data['outcome']
         package.resolved_at = timezone.now()
         package.save(update_fields=['status', 'resolved_at'])
-        PackageDecision.objects.create(package=package, reviewer=request.user,
+        decision = PackageDecision.objects.create(package=package, reviewer=request.user,
                                        outcome=data['outcome'], comment=data.get('comment', ''))
         audit(request.user, package.requirement.area, 'package_' + data['outcome'], package.requirement.title,
               package=package.id, comment=data.get('comment', ''))
+        notify(package.requirement, [package.owner], request.user, 'review_decided', f'package_review:{decision.pk}', package=package)
+        notify_if_ready(package.requirement, request.user, f'package_review:{decision.pk}:ready', previous_status)
         return Response(package_data(package, request.user), status=201)
 
 
@@ -1628,6 +1673,10 @@ class RequirementCertificationsView(APIView):
                         snapshot=candidates[sid])
         audit(request.user, requirement.area, action, requirement.title,
               certification=certification.id, rationale=certification.rationale)
+        assignees = User.objects.filter(is_active=True, requirement_assignments__requirement=requirement,
+                                        requirement_assignments__active=True).distinct()
+        notify(requirement, assignees, request.user, action, f'certification:{certification.pk}')
+        notify_if_ready(requirement, request.user, f'certification:{certification.pk}:ready', result['status'])
         requirement = with_evidence(Requirement.objects).get(pk=requirement.pk)
         return Response({'certification': certification_data(certification), 'requirement': req_data(requirement, request.user, True)}, status=201)
 

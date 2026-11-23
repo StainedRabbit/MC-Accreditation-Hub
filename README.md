@@ -170,6 +170,6 @@ Back up PostgreSQL and private files as one protected set, replicate it to a sep
 
 Search checks only scoped requirement and document metadata and offers separate Load more controls after the first 50 matches of each type. Compliance Reports provide scoped filters, printable output, and a CSV download. CSV fields that begin with spreadsheet formula characters are neutralized before export.
 
-Notifications, advanced analytics, two-factor authentication, and a separate readiness score are not included in this increment. Their nonfunctional navigation/controls are intentionally absent.
+In-app notifications highlight assigned requirements, review work, review decisions, and completion milestones within each user's current access. The bell refreshes once per minute; notifications are generated for new events and do not send email. Advanced analytics, two-factor authentication, and a separate readiness score are not included in this increment.
 
 See [API contract](docs/API.md), [deployment guidance](docs/DEPLOYMENT.md), and [thesis evaluation packet](docs/THESIS_EVALUATION.md).

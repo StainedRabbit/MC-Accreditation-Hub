@@ -8,6 +8,8 @@ All paths below are prefixed by `/api/`. JSON unless uploading a file. Health, C
 | GET `auth/csrf/` | Sets CSRF cookie and returns `{csrfToken}` |
 | POST `auth/login/` | `{username, password, remember?: boolean}`; accepts username or email, returns current user and assignments |
 | GET `auth/me/` | `{id, name, username, is_staff, can_view_security_audit, assignments:[{role,cycle_id,area_id}]}` |
+| GET `notifications/` | Current user's visible notifications (most recent 100) and total unread count; access is rechecked against current grants. |
+| POST `notifications/{id}/read/`, `notifications/read-all/` | Mark one visible notification or all currently visible notifications read. |
 | POST `auth/logout/` | Ends session |
 | POST `auth/password-change/` | Authenticated `{current_password,new_password}`; keeps the current session valid and records an audit event |
 | POST `auth/password-reset/` | `{email}`; disabled or invalid configuration returns administrator-recovery guidance; enabled requests give the same account-neutral response for unknown accounts and SMTP failures, without claiming delivery |
