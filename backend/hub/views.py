@@ -258,7 +258,7 @@ def req_data(req, user, detail=False):
     can_certify = req.area.cycle.status == 'active' and not req.area.cycle.archived_at and not req.archived_at and is_coordinator
     result = {'id': req.id, 'code': req.code, 'title': req.title, 'description': req.description,
         'area': req.area_id, 'area_title': req.area.title, 'icon': req.area.icon, 'cycle': req.area.cycle_id,
-        'responsible': req.responsible, 'deadline': req.deadline, 'active': req.active,
+        'responsible': req.responsible, 'responsible_user': req.responsible_user_id, 'deadline': req.deadline, 'active': req.active,
         'applicable': req.applicable, 'exclusion_reason': req.exclusion_reason,
         'archived_at': req.archived_at, 'archived_by': req.archived_by_id if is_coordinator else None,
         'archive_reason': req.archive_reason if is_coordinator else '', **result_data,
@@ -730,6 +730,20 @@ class AreaDetailView(APIView):
               area_code=area_code, cycle_id=cycle_id)
         area.delete()
         return Response(status=204)
+
+
+class ResponsibleUsersView(APIView):
+    def get(self, request, pk):
+        area = get_object_or_404(areas_for(request.user, ['coordinator']), pk=pk)
+        term = query_text(request, 'search')
+        page = query_id(request, 'page') or '1'
+        users = User.objects.filter(is_active=True).annotate(search_name=Concat('first_name', Value(' '), 'last_name')).filter(
+            Q(username__icontains=term) | Q(search_name__icontains=term)
+        ).order_by('username')
+        offset = (int(page) - 1) * 5
+        matches = list(users[offset:offset + 6])
+        return Response({'users': [{'id': u.pk, 'name': u.get_full_name() or u.username, 'username': u.username}
+                                   for u in matches[:5]], 'has_more': len(matches) > 5})
 
 
 class RequirementsView(APIView):

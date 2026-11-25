@@ -72,7 +72,7 @@ class WorkflowFixture:
         self.client = APIClient()
         self.client.force_authenticate(self.coordinator)
         response = self.client.post('/api/requirements/', {'area': self.area.id, 'code': 'R1', 'title': 'Faculty Plan',
-            'responsible': 'Graduate School', 'active': True, 'items': [{'label': 'Plan'}]}, format='json')
+            'responsible_user': self.custodian.id, 'active': True, 'items': [{'label': 'Plan'}]}, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.requirement = Requirement.objects.get(pk=response.data['id'])
         # Existing tests exercise the preserved pre-F07 item-level history path.
@@ -141,9 +141,24 @@ class AreaManagementTests(WorkflowFixture, TestCase):
         self.assertEqual(created.data['code'], 'AREA-002')
         Requirement.objects.create(area=self.area, code='REQ-001', title='Existing', responsible='Office', created_by=self.coordinator)
         requirement = self.client.post('/api/requirements/', {'area': self.area.id, 'title': 'Generated',
-            'responsible': 'Office', 'active': True, 'items': [{'label': 'Evidence'}]}, format='json')
+            'responsible_user': self.custodian.id, 'active': True, 'items': [{'label': 'Evidence'}]}, format='json')
         self.assertEqual(requirement.status_code, 201, requirement.data)
         self.assertEqual(requirement.data['code'], 'REQ-002')
+
+    def test_responsible_person_can_be_searched_and_selected(self):
+        results = self.client.get(f'/api/areas/{self.area.id}/responsible-users/', {'search': self.custodian.username})
+        self.assertEqual(results.status_code, 200)
+        self.assertEqual([user['id'] for user in results.data['users']], [self.custodian.id])
+        response = self.client.post('/api/requirements/', {'area': self.area.id, 'title': 'User owned',
+            'responsible_user': self.custodian.id, 'active': True, 'items': [{'label': 'Evidence'}]}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['responsible_user'], self.custodian.id)
+        self.assertEqual(response.data['responsible'], self.custodian.username)
+        self.custodian.is_active = False
+        self.custodian.save(update_fields=['is_active'])
+        rejected = self.client.post('/api/requirements/', {'area': self.area.id, 'title': 'Inactive user',
+            'responsible_user': self.custodian.id, 'active': True, 'items': [{'label': 'Evidence'}]}, format='json')
+        self.assertEqual(rejected.status_code, 400)
 
     def test_create_area_with_multiple_users_is_atomic(self):
         response = self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': 'TEAM', 'title': 'Team',
@@ -448,7 +463,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.client.force_authenticate(self.coordinator)
         unassigned = self.client.post('/api/requirements/', {
             'area': self.area.id, 'code': 'UNASSIGNED', 'title': 'Unassigned requirement',
-            'responsible': 'Graduate School', 'active': True, 'items': [{'label': 'Evidence'}],
+            'responsible_user': self.custodian.id, 'active': True, 'items': [{'label': 'Evidence'}],
         }, format='json').data
         self.client.force_authenticate(self.custodian)
         denied_upload = self.client.post('/api/documents/', {
@@ -665,7 +680,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
 
     def test_activation_requires_mandatory_item(self):
         self.client.force_authenticate(self.coordinator)
-        response = self.client.post('/api/requirements/', {'area': self.area.id, 'code': 'EMPTY', 'title': 'Empty', 'responsible': 'Office', 'active': True, 'items': []}, format='json')
+        response = self.client.post('/api/requirements/', {'area': self.area.id, 'code': 'EMPTY', 'title': 'Empty', 'responsible_user': self.custodian.id, 'active': True, 'items': []}, format='json')
         self.assertEqual(response.status_code, 400)
 
     def test_expired_evidence_cannot_submit_or_count(self):
@@ -2003,7 +2018,7 @@ class InputBoundaryTests(WorkflowFixture, TestCase):
     def test_large_requirement_fields_and_item_count_are_rejected(self):
         before = Requirement.objects.count()
         base = {'area': self.area.id, 'code': 'BOUND', 'title': 'Synthetic boundary',
-                'responsible': 'School', 'active': True, 'items': [{'label': 'Required'}]}
+                'responsible_user': self.custodian.id, 'active': True, 'items': [{'label': 'Required'}]}
         for change in ({'description': 'x' * 4001}, {'items': [{'label': 'Item'}] * 51},
                        {'items': [{'label': 'Required', 'criteria': 'x' * 4001}]}):
             with self.subTest(fields=list(change)):

@@ -28,7 +28,8 @@ test("uncertain Upload & Map retry reuses the key and maps one saved version", a
   await setup.getByRole("combobox", { name: "Accreditation area", exact: true }).selectOption({ label: "Faculty" });
   await setup.getByLabel("Requirement code").fill(`IDEMP-${Date.now()}`);
   await setup.getByLabel("Requirement title").fill(title);
-  await setup.getByLabel("Responsible office / person").fill("Graduate School");
+  await setup.getByLabel("Responsible person").fill("demo.custodian");
+  await setup.getByRole("button", { name: /Select .*\(demo\.custodian\)/ }).click();
   await setup.getByLabel("Evidence item 1").fill("Retry-safe evidence");
   await setup.getByRole("button", { name: "Save Requirement" }).click();
   await coordinator.getByRole("row").filter({ hasText: title }).getByRole("button", { name: "View" }).click();

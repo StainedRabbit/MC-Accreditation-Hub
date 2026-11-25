@@ -108,6 +108,7 @@ class Requirement(models.Model):
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True)
     responsible = models.CharField(max_length=180)
+    responsible_user = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name='responsible_requirements')
     deadline = models.DateField(null=True, blank=True)
     active = models.BooleanField(default=False)
     applicable = models.BooleanField(default=True)

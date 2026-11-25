@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from .models import Requirement, EvidenceItem, Area
+from .models import Requirement, EvidenceItem, Area, User
 
 
 class AreaAccessInput(serializers.Serializer):
@@ -77,6 +77,8 @@ class ItemInput(serializers.Serializer):
 
 class RequirementInput(serializers.ModelSerializer):
     code = serializers.CharField(max_length=40, required=False)
+    responsible = serializers.CharField(max_length=180, required=False)
+    responsible_user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True), required=False)
     items = ItemInput(many=True, required=False)
     description = serializers.CharField(required=False, allow_blank=True, max_length=4000)
     exclusion_reason = serializers.CharField(required=False, allow_blank=True, max_length=4000)
@@ -85,13 +87,20 @@ class RequirementInput(serializers.ModelSerializer):
 
     class Meta:
         model = Requirement
-        fields = ['area', 'code', 'title', 'description', 'responsible', 'deadline', 'active', 'applicable', 'exclusion_reason', 'items', 'applicability_reason', 'change_reason']
+        fields = ['area', 'code', 'title', 'description', 'responsible', 'responsible_user', 'deadline', 'active', 'applicable', 'exclusion_reason', 'items', 'applicability_reason', 'change_reason']
         validators = []
 
     def validate(self, attrs):
         if len(attrs.get('items', [])) > 50:
             raise serializers.ValidationError({'items': 'Use 50 evidence items or fewer.'})
         instance = self.instance
+        if 'responsible_user' in attrs:
+            person = attrs['responsible_user']
+            attrs['responsible'] = (person.get_full_name() or person.username)[:180]
+        elif not instance:
+            raise serializers.ValidationError({'responsible_user': 'Select a responsible user.'})
+        elif instance and 'responsible' in attrs and attrs['responsible'] != instance.responsible:
+            raise serializers.ValidationError({'responsible_user': 'Select a responsible user to change this value.'})
         applicable = attrs.get('applicable', instance.applicable if instance else True)
         reason = attrs.get('exclusion_reason', instance.exclusion_reason if instance else '')
         if not applicable and not reason.strip():

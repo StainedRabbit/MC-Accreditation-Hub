@@ -106,6 +106,7 @@ export type Requirement = {
   cycle: number;
   icon: string;
   responsible: string;
+  responsible_user: number | null;
   deadline: string | null;
   overdue: boolean;
   archived_at: string | null;

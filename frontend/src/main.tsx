@@ -2401,8 +2401,25 @@ function RequirementForm({
     [applicable, setApplicable] = useState(editing?.applicable ?? true);
   const [items, setItems] = useState([{ label: "", criteria: "" }]);
   const [exclusionReason, setExclusionReason] = useState(editing?.exclusion_reason ?? "");
+  const [selectedArea, setSelectedArea] = useState(editing?.area || areas[0]?.id || 0);
+  const [person, setPerson] = useState<AssignmentCandidate | null>(editing?.responsible_user ? { id: editing.responsible_user, name: editing.responsible, username: "" } : null);
+  const [personSearch, setPersonSearch] = useState("");
+  const [personPage, setPersonPage] = useState(1);
+  const [personResults, setPersonResults] = useState<{ users: AssignmentCandidate[]; has_more: boolean }>({ users: [], has_more: false });
+  const [personError, setPersonError] = useState("");
+  useEffect(() => {
+    if (!selectedArea) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api<{ users: AssignmentCandidate[]; has_more: boolean }>(`areas/${selectedArea}/responsible-users/?search=${encodeURIComponent(personSearch)}&page=${personPage}`)
+        .then((result) => { if (!cancelled) { setPersonResults(result); setPersonError(""); } })
+        .catch((failure) => { if (!cancelled) { setPersonResults({ users: [], has_more: false }); setPersonError(failure.message); } });
+    }, 200);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [selectedArea, personSearch, personPage]);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!editing && !person) { setError("Select a responsible user."); return; }
     setBusy(true);
     setError("");
     const f = new FormData(e.currentTarget);
@@ -2411,7 +2428,7 @@ function RequirementForm({
       ...(editing ? { code: f.get("code") } : {}),
       title: f.get("title"),
       description: f.get("description"),
-      responsible: f.get("responsible"),
+      ...(person && person.id !== editing?.responsible_user ? { responsible_user: person.id } : {}),
       deadline: f.get("deadline") || null,
       active: f.get("active") === "on",
       applicable,
@@ -2446,7 +2463,8 @@ function RequirementForm({
             Accreditation area
             <select
               name="area"
-              defaultValue={editing?.area || areas[0]?.id}
+              value={selectedArea}
+              onChange={(event) => { setSelectedArea(Number(event.target.value)); setPerson(null); setPersonPage(1); }}
               disabled={!!editing}
             >
               {areas.map((a) => (
@@ -2489,15 +2507,18 @@ function RequirementForm({
           />
         </label>
         <div className="form-grid">
-          <label>
-            Responsible office / person
-            <input
-              name="responsible"
-              required
-              maxLength={180}
-              defaultValue={editing?.responsible}
-            />
-          </label>
+          <div>
+            <label>Responsible person
+              <input type="search" value={personSearch} onChange={(event) => { setPersonSearch(event.target.value); setPersonPage(1); }} placeholder="Search name or username" />
+            </label>
+            {person ? <p>Selected: <strong>{person.name}{person.username ? ` (${person.username})` : ""}</strong> <button type="button" className="link" onClick={() => setPerson(null)}>Change</button></p> : editing?.responsible_user == null && editing ? <p className="muted">Current legacy value: {editing.responsible}. Select a user to replace it.</p> : <p className="muted">Select a user below.</p>}
+            <ErrorBox error={personError} />
+            <div className="area-user-results" aria-label="Responsible user search results">
+              {personResults.users.length ? personResults.users.map((user) => <div className="area-user-result" key={user.id}><span>{user.name} ({user.username})</span><button type="button" className="link" onClick={() => setPerson(user)} aria-label={`Select ${user.name} (${user.username})`}>Select</button></div>) : <p className="muted">No users found.</p>}
+            </div>
+            {(personPage > 1 || personResults.has_more) && <div className="area-user-pagination"><button type="button" className="secondary" disabled={personPage === 1} onClick={() => setPersonPage((page) => page - 1)}>Previous</button><span>Page {personPage}</span><button type="button" className="secondary" disabled={!personResults.has_more} onClick={() => setPersonPage((page) => page + 1)}>Next</button></div>}
+            <small>To allow uploads, also assign the custodian to the requirement after saving.</small>
+          </div>
           <label>
             Deadline
             <input

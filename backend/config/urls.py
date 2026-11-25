@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/auth/password-change/', v.PasswordChangeView.as_view()), path('api/auth/password-reset/', v.PasswordResetRequestView.as_view()), path('api/auth/password-reset-confirm/', v.PasswordResetConfirmView.as_view()),
     path('api/cycles/', v.CyclesView.as_view()), path('api/cycles/<int:pk>/close/', v.CloseCycleView.as_view()), path('api/cycles/<int:pk>/reopen/', v.ReopenCycleView.as_view()), path('api/cycles/<int:pk>/archive/', v.CycleArchiveView.as_view()), path('api/cycles/<int:pk>/restore/', v.CycleRestoreView.as_view()), path('api/areas/', v.AreasView.as_view()), path('api/areas/<int:pk>/', v.AreaDetailView.as_view()),
     path('api/areas/<int:pk>/access/', v.AreaAccessView.as_view()), path('api/areas/<int:pk>/comments/', v.AreaCommentsView.as_view()),
+    path('api/areas/<int:pk>/responsible-users/', v.ResponsibleUsersView.as_view()),
     path('api/requirements/', v.RequirementsView.as_view()), path('api/requirements/<int:pk>/', v.RequirementsView.as_view()), path('api/requirements/<int:pk>/archive/', v.RequirementArchiveView.as_view()), path('api/requirements/<int:pk>/restore/', v.RequirementRestoreView.as_view()),
     path('api/requirements/<int:pk>/assignments/', v.RequirementAssignmentsView.as_view()),
     path('api/requirements/<int:pk>/certifications/', v.RequirementCertificationsView.as_view()),

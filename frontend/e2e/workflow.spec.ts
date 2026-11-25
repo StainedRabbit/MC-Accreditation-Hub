@@ -55,7 +55,8 @@ test("submitted package outranks missing evidence in the report", async ({ brows
   await form.getByRole("combobox", { name: "Accreditation area", exact: true }).selectOption({ label: "Faculty" });
   await form.getByLabel("Requirement code").fill(`F07-P-${Date.now()}`);
   await form.getByLabel("Requirement title").fill(title);
-  await form.getByLabel("Responsible office / person").fill("Graduate School");
+  await form.getByLabel("Responsible person").fill("demo.custodian");
+  await form.getByRole("button", { name: /Select .*\(demo\.custodian\)/ }).click();
   await form.getByLabel("Evidence item 1").fill("Primary plan");
   await form.getByRole("button", { name: "Add evidence item" }).click();
   await form.getByLabel("Evidence item 2").fill("Missing attachment");
@@ -147,7 +148,8 @@ test("package attempts preserve draft, withdrawal, revision, review and certific
   await requirementForm.getByLabel("Requirement code").fill(`F07-${Date.now()}`);
   await requirementForm.getByLabel("Requirement title").fill(title);
   await requirementForm.getByLabel("Description / acceptance criteria").fill("A signed faculty plan.");
-  await requirementForm.getByLabel("Responsible office / person").fill("Graduate School");
+  await requirementForm.getByLabel("Responsible person").fill("demo.custodian");
+  await requirementForm.getByRole("button", { name: /Select .*\(demo\.custodian\)/ }).click();
   await requirementForm.getByLabel("Evidence item 1").fill("Faculty plan");
   await requirementForm.getByLabel("Acceptance criteria", { exact: true }).fill("Readable signed plan.");
   await requirementForm.getByRole("button", { name: "Save Requirement" }).click();
