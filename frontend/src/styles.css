@@ -119,9 +119,23 @@ label.check input[type="checkbox"] {
 }
 .area-user-role {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 220px);
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 200px) auto;
   gap: 12px;
   align-items: center;
+}
+.area-user-results {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 12px;
+}
+.area-user-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
 }
 input[type="checkbox"] {
   width: 17px;
@@ -1516,6 +1530,13 @@ dialog::backdrop {
   }
 }
 @media (max-width: 640px) {
+  .area-user-role {
+    grid-template-columns: 1fr auto;
+  }
+  .area-user-role label {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
   .login-page {
     display: flex;
     flex-direction: column;

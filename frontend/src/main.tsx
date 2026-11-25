@@ -2292,13 +2292,24 @@ function App() {
 
 type AreaUserRoles = Record<number, string>;
 function AreaUserRoleSelector({ candidates, roles, setRoles }: { candidates: AssignmentCandidate[]; roles: AreaUserRoles; setRoles: React.Dispatch<React.SetStateAction<AreaUserRoles>> }) {
-  const allSelected = candidates.length > 0 && candidates.every((u) => roles[u.id]);
+  const [query, setQuery] = useState("");
+  const selected = candidates.filter((user) => roles[user.id]);
+  const available = candidates.filter((user) => !roles[user.id] && `${user.name} ${user.username}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <div>
-    <label className="check"><input type="checkbox" checked={allSelected} onChange={(event) => setRoles(event.target.checked ? Object.fromEntries(candidates.map((u) => [u.id, roles[u.id] || "custodian"])) : {})} />Select all users as custodians</label>
-    {candidates.map((u) => <div className="area-user-role" key={u.id}>
-      <label className="check"><input type="checkbox" checked={!!roles[u.id]} onChange={(event) => setRoles((current) => ({ ...current, [u.id]: event.target.checked ? "custodian" : "" }))} />{u.name} ({u.username})</label>
-      <label>Role for {u.name}<select value={roles[u.id] || "custodian"} disabled={!roles[u.id]} onChange={(event) => setRoles((current) => ({ ...current, [u.id]: event.target.value }))}><option value="custodian">Custodian</option><option value="reviewer">Reviewer</option><option value="viewer">Viewer</option></select></label>
-    </div>)}
+    <label>Search users<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or username" /></label>
+    <div className="area-user-results" aria-label="Available users">
+      {available.length ? available.map((user) => <div className="area-user-result" key={user.id}>
+        <span>{user.name} <small>({user.username})</small></span>
+        <button type="button" className="link" aria-label={`Add ${user.name} (${user.username})`} onClick={() => setRoles((current) => ({ ...current, [user.id]: "custodian" }))}>Add</button>
+      </div>) : <p className="muted">{query ? "No available users match your search." : "No more users to add."}</p>}
+    </div>
+    {available.length > 0 && <button type="button" className="link" onClick={() => setRoles((current) => ({ ...current, ...Object.fromEntries(available.map((user) => [user.id, "custodian"])) }))}>{query.trim() ? "Add all matching users" : "Add all users"}</button>}
+    <p><strong>Selected users ({selected.length})</strong></p>
+    {selected.length ? selected.map((u) => <div className="area-user-role" key={u.id}>
+      <span>{u.name} <small>({u.username})</small></span>
+      <label>Role for {u.name}<select value={roles[u.id]} onChange={(event) => setRoles((current) => ({ ...current, [u.id]: event.target.value }))}><option value="custodian">Custodian</option><option value="reviewer">Reviewer</option><option value="viewer">Viewer</option></select></label>
+      <button type="button" className="link" aria-label={`Remove ${u.name} (${u.username})`} onClick={() => setRoles((current) => ({ ...current, [u.id]: "" }))}>Remove</button>
+    </div>) : <p className="muted">No users selected.</p>}
   </div>;
 }
 function selectedAreaRoles(roles: AreaUserRoles) {
