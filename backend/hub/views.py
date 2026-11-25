@@ -559,6 +559,10 @@ class AreasView(APIView):
         data = serializer.validated_data
         user_ids = data.pop('assigned_users', [])
         role = data.pop('assignment_role', 'custodian')
+        user_roles = data.pop('user_roles', None)
+        if user_roles is None:
+            user_roles = [{'user': user_id, 'role': role} for user_id in user_ids]
+        user_ids = [entry['user'] for entry in user_roles]
         reason = data.pop('assignment_reason', '').strip()
         if len(user_ids) != len(set(user_ids)) or request.user.pk in user_ids:
             raise ValidationError({'assigned_users': 'Select distinct users other than yourself.'})
@@ -568,7 +572,9 @@ class AreasView(APIView):
         if users and not reason:
             raise ValidationError({'assignment_reason': 'Enter a reason for assigning users.'})
         area = serializer.save(cycle=cycle)
+        roles_by_user = {entry['user']: entry['role'] for entry in user_roles}
         for user in users:
+            role = roles_by_user[user.pk]
             with suppress_model_audit():
                 grant = RoleAssignment.objects.create(user=user, cycle=cycle, area=area, role=role)
             audit(request.user, area, 'grant_created', f'grant:{grant.pk}', target_user_id=user.pk,
@@ -589,10 +595,32 @@ class AreaAccessView(APIView):
         users = User.objects.filter(Q(is_active=True) | Q(assignments__area=area)).exclude(pk=request.user.pk).distinct().order_by('username')
         return Response({'assignments': [{'user': g.user_id, 'name': g.user.get_full_name() or g.user.username,
                                         'username': g.user.username, 'role': g.role} for g in grants],
-                         'candidates': [{'id': u.pk, 'name': u.get_full_name() or u.username, 'username': u.username} for u in users]})
+                         'candidates': [{'id': u.pk, 'name': u.get_full_name() or u.username, 'username': u.username, 'is_active': u.is_active} for u in users]})
 
     @transaction.atomic
     def post(self, request, pk):
+        if 'user_roles' in request.data:
+            data = payload(AreaBulkAccessInput, request).validated_data
+            area = self.area_for_manager(request, pk)
+            cycle = Cycle.objects.select_for_update().get(pk=area.cycle_id)
+            if not has_cyclewide_coordinator(request.user, cycle):
+                raise PermissionDenied('A cycle-wide Coordinator grant is required.')
+            if cycle.status != 'active' or cycle.archived_at:
+                raise ValidationError('Assignments can be changed only in an active cycle.')
+            user_ids = [entry['user'] for entry in data['user_roles']]
+            if len(user_ids) != len(set(user_ids)) or request.user.pk in user_ids:
+                raise ValidationError({'user_roles': 'Select distinct users other than yourself.'})
+            users = {u.pk: u for u in User.objects.filter(pk__in=user_ids, is_active=True)}
+            if len(users) != len(user_ids):
+                raise ValidationError({'user_roles': 'All selected users must be active.'})
+            for entry in data['user_roles']:
+                if RoleAssignment.objects.filter(user_id=entry['user'], cycle=cycle, area=area, role=entry['role']).exists():
+                    continue
+                with suppress_model_audit():
+                    grant = RoleAssignment.objects.create(user=users[entry['user']], cycle=cycle, area=area, role=entry['role'])
+                audit(request.user, area, 'grant_created', f'grant:{grant.pk}', target_user_id=entry['user'],
+                      target_cycle_id=cycle.pk, target_area_id=area.pk, role=entry['role'], reason=data['reason'])
+            return Response({'detail': 'Assignments updated.'})
         data = payload(AreaAccessInput, request).validated_data
         area = self.area_for_manager(request, pk)
         cycle = Cycle.objects.select_for_update().get(pk=area.cycle_id)

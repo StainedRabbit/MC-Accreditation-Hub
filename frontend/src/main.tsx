@@ -2290,6 +2290,21 @@ function App() {
   );
 }
 
+type AreaUserRoles = Record<number, string>;
+function AreaUserRoleSelector({ candidates, roles, setRoles }: { candidates: AssignmentCandidate[]; roles: AreaUserRoles; setRoles: React.Dispatch<React.SetStateAction<AreaUserRoles>> }) {
+  const allSelected = candidates.length > 0 && candidates.every((u) => roles[u.id]);
+  return <div>
+    <label className="check"><input type="checkbox" checked={allSelected} onChange={(event) => setRoles(event.target.checked ? Object.fromEntries(candidates.map((u) => [u.id, roles[u.id] || "custodian"])) : {})} />Select all users as custodians</label>
+    {candidates.map((u) => <div className="area-user-role" key={u.id}>
+      <label className="check"><input type="checkbox" checked={!!roles[u.id]} onChange={(event) => setRoles((current) => ({ ...current, [u.id]: event.target.checked ? "custodian" : "" }))} />{u.name} ({u.username})</label>
+      <label>Role for {u.name}<select value={roles[u.id] || "custodian"} disabled={!roles[u.id]} onChange={(event) => setRoles((current) => ({ ...current, [u.id]: event.target.value }))}><option value="custodian">Custodian</option><option value="reviewer">Reviewer</option><option value="viewer">Viewer</option></select></label>
+    </div>)}
+  </div>;
+}
+function selectedAreaRoles(roles: AreaUserRoles) {
+  return Object.entries(roles).filter(([, role]) => role).map(([user, role]) => ({ user: Number(user), role }));
+}
+
 function AreaForm({ cycle, editing, close, saved }: {
   cycle: number;
   editing: Area | null;
@@ -2299,7 +2314,8 @@ function AreaForm({ cycle, editing, close, saved }: {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [candidates, setCandidates] = useState<AssignmentCandidate[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
+  const [roles, setRoles] = useState<AreaUserRoles>({});
+  const selectedUsers = selectedAreaRoles(roles);
   useEffect(() => {
     if (!editing) api<AssignmentCandidate[]>(`areas/?cycle=${cycle}&assignment_candidates=1`).then(setCandidates).catch((e) => setError(e.message));
   }, [cycle, editing]);
@@ -2314,7 +2330,7 @@ function AreaForm({ cycle, editing, close, saved }: {
       title: form.get("title"),
       icon: form.get("icon"),
       order: Number(form.get("order")),
-      ...(!editing ? { assigned_users: selectedUsers, assignment_role: form.get("assignment_role"), assignment_reason: form.get("assignment_reason") || undefined } : {}),
+      ...(!editing ? { user_roles: selectedUsers, assignment_reason: form.get("assignment_reason") || undefined } : {}),
     };
     try {
       await api(editing ? `areas/${editing.id}/` : "areas/", {
@@ -2340,9 +2356,7 @@ function AreaForm({ cycle, editing, close, saved }: {
       {!editing && <fieldset>
         <legend>Assign users</legend>
         <p className="muted">Choose one, several, or all users. Custodians also need to be assigned to individual requirements before uploading evidence.</p>
-        <label className="check"><input type="checkbox" checked={candidates.length > 0 && selectedUsers.length === candidates.length} onChange={(e) => setSelectedUsers(e.target.checked ? candidates.map((u) => u.id) : [])} />Select all users</label>
-        {candidates.map((u) => <label className="check" key={u.id}><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={(e) => setSelectedUsers(e.target.checked ? [...selectedUsers, u.id] : selectedUsers.filter((id) => id !== u.id))} />{u.name} ({u.username})</label>)}
-        <label>Role<select name="assignment_role"><option value="custodian">Custodian</option><option value="reviewer">Reviewer</option><option value="viewer">Viewer</option></select></label>
+        <AreaUserRoleSelector candidates={candidates} roles={roles} setRoles={setRoles} />
         {selectedUsers.length > 0 && <label>Assignment reason<textarea name="assignment_reason" required maxLength={1000} /></label>}
       </fieldset>}
       <div className="form-actions"><button className="secondary" type="button" onClick={close}>Cancel</button>
@@ -2574,6 +2588,7 @@ function AreaAccessForm({ area, close }: { area: Area; close: () => void }) {
   type Grant = { user: number; name: string; username: string; role: string };
   type Access = { assignments: Grant[]; candidates: AssignmentCandidate[] };
   const [data, setData] = useState<Access | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const [roles, setRoles] = useState<AreaUserRoles>({});
   const load = () => api<Access>(`areas/${area.id}/access/`).then(setData);
   useEffect(() => { load().catch((e) => setError(e.message)); }, [area.id]);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -2581,16 +2596,28 @@ function AreaAccessForm({ area, close }: { area: Area; close: () => void }) {
     try { await post(`areas/${area.id}/access/`, { user: Number(form.get("user")), role: form.get("role"), action: form.get("action"), reason: form.get("reason") }); await load(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <Modal title={`Assign users: ${area.title}`} close={close}><form onSubmit={submit}>
+  async function addUsers(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true); setError(""); const form = new FormData(e.currentTarget);
+    try { await post(`areas/${area.id}/access/`, { user_roles: selectedAreaRoles(roles), reason: form.get("reason") }); setRoles({}); await load(); }
+    catch (failure) { setError((failure as Error).message); } finally { setBusy(false); }
+  }
+  return <Modal title={`Assign users: ${area.title}`} close={close}>
     <ErrorBox error={error} />
     <p>After adding a Custodian here, assign them to each requirement they will work on.</p>
     <p>Cycle-wide Viewer or Coordinator access is managed separately and is not removed here.</p>
     <p><strong>Current area assignments:</strong> {data?.assignments.length ? data.assignments.map((g) => `${g.name} (${g.username}) — ${g.role}`).join(", ") : "None"}</p>
+    <form onSubmit={addUsers}>
+      <AreaUserRoleSelector candidates={data?.candidates.filter((user) => user.is_active !== false) || []} roles={roles} setRoles={setRoles} />
+      <label>Reason for adding access<textarea name="reason" required maxLength={1000} /></label>
+      <button className="primary" disabled={!data || busy || !selectedAreaRoles(roles).length}>{busy ? "Saving…" : "Assign selected users"}</button>
+    </form>
+    <form onSubmit={submit}>
+    <h3>Remove an assignment</h3>
     <label>User<select name="user" required disabled={!data}><option value="">Select user</option>{data?.candidates.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select></label>
     <label>Role<select name="role"><option value="custodian">Custodian</option><option value="reviewer">Reviewer</option><option value="viewer">Viewer</option></select></label>
-    <label>Action<select name="action"><option value="add">Add access</option><option value="remove">Remove access</option></select></label>
+    <input type="hidden" name="action" value="remove" />
     <label>Reason<textarea name="reason" required maxLength={1000} /></label>
-    <div className="form-actions"><button type="button" className="secondary" onClick={close}>Close</button><button className="primary" disabled={!data || busy}>{busy ? "Saving…" : "Save assignment"}</button></div>
+    <div className="form-actions"><button type="button" className="secondary" onClick={close}>Close</button><button className="secondary" disabled={!data || busy}>{busy ? "Saving…" : "Remove access"}</button></div>
   </form></Modal>;
 }
 

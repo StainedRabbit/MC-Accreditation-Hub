@@ -117,6 +117,12 @@ label.check {
 label.check input[type="checkbox"] {
   flex: 0 0 17px;
 }
+.area-user-role {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 220px);
+  gap: 12px;
+  align-items: center;
+}
 input[type="checkbox"] {
   width: 17px;
   height: 17px;

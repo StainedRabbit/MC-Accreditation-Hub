@@ -145,7 +145,7 @@ export type RequirementAssignment = {
   assigned_by: string;
   created_at: string;
 };
-export type AssignmentCandidate = { id: number; name: string; username: string };
+export type AssignmentCandidate = { id: number; name: string; username: string; is_active?: boolean };
 export type Certification = {
   id: number;
   outcome: "complete" | "reopened";

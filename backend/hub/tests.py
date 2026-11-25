@@ -135,15 +135,29 @@ class AreaManagementTests(WorkflowFixture, TestCase):
 
     def test_create_area_with_multiple_users_is_atomic(self):
         response = self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': 'TEAM', 'title': 'Team',
-            'icon': '📘', 'order': 3, 'assigned_users': [self.custodian.id, self.reviewer.id],
-            'assignment_role': 'custodian', 'assignment_reason': 'Area responsibility'}, format='json')
+            'icon': '📘', 'order': 3, 'user_roles': [{'user': self.custodian.id, 'role': 'custodian'},
+                {'user': self.reviewer.id, 'role': 'reviewer'}], 'assignment_reason': 'Area responsibility'}, format='json')
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(RoleAssignment.objects.filter(area_id=response.data['id'], role='custodian').count(), 2)
+        self.assertTrue(RoleAssignment.objects.filter(area_id=response.data['id'], role='custodian', user=self.custodian).exists())
+        self.assertTrue(RoleAssignment.objects.filter(area_id=response.data['id'], role='reviewer', user=self.reviewer).exists())
         rejected = self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': 'BAD', 'title': 'Bad',
             'icon': '📘', 'order': 3, 'assigned_users': [self.custodian.id, 999999],
             'assignment_role': 'custodian', 'assignment_reason': 'Area responsibility'}, format='json')
         self.assertEqual(rejected.status_code, 400)
         self.assertFalse(Area.objects.filter(cycle=self.cycle, code='BAD').exists())
+
+    def test_bulk_area_assignments_validate_before_saving(self):
+        response = self.client.post(f'/api/areas/{self.area.id}/access/', {
+            'user_roles': [{'user': self.custodian.id, 'role': 'viewer'}, {'user': self.reviewer.id, 'role': 'custodian'}],
+            'reason': 'Shared responsibility'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(RoleAssignment.objects.filter(area=self.area, user=self.custodian, role='viewer').exists())
+        self.assertTrue(RoleAssignment.objects.filter(area=self.area, user=self.reviewer, role='custodian').exists())
+        response = self.client.post(f'/api/areas/{self.area.id}/access/', {
+            'user_roles': [{'user': self.custodian.id, 'role': 'reviewer'}, {'user': 999999, 'role': 'viewer'}],
+            'reason': 'Shared responsibility'}, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(RoleAssignment.objects.filter(area=self.area, user=self.custodian, role='reviewer').exists())
 
     def test_cycle_coordinator_can_create_edit_and_delete_empty_area_with_audit(self):
         created = self.create_area()

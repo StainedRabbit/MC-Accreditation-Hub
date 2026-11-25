@@ -14,13 +14,24 @@ class AreaCommentInput(serializers.Serializer):
     text = serializers.CharField(max_length=4000, trim_whitespace=True)
 
 
+class AreaUserRoleInput(serializers.Serializer):
+    user = serializers.IntegerField(min_value=1)
+    role = serializers.ChoiceField(choices=['reviewer', 'custodian', 'viewer'])
+
+
+class AreaBulkAccessInput(serializers.Serializer):
+    user_roles = AreaUserRoleInput(many=True, allow_empty=False)
+    reason = serializers.CharField(max_length=1000, trim_whitespace=True)
+
+
 class AreaInput(serializers.ModelSerializer):
     assigned_users = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, write_only=True)
+    user_roles = AreaUserRoleInput(many=True, required=False, write_only=True)
     assignment_role = serializers.ChoiceField(choices=['custodian', 'reviewer', 'viewer'], required=False, write_only=True)
     assignment_reason = serializers.CharField(max_length=1000, required=False, write_only=True)
     class Meta:
         model = Area
-        fields = ['cycle', 'code', 'title', 'icon', 'order', 'assigned_users', 'assignment_role', 'assignment_reason']
+        fields = ['cycle', 'code', 'title', 'icon', 'order', 'assigned_users', 'user_roles', 'assignment_role', 'assignment_reason']
         extra_kwargs = {'cycle': {'required': False}}
 
     def validate_code(self, value):
@@ -43,8 +54,10 @@ class AreaInput(serializers.ModelSerializer):
 
     def validate(self, attrs):
         instance = self.instance
-        if instance and any(key in attrs for key in ('assigned_users', 'assignment_role', 'assignment_reason')):
+        if instance and any(key in attrs for key in ('assigned_users', 'user_roles', 'assignment_role', 'assignment_reason')):
             raise serializers.ValidationError('Manage existing area assignments through the area access screen.')
+        if 'assigned_users' in attrs and 'user_roles' in attrs:
+            raise serializers.ValidationError('Use one assignment format.')
         cycle = attrs.get('cycle', instance.cycle if instance else None)
         if instance and cycle.pk != instance.cycle_id:
             raise serializers.ValidationError({'cycle': 'An area cannot move to another cycle.'})
