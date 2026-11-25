@@ -2293,16 +2293,25 @@ function App() {
 type AreaUserRoles = Record<number, string>;
 function AreaUserRoleSelector({ candidates, roles, setRoles }: { candidates: AssignmentCandidate[]; roles: AreaUserRoles; setRoles: React.Dispatch<React.SetStateAction<AreaUserRoles>> }) {
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
   const selected = candidates.filter((user) => roles[user.id]);
   const available = candidates.filter((user) => !roles[user.id] && `${user.name} ${user.username}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const pages = Math.max(1, Math.ceil(available.length / 5));
+  const currentPage = Math.min(page, pages - 1);
+  const visibleUsers = available.slice(currentPage * 5, currentPage * 5 + 5);
   return <div>
-    <label>Search users<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or username" /></label>
+    <label>Search users<input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="Search name or username" /></label>
     <div className="area-user-results" aria-label="Available users">
-      {available.length ? available.map((user) => <div className="area-user-result" key={user.id}>
+      {available.length ? visibleUsers.map((user) => <div className="area-user-result" key={user.id}>
         <span>{user.name} <small>({user.username})</small></span>
         <button type="button" className="link" aria-label={`Add ${user.name} (${user.username})`} onClick={() => setRoles((current) => ({ ...current, [user.id]: "custodian" }))}>Add</button>
       </div>) : <p className="muted">{query ? "No available users match your search." : "No more users to add."}</p>}
     </div>
+    {pages > 1 && <div className="area-user-pagination" aria-label="User list pages">
+      <button type="button" className="secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>
+      <span>Page {currentPage + 1} of {pages} · {available.length} users</span>
+      <button type="button" className="secondary" disabled={currentPage === pages - 1} onClick={() => setPage(currentPage + 1)}>Next</button>
+    </div>}
     {available.length > 0 && <button type="button" className="link" onClick={() => setRoles((current) => ({ ...current, ...Object.fromEntries(available.map((user) => [user.id, "custodian"])) }))}>{query.trim() ? "Add all matching users" : "Add all users"}</button>}
     <p><strong>Selected users ({selected.length})</strong></p>
     {selected.length ? selected.map((u) => <div className="area-user-role" key={u.id}>

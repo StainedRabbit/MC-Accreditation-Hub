@@ -137,6 +137,13 @@ label.check input[type="checkbox"] {
   gap: 12px;
   padding: 8px 0;
 }
+.area-user-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
 input[type="checkbox"] {
   width: 17px;
   height: 17px;
