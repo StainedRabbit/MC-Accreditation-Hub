@@ -2858,10 +2858,10 @@ function UploadForm({
           ? `The file is saved. Retry mapping: ${(e as Error).message}`
           : `The file was saved, but this screen could not finish. Check the repository before starting another upload. ${(e as Error).message}`);
       } else {
-        const uncertain = !(e instanceof ApiError) || e.status >= 500;
+        const uncertain = !(e instanceof ApiError) || e.status < 300 || e.status >= 500;
         setUploadUncertain(uncertain);
         setError(uncertain
-          ? "We couldn't confirm whether the upload finished. Retry this same upload; the request key prevents a duplicate version."
+          ? `${(e as Error).message} We couldn't confirm whether the upload finished. Retry the same upload to avoid creating a duplicate.`
           : (e as Error).message);
       }
     } finally {

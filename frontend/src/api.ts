@@ -50,26 +50,23 @@ export async function api<T>(
     },
   });
   if (res.status === 204) return undefined as T;
-  const data = await res
-    .json()
-    .catch(() => ({ detail: "The server returned an unexpected response." }));
+  const data = await res.json().catch(() => undefined);
   if (!res.ok) {
     if (res.status === 403 && !path.startsWith("auth/")) {
       const session = await fetch(apiUrl("auth/me/"), { credentials: "include" });
       if (!session.ok) window.dispatchEvent(new Event("session-expired"));
     }
-    throw new ApiError(
-      typeof data.detail === "string"
-        ? data.detail
-        : Object.entries(data)
-            .map(
-              ([k, v]) =>
-                `${k}: ${Array.isArray(v) ? v.join(", ") : JSON.stringify(v)}`,
-            )
-            .join("\n"),
-      res.status,
-    );
+    const fallback = res.status === 413
+      ? "The server rejected the file as too large. Choose a smaller file."
+      : `The request failed (HTTP ${res.status}).`;
+    const message = data && typeof data === "object"
+      ? typeof data.detail === "string" ? data.detail : Object.entries(data)
+          .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : JSON.stringify(value)}`)
+          .join("\n")
+      : "";
+    throw new ApiError(message || fallback, res.status);
   }
+  if (data === undefined) throw new ApiError("The server returned an unreadable response. Please try again.", res.status);
   return data as T;
 }
 export const post = <T>(path: string, data: unknown) =>

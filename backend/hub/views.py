@@ -1145,9 +1145,8 @@ class UploadCompleteView(APIView):
         published = False
         try:
             with transaction.atomic():
-                intent = UploadIntent.objects.select_for_update().select_related(
-                    'document', 'area__cycle', 'requirement', 'completed_version__document').get(
-                        pk=intent.pk, uploader=request.user)
+                # PostgreSQL cannot lock the nullable joins on an unfinished intent.
+                intent = UploadIntent.objects.select_for_update().get(pk=intent.pk, uploader=request.user)
                 if intent.completed_version_id:
                     if not can_version(request.user, intent.completed_version):
                         raise Http404

@@ -1508,7 +1508,7 @@ class PresignedUploadTests(WorkflowFixture, TestCase):
             self.assertEqual(DocumentVersion.objects.count(), 1)
             version = DocumentVersion.objects.get()
             self.assertEqual(version.checksum, hashlib.sha256(self.contents).hexdigest())
-            self.assertTrue(AuditEvent.objects.filter(action='version_uploaded', version=version.id).exists())
+            self.assertTrue(AuditEvent.objects.filter(action='version_uploaded', detail__version=version.id).exists())
             publish.assert_called_once()
             delete.assert_called_once()
 
