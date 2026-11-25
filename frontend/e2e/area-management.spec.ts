@@ -70,7 +70,7 @@ test("requirements sort both ways and a new requirement returns to the top", asy
   await form.getByLabel("Requirement code").fill(`SORT${Date.now()}`);
   await form.getByLabel("Requirement title").fill(title);
   await form.getByLabel("Responsible person").fill("demo.custodian");
-  await form.getByRole("button", { name: /Select .*\(demo\.custodian\)/ }).click();
+  await form.getByRole("button", { name: /\(demo\.custodian\)/ }).click();
   await form.getByLabel("Evidence item 1").fill("Synthetic checklist item");
   await form.getByRole("button", { name: "Save Requirement" }).click();
   await expect(form).toHaveCount(0);

@@ -137,6 +137,24 @@ label.check input[type="checkbox"] {
   gap: 12px;
   padding: 8px 0;
 }
+.responsible-user-results {
+  margin-top: -8px;
+  padding: 4px;
+}
+.responsible-user-option {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.responsible-user-option:hover, .responsible-user-option:focus-visible {
+  background: #eef2f7;
+}
 .area-user-pagination {
   display: flex;
   align-items: center;

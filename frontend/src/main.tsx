@@ -2509,14 +2509,16 @@ function RequirementForm({
         <div className="form-grid">
           <div>
             <label>Responsible person
-              <input type="search" value={personSearch} onChange={(event) => { setPersonSearch(event.target.value); setPersonPage(1); }} placeholder="Search name or username" />
+              <input type="search" value={personSearch} onChange={(event) => { setPersonSearch(event.target.value); setPerson(null); setPersonPage(1); }} placeholder="Search name or username" />
             </label>
-            {person ? <p>Selected: <strong>{person.name}{person.username ? ` (${person.username})` : ""}</strong> <button type="button" className="link" onClick={() => setPerson(null)}>Change</button></p> : editing?.responsible_user == null && editing ? <p className="muted">Current legacy value: {editing.responsible}. Select a user to replace it.</p> : <p className="muted">Select a user below.</p>}
-            <ErrorBox error={personError} />
-            <div className="area-user-results" aria-label="Responsible user search results">
-              {personResults.users.length ? personResults.users.map((user) => <div className="area-user-result" key={user.id}><span>{user.name} ({user.username})</span><button type="button" className="link" onClick={() => setPerson(user)} aria-label={`Select ${user.name} (${user.username})`}>Select</button></div>) : <p className="muted">No users found.</p>}
-            </div>
-            {(personPage > 1 || personResults.has_more) && <div className="area-user-pagination"><button type="button" className="secondary" disabled={personPage === 1} onClick={() => setPersonPage((page) => page - 1)}>Previous</button><span>Page {personPage}</span><button type="button" className="secondary" disabled={!personResults.has_more} onClick={() => setPersonPage((page) => page + 1)}>Next</button></div>}
+            {!person && <>
+              <ErrorBox error={personError} />
+              <div className="area-user-results responsible-user-results" aria-label="Responsible user search results">
+                {personResults.users.length ? personResults.users.map((user) => <button type="button" className="responsible-user-option" key={user.id} onClick={() => setPerson(user)}>{user.name} ({user.username})</button>) : <p className="muted">No users found.</p>}
+              </div>
+              {(personPage > 1 || personResults.has_more) && <div className="area-user-pagination"><button type="button" className="secondary" disabled={personPage === 1} onClick={() => setPersonPage((page) => page - 1)}>Previous</button><span>Page {personPage}</span><button type="button" className="secondary" disabled={!personResults.has_more} onClick={() => setPersonPage((page) => page + 1)}>Next</button></div>}
+            </>}
+            {person ? <p>Selected: <strong>{person.name}{person.username ? ` (${person.username})` : ""}</strong> <button type="button" className="link" onClick={() => setPerson(null)}>Change</button></p> : editing?.responsible_user == null && editing ? <p className="muted">Current legacy value: {editing.responsible}.</p> : null}
             <small>To allow uploads, also assign the custodian to the requirement after saving.</small>
           </div>
           <label>
