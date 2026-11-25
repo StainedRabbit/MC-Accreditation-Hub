@@ -875,6 +875,12 @@ function App() {
       setPackageEditor({ requirement: fresh, draft: draft && fresh.packages?.find((attempt) => attempt.id === draft.id) });
     } catch (failure) { setError((failure as Error).message); }
   }
+  async function submitEvidence(mapping: number, version: number) {
+    try {
+      await post("submissions/", { mapping, version });
+      await changed("Evidence submitted for review.");
+    } catch (failure) { setError((failure as Error).message); }
+  }
   async function packageAction(packageId: number, action: "submit" | "withdraw" | "resubmit", requiresOverride = false) {
     if (action === "withdraw" && !window.confirm("Withdraw this submitted package attempt? Its history will remain available.")) return;
     const overrideReason = requiresOverride && action !== "withdraw" ? window.prompt("Coordinator override reason for this package action") : null;
@@ -998,7 +1004,7 @@ function App() {
           placeholder={
             page === "documents"
               ? "Search documents, categories, personnel…"
-              : "Search requirements…"
+              : "Search requirements or responsible office / person…"
           }
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -1703,36 +1709,12 @@ function App() {
                   </div>
                 )}
               </section>
-              <section className="panel">
-                <div className="section-heading"><div><h2>Submission packages</h2><p>Each attempt pins exact evidence versions. Submitted and terminal attempts retain their history.</p></div>
-                  {detail.can_upload && <button className="primary" onClick={() => void openPackageEditor(detail)}>New package draft</button>}
-                </div>
-                {detail.packages?.length ? detail.packages.map((attempt) => <article className="certification-entry" key={attempt.id}>
-                  <Badge status={attempt.status} /><div><strong>Attempt {attempt.number}</strong><span>{attempt.owner} · {dateTime(attempt.created_at)}</span>
-                    <p>{attempt.notes || "No package notes"}</p>
-                    {attempt.source_attempt && <p>Resubmitted from attempt #{attempt.source_attempt_number}</p>}
-                    {attempt.items.map((entry) => <p key={entry.mapping}>{entry.item_label} · {entry.document_title} · {entry.original_name} · version {entry.version_number} · SHA-256 {entry.checksum} · {entry.note || "No item note"} <a href={apiUrl(`document-versions/${entry.version}/download/`)}>Download</a></p>)}
-                    {attempt.decision && <p>{attempt.decision.reviewer}: {attempt.decision.outcome} · {attempt.decision.comment || "Approved"}</p>}
-                    {attempt.withdrawal_reason && <p>Withdrawal reason: {attempt.withdrawal_reason}</p>}
-                    <div className="actions">
-                      {attempt.can_edit && <button className="secondary" onClick={() => void openPackageEditor(detail, attempt)}>Edit draft</button>}
-                      {attempt.can_submit && <button className="primary" onClick={() => void packageAction(attempt.id, "submit", attempt.requires_override)}>Submit package</button>}
-                      {attempt.can_withdraw && <button className="secondary" onClick={() => void packageAction(attempt.id, "withdraw")}>Withdraw package</button>}
-                      {attempt.can_review && <button className="primary" onClick={() => setPackageReview(attempt)}>Review package</button>}
-                      {attempt.can_resubmit && <button className="secondary" onClick={() => void packageAction(attempt.id, "resubmit", attempt.requires_override)}>Create resubmission draft</button>}
-                    </div>
-                  </div>
-                </article>) : <p className="muted">No package attempts yet. Map evidence versions, then create a draft.</p>}
-              </section>
               <section className="panel"><h2>Applicability history</h2>
                 {!detail.applicability_history?.length && <p className="muted">Legacy applicability state: no recorded decision history is available.</p>}
                 {detail.applicability_history?.map((entry) => <p key={entry.id}>{entry.applicable ? "Applicable" : "Not applicable"} · {entry.coordinator} · {dateTime(entry.created_at)} · {entry.reason}</p>)}
               </section>
               <div className="section-heading">
                 <h2>Evidence checklist</h2>
-                <span className="muted">
-                  Existing item-level submissions remain historical. New reviews use packages.
-                </span>
               </div>
               {detail.items?.map((item) => (
                 <section className="panel evidence-item" key={item.id}>
@@ -1775,6 +1757,14 @@ function App() {
                             </button>
                           )}
                       </div>
+                      {documents.find((d) => d.id === m.document)?.versions.map((version) => <div className="submission-line" key={version.id}>
+                        <div><strong>{version.original_name}</strong><small>Version {version.number} · {version.uploaded_by} · {date(version.uploaded_at)}</small></div>
+                        <div className="actions">
+                          {['application/pdf', 'image/png', 'image/jpeg'].includes(version.content_type) && <a className="link" href={apiUrl(`document-versions/${version.id}/preview/`)} target="_blank" rel="noreferrer">Preview</a>}
+                          <a className="link" href={apiUrl(`document-versions/${version.id}/download/`)}>Download</a>
+                          {detail.can_upload && !detail.packages?.length && documents.find((d) => d.id === m.document)?.can_upload && !m.submissions.some((s) => s.version === version.id) && <button className="secondary" onClick={() => void submitEvidence(m.id, version.id)}>Submit for review</button>}
+                        </div>
+                      </div>)}
                       {m.submissions.length === 0 ? (
                         <p className="muted">Mapped, not yet submitted.</p>
                       ) : (
@@ -2308,6 +2298,11 @@ function AreaForm({ cycle, editing, close, saved }: {
 }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [candidates, setCandidates] = useState<AssignmentCandidate[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
+  useEffect(() => {
+    if (!editing) api<AssignmentCandidate[]>(`areas/?cycle=${cycle}&assignment_candidates=1`).then(setCandidates).catch((e) => setError(e.message));
+  }, [cycle, editing]);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -2319,6 +2314,7 @@ function AreaForm({ cycle, editing, close, saved }: {
       title: form.get("title"),
       icon: form.get("icon"),
       order: Number(form.get("order")),
+      ...(!editing ? { assigned_users: selectedUsers, assignment_role: form.get("assignment_role"), assignment_reason: form.get("assignment_reason") || undefined } : {}),
     };
     try {
       await api(editing ? `areas/${editing.id}/` : "areas/", {
@@ -2341,6 +2337,14 @@ function AreaForm({ cycle, editing, close, saved }: {
         <label>Icon<input name="icon" required maxLength={10} defaultValue={editing?.icon || "📁"} /></label>
         <label>Display order<input name="order" type="number" min="0" required defaultValue={editing?.order ?? 0} /></label>
       </div>
+      {!editing && <fieldset>
+        <legend>Assign users</legend>
+        <p className="muted">Choose one, several, or all users. Custodians also need to be assigned to individual requirements before uploading evidence.</p>
+        <label className="check"><input type="checkbox" checked={candidates.length > 0 && selectedUsers.length === candidates.length} onChange={(e) => setSelectedUsers(e.target.checked ? candidates.map((u) => u.id) : [])} />Select all users</label>
+        {candidates.map((u) => <label className="check" key={u.id}><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={(e) => setSelectedUsers(e.target.checked ? [...selectedUsers, u.id] : selectedUsers.filter((id) => id !== u.id))} />{u.name} ({u.username})</label>)}
+        <label>Role<select name="assignment_role"><option value="custodian">Custodian</option><option value="reviewer">Reviewer</option><option value="viewer">Viewer</option></select></label>
+        {selectedUsers.length > 0 && <label>Assignment reason<textarea name="assignment_reason" required maxLength={1000} /></label>}
+      </fieldset>}
       <div className="form-actions"><button className="secondary" type="button" onClick={close}>Cancel</button>
         <button className="primary" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Add area"}</button></div>
     </form>
@@ -2757,8 +2761,8 @@ function UploadForm({
       }
       await saved(
         context.item
-          ? "Evidence uploaded and mapped. Add its version to a package draft."
-          : "Draft version uploaded. Open a requirement to map it into a package.",
+          ? "Evidence uploaded and mapped. Submit it for review from the requirement."
+          : "Draft version uploaded. Open a requirement to map it to an evidence item.",
       );
       pendingUpload.current = null;
     } catch (e) {

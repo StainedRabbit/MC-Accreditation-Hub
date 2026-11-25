@@ -2,7 +2,7 @@ import os
 from datetime import date
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from hub.models import User, Cycle, Area, RoleAssignment, Requirement, EvidenceItem
+from hub.models import User, Cycle, Area, RoleAssignment, Requirement, EvidenceItem, RequirementAssignment
 
 
 class Command(BaseCommand):
@@ -36,6 +36,7 @@ class Command(BaseCommand):
             req = Requirement.objects.create(area=area, code=f'DEMO-{i:02}', title=f'{title} Documentation',
                 description='Fictional practice requirement. Replace with the official approved instrument before institutional use.',
                 responsible='Graduate School', deadline=date(2026, 12, 15), active=True, created_by=users['coordinator'])
+            RequirementAssignment.objects.create(requirement=req, user=users['custodian'], assigned_by=users['coordinator'])
             EvidenceItem.objects.create(requirement=req, label='Approved plan or policy', criteria='A complete, readable sample plan with a date and responsible office.')
             EvidenceItem.objects.create(requirement=req, label='Implementation report', criteria='A sample report describing activities and outcomes.')
         self.stdout.write(self.style.SUCCESS('Created demo cycle, eight areas, eight requirements, and five accounts.'))

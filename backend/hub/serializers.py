@@ -15,9 +15,12 @@ class AreaCommentInput(serializers.Serializer):
 
 
 class AreaInput(serializers.ModelSerializer):
+    assigned_users = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, write_only=True)
+    assignment_role = serializers.ChoiceField(choices=['custodian', 'reviewer', 'viewer'], required=False, write_only=True)
+    assignment_reason = serializers.CharField(max_length=1000, required=False, write_only=True)
     class Meta:
         model = Area
-        fields = ['cycle', 'code', 'title', 'icon', 'order']
+        fields = ['cycle', 'code', 'title', 'icon', 'order', 'assigned_users', 'assignment_role', 'assignment_reason']
         extra_kwargs = {'cycle': {'required': False}}
 
     def validate_code(self, value):
@@ -40,6 +43,8 @@ class AreaInput(serializers.ModelSerializer):
 
     def validate(self, attrs):
         instance = self.instance
+        if instance and any(key in attrs for key in ('assigned_users', 'assignment_role', 'assignment_reason')):
+            raise serializers.ValidationError('Manage existing area assignments through the area access screen.')
         cycle = attrs.get('cycle', instance.cycle if instance else None)
         if instance and cycle.pk != instance.cycle_id:
             raise serializers.ValidationError({'cycle': 'An area cannot move to another cycle.'})

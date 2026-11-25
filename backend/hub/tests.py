@@ -133,6 +133,18 @@ class AreaManagementTests(WorkflowFixture, TestCase):
         return self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': code, 'title': title,
             'icon': '📘', 'order': 3}, format='json')
 
+    def test_create_area_with_multiple_users_is_atomic(self):
+        response = self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': 'TEAM', 'title': 'Team',
+            'icon': '📘', 'order': 3, 'assigned_users': [self.custodian.id, self.reviewer.id],
+            'assignment_role': 'custodian', 'assignment_reason': 'Area responsibility'}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(RoleAssignment.objects.filter(area_id=response.data['id'], role='custodian').count(), 2)
+        rejected = self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': 'BAD', 'title': 'Bad',
+            'icon': '📘', 'order': 3, 'assigned_users': [self.custodian.id, 999999],
+            'assignment_role': 'custodian', 'assignment_reason': 'Area responsibility'}, format='json')
+        self.assertEqual(rejected.status_code, 400)
+        self.assertFalse(Area.objects.filter(cycle=self.cycle, code='BAD').exists())
+
     def test_cycle_coordinator_can_create_edit_and_delete_empty_area_with_audit(self):
         created = self.create_area()
         self.assertEqual(created.status_code, 201, created.data)

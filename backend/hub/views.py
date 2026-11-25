@@ -532,6 +532,12 @@ class CycleRestoreView(APIView):
 
 class AreasView(APIView):
     def get(self, request):
+        if request.query_params.get('assignment_candidates') == '1':
+            cycle = get_object_or_404(Cycle, pk=query_id(request, 'cycle'))
+            if not has_cyclewide_coordinator(request.user, cycle):
+                raise PermissionDenied('A cycle-wide Coordinator grant is required.')
+            users = User.objects.filter(is_active=True).exclude(pk=request.user.pk).order_by('username')
+            return Response([{'id': u.pk, 'name': u.get_full_name() or u.username, 'username': u.username} for u in users])
         qs = areas_for(request.user)
         if query_id(request, 'cycle'):
             qs = qs.filter(cycle_id=request.query_params['cycle'])
@@ -550,7 +556,23 @@ class AreasView(APIView):
             raise ValidationError('Areas can be added only in an active cycle.')
         # Revalidate after taking the cycle lock so concurrent code collisions are rejected cleanly.
         serializer = payload(AreaInput, request)
+        data = serializer.validated_data
+        user_ids = data.pop('assigned_users', [])
+        role = data.pop('assignment_role', 'custodian')
+        reason = data.pop('assignment_reason', '').strip()
+        if len(user_ids) != len(set(user_ids)) or request.user.pk in user_ids:
+            raise ValidationError({'assigned_users': 'Select distinct users other than yourself.'})
+        users = list(User.objects.filter(pk__in=user_ids, is_active=True))
+        if len(users) != len(user_ids):
+            raise ValidationError({'assigned_users': 'All selected users must be active.'})
+        if users and not reason:
+            raise ValidationError({'assignment_reason': 'Enter a reason for assigning users.'})
         area = serializer.save(cycle=cycle)
+        for user in users:
+            with suppress_model_audit():
+                grant = RoleAssignment.objects.create(user=user, cycle=cycle, area=area, role=role)
+            audit(request.user, area, 'grant_created', f'grant:{grant.pk}', target_user_id=user.pk,
+                  target_cycle_id=cycle.pk, target_area_id=area.pk, role=role, reason=reason)
         return Response(area_data(area, request.user), status=201)
 
 
@@ -1330,8 +1352,8 @@ class SubmissionsView(APIView):
         if mapping.document.area_id != mapping.item.requirement.area_id or mapping.document.area.cycle_id != mapping.item.requirement.area.cycle_id:
             raise ValidationError('Evidence can be submitted only within its owning area and cycle.')
         lock_active_cycles(mapping.item.requirement.area.cycle_id)
-        if not mapping.item.requirement.legacy_submission_mode:
-            raise ValidationError('New evidence work uses requirement-level package attempts.')
+        if mapping.item.requirement.packages.exists():
+            raise ValidationError('This requirement has package history and cannot use item-level submissions.')
         if certification_is_open(mapping.item.requirement):
             raise ValidationError('Reopen the requirement before replacing supporting evidence.')
         mapping = EvidenceMapping.objects.select_for_update().get(pk=mapping.pk)
