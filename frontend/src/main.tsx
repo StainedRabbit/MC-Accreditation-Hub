@@ -530,6 +530,7 @@ function App() {
     [reportError, setReportError] = useState("");
   const [detail, setDetail] = useState<Requirement | null>(null),
     [docDetail, setDocDetail] = useState<Document | null>(null);
+  const [detailOrigin, setDetailOrigin] = useState<{ requirement: number } | { document: string } | null>(null);
   const [requirementForm, setRequirementForm] = useState(false),
     [editing, setEditing] = useState<Requirement | null>(null);
   const [security, setSecurity] = useState(false),
@@ -584,6 +585,7 @@ function App() {
     detailGeneration.current += 1;
     setDetail(null);
     setDocDetail(null);
+    setDetailOrigin(null);
   }
   function clearWorkspace() {
     requestGeneration.current += 1;
@@ -708,6 +710,7 @@ function App() {
     if (user && cycle) {
       setDetail(null);
       setDocDetail(null);
+      setDetailOrigin(null);
       void refresh(false);
     }
     return () => {
@@ -827,7 +830,7 @@ function App() {
       setReportArea("");
     }
   }, [areas, reportArea]);
-  async function openRequirement(id: number) {
+  async function openRequirement(id: number, fromDocument?: string) {
     const generation = ++detailGeneration.current;
     const key = { cycle, userId: user?.id ?? null };
     setError("");
@@ -838,6 +841,8 @@ function App() {
       setPage("requirements");
       setDocDetail(null);
       setCertification(null);
+      setDetailOrigin(fromDocument ? { document: fromDocument } : null);
+      requestAnimationFrame(() => pageHeadingRef.current?.focus());
     } catch (e) {
       if (generation === detailGeneration.current) setError((e as Error).message);
     }
@@ -849,7 +854,7 @@ function App() {
       void openRequirement(id);
     }
   }, [notificationTarget, cycle]);
-  async function openDocument(id: string) {
+  async function openDocument(id: string, fromRequirement?: number) {
     const generation = ++detailGeneration.current;
     const key = { cycle, userId: user?.id ?? null };
     setError("");
@@ -859,9 +864,16 @@ function App() {
       setDocDetail(fresh);
       setPage("documents");
       setDetail(null);
+      setDetailOrigin(fromRequirement ? { requirement: fromRequirement } : null);
+      requestAnimationFrame(() => pageHeadingRef.current?.focus());
     } catch (e) {
       if (generation === detailGeneration.current) setError((e as Error).message);
     }
+  }
+  function browseRelated(destination: "requirements" | "documents", area: number, origin: { requirement: number } | { document: string }) {
+    navigate(destination);
+    if (areas.some((entry) => entry.id === area)) setAreaFilter(String(area));
+    setDetailOrigin(origin);
   }
   async function changed(message: string) {
     setNotice(message);
@@ -986,9 +998,8 @@ function App() {
   const filteredDocuments = documents.filter(
     (d) =>
       (!areaFilter || String(d.area) === areaFilter) &&
-      `${d.title} ${d.category} ${d.custodian}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+      [d.title, d.category, d.custodian, ...d.mappings.flatMap((mapping) => [mapping.requirement_title, mapping.requirement_code])]
+        .join(" ").toLowerCase().includes(search.trim().toLowerCase()),
   );
   const sortedDocuments = sortRows(filteredDocuments, documentSort, (item, key) => ({
     newest: timeValue(item.created_at), name: item.title, type: item.category,
@@ -1003,7 +1014,7 @@ function App() {
           aria-label="Search records"
           placeholder={
             page === "documents"
-              ? "Search documents, categories, personnel…"
+              ? "Search documents, requirements, or custodians…"
               : "Search requirements or responsible office / person…"
           }
           value={search}
@@ -1476,6 +1487,9 @@ function App() {
           )}
           {page === "requirements" && !detail && (
             <>
+              {detailOrigin && "document" in detailOrigin && (
+                <button className="link back" onClick={() => void openDocument(detailOrigin.document)}><ArrowLeft size={17} /> Back to document</button>
+              )}
               <div className="page-heading">
                 <div>
                   <h1>Accreditation Requirements</h1>
@@ -1541,7 +1555,7 @@ function App() {
                         <td>
                           <button
                             className="link"
-                            onClick={() => openRequirement(r.id)}
+                            onClick={() => void openRequirement(r.id, detailOrigin && "document" in detailOrigin ? detailOrigin.document : undefined)}
                           >
                             View <ArrowRight size={16} />
                           </button>
@@ -1560,10 +1574,12 @@ function App() {
           )}
           {page === "requirements" && detail && (
             <>
-              <button className="link back" onClick={() => setDetail(null)}>
-                <ArrowLeft size={17} />
-                All requirements
-              </button>
+              <div className="actions">
+                {detailOrigin && "document" in detailOrigin && (
+                  <button className="link back" onClick={() => void openDocument(detailOrigin.document)}><ArrowLeft size={17} /> Back to document</button>
+                )}
+                <button className="link back" onClick={() => setDetail(null)}><ArrowLeft size={17} /> All requirements</button>
+              </div>
               <div className="page-heading">
                 <div>
                   <h1>{detail.title}</h1>
@@ -1715,6 +1731,7 @@ function App() {
               </section>
               <div className="section-heading">
                 <h2>Evidence checklist</h2>
+                <button className="secondary" onClick={() => browseRelated("documents", detail.area, { requirement: detail.id })}><Folder size={16} /> Browse Evidence Repository</button>
               </div>
               {detail.items?.map((item) => (
                 <section className="panel evidence-item" key={item.id}>
@@ -1736,7 +1753,9 @@ function App() {
                   {item.mappings.map((m) => (
                     <div className="mapping" key={m.id}>
                       <div className="section-heading">
-                        <strong>{m.document_title}</strong>
+                        {documents.some((doc) => doc.id === m.document) ? (
+                          <button className="link" onClick={() => void openDocument(m.document, detail.id)}><FileText size={16} /> {m.document_title}</button>
+                        ) : <strong>{m.document_title}</strong>}
                         {detail.can_upload &&
                           documents.find((d) => d.id === m.document)
                             ?.can_upload && (
@@ -1828,6 +1847,9 @@ function App() {
           )}
           {page === "documents" && !docDetail && (
             <>
+              {detailOrigin && "requirement" in detailOrigin && (
+                <button className="link back" onClick={() => void openRequirement(detailOrigin.requirement)}><ArrowLeft size={17} /> Back to requirement</button>
+              )}
               <div className="page-heading">
                 <div>
                   <h1>Evidence Repository</h1>
@@ -1882,7 +1904,7 @@ function App() {
                             <div className="actions">
                               <button
                                 className="link"
-                                onClick={() => setDocDetail(d)}
+                                onClick={() => void openDocument(d.id, detailOrigin && "requirement" in detailOrigin ? detailOrigin.requirement : undefined)}
                               >
                                 View
                               </button>
@@ -1908,10 +1930,12 @@ function App() {
           )}
           {page === "documents" && docDetail && (
             <>
-              <button className="link back" onClick={() => setDocDetail(null)}>
-                <ArrowLeft size={17} />
-                All documents
-              </button>
+              <div className="actions">
+                {detailOrigin && "requirement" in detailOrigin && (
+                  <button className="link back" onClick={() => void openRequirement(detailOrigin.requirement)}><ArrowLeft size={17} /> Back to requirement</button>
+                )}
+                <button className="link back" onClick={() => setDocDetail(null)}><ArrowLeft size={17} /> All documents</button>
+              </div>
               <div className="page-heading">
                 <div>
                   <h1>{docDetail.title}</h1>
@@ -1931,6 +1955,23 @@ function App() {
                 )}
               </div>
               {docDetail.can_delegate_stewardship && <div className="actions"><button className="secondary" onClick={() => setStewardshipDocument(docDetail)}>Delegate stewardship</button></div>}
+              <section className="panel">
+                <div className="section-heading">
+                  <h3>Linked requirements</h3>
+                  <button className="secondary" onClick={() => browseRelated("requirements", docDetail.area, { document: docDetail.id })}><List size={16} /> Browse requirements</button>
+                </div>
+                {docDetail.mappings.length ? docDetail.mappings.map((mapping) => (
+                  <div className="version-row" key={mapping.id}>
+                    <div>
+                      {mapping.requirement ? (
+                        <button className="link" onClick={() => void openRequirement(mapping.requirement!, docDetail.id)}>{mapping.requirement_code} · {mapping.requirement_title}</button>
+                      ) : <strong>{mapping.submissions[0]?.requirement_title || "Evidence item"}</strong>}
+                      <small>{mapping.item_label || mapping.submissions[0]?.item_label || `Item ${mapping.item}`}</small>
+                    </div>
+                    {mapping.submissions[0] && <Badge status={mapping.submissions[0].status} />}
+                  </div>
+                )) : <p className="muted">No linked requirements to display.</p>}
+              </section>
               {docDetail.versions[0] && ["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
                 <section className="panel" aria-label="Document preview">
                   <h2>Document preview · v{docDetail.versions[0].number}</h2>
@@ -1979,31 +2020,6 @@ function App() {
                     </div>
                   </div>
                 ))}
-              </section>
-              <section className="panel">
-                <h3>Requirement mappings</h3>
-                {docDetail.mappings.length ? (
-                  docDetail.mappings.map((m) => (
-                    <div className="version-row" key={m.id}>
-                      <div>
-                        <strong>
-                          {m.submissions[0]?.requirement_title ||
-                            "Evidence item"}
-                        </strong>
-                        <small>
-                          {m.submissions[0]?.item_label || `Item ${m.item}`}
-                        </small>
-                      </div>
-                      {m.submissions[0] && (
-                        <Badge status={m.submissions[0].status} />
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <p className="muted">
-                    Open a requirement to map and submit this document.
-                  </p>
-                )}
               </section>
             </>
           )}
@@ -2236,7 +2252,6 @@ function App() {
       {upload && (
         <UploadForm
           context={upload}
-          areas={areas.filter((a) => a.can_upload)}
           requirements={requirements.filter((r) => r.can_upload)}
           close={() => setUpload(null)}
           saved={async (message) => {
@@ -2249,11 +2264,12 @@ function App() {
       {mappingItem && (
         <MappingForm
           item={mappingItem}
-          documents={documents}
+          documents={documents.filter((document) => document.area === detail?.area)}
+          preferredDocument={detailOrigin && "document" in detailOrigin ? detailOrigin.document : undefined}
           close={() => setMappingItem(null)}
           saved={async () => {
             setMappingItem(null);
-            await changed("Evidence mapped. Add its exact version to a package draft.");
+            await changed("Evidence linked to the requirement.");
           }}
         />
       )}
@@ -2368,8 +2384,8 @@ function AreaForm({ cycle, editing, close, saved }: {
     <form onSubmit={submit}>
       <ErrorBox error={error} />
       <div className="form-grid">
-        <label>Area code<input name="code" required={!!editing} maxLength={20} defaultValue={editing?.code} placeholder="Generated automatically on save" readOnly={!editing} /></label>
         <label>Area title<input name="title" required maxLength={180} defaultValue={editing?.title} /></label>
+        {editing && <label>Area code<input name="code" required maxLength={20} defaultValue={editing.code} /></label>}
         <label>Icon<input name="icon" required maxLength={10} defaultValue={editing?.icon || "📁"} /></label>
         <label>Display order<input name="order" type="number" min="0" required defaultValue={editing?.order ?? 0} /></label>
       </div>
@@ -2476,17 +2492,15 @@ function RequirementForm({
               <input type="hidden" name="area" value={editing.area} />
             )}
           </label>
-          <label>
+          {editing && <label>
             Requirement code
             <input
               name="code"
-              required={!!editing}
+              required
               maxLength={40}
-              defaultValue={editing?.code}
-              placeholder="Generated automatically on save"
-              readOnly={!editing}
+              defaultValue={editing.code}
             />
-          </label>
+          </label>}
         </div>
         <label>
           Requirement title
@@ -2719,13 +2733,11 @@ function StewardshipForm({ document, close, saved }: { document: Document; close
 
 function UploadForm({
   context,
-  areas,
   requirements,
   close,
   saved,
 }: {
   context: { doc?: Document; item?: Item; requirement?: number; area?: number };
-  areas: Area[];
   requirements: Requirement[];
   close: () => void;
   saved: (message: string) => Promise<void>;
@@ -2801,6 +2813,11 @@ function UploadForm({
     if (!pendingUpload.current) {
       const form = new FormData(e.currentTarget);
       if (context.requirement) form.set("requirement", String(context.requirement));
+      if (!context.doc) {
+        const area = context.area ?? requirements.find((requirement) => requirement.id === Number(form.get("requirement")))?.area;
+        if (!area) { setError("Select a requirement for this document."); return; }
+        form.set("area", String(area));
+      }
       if (!form.get("valid_until")) form.delete("valid_until");
       pendingUpload.current = { key: uploadOperationKey, form };
     }
@@ -2901,37 +2918,21 @@ function UploadForm({
                 disabled={fieldsLocked}
               />
             </label>
-            <div className="form-grid">
-              <label>
-                Owning area
-                <select
-                  name="area"
-                  defaultValue={context.area || areas[0]?.id}
-                  disabled={fieldsLocked}
-                >
-                  {areas.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Document type
-                <select name="category" disabled={fieldsLocked}>
-                  {[
-                    "Supporting Document",
-                    "Policy / Plan",
-                    "Report",
-                    "Inventory",
-                    "Minutes",
-                    "Certificate",
-                  ].map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <label>
+              Document type
+              <select name="category" disabled={fieldsLocked}>
+                {[
+                  "Supporting Document",
+                  "Policy / Plan",
+                  "Report",
+                  "Inventory",
+                  "Minutes",
+                  "Certificate",
+                ].map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+            </label>
           </>
         )}
         <label className="upload-zone">
@@ -2982,16 +2983,18 @@ function UploadForm({
 function MappingForm({
   item,
   documents,
+  preferredDocument,
   close,
   saved,
 }: {
   item: Item;
   documents: Document[];
+  preferredDocument?: string;
   close: () => void;
   saved: () => Promise<void>;
 }) {
   const eligible = documents.filter((d) => d.can_upload && d.versions.length > 0),
-    [docId, setDocId] = useState(eligible[0]?.id || ""),
+    [docId, setDocId] = useState(eligible.find((document) => document.id === preferredDocument)?.id || eligible[0]?.id || ""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -3017,7 +3020,7 @@ function MappingForm({
       <form onSubmit={submit}>
         <ErrorBox error={error} />
         <p>
-          Map this document to <strong>{item.label}</strong>. Select its exact version in a package draft.
+          Link an existing document to <strong>{item.label}</strong>.
         </p>
         <label>
           Document
@@ -3038,7 +3041,7 @@ function MappingForm({
           <textarea name="override_reason" rows={2} />
         </label>
         {!eligible.length && (
-          <p className="muted">Upload a document in an assigned area first.</p>
+          <p className="muted">No eligible documents in this area.</p>
         )}
         <div className="form-actions">
           <button className="secondary" type="button" onClick={close}>

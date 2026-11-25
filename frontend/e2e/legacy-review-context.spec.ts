@@ -55,6 +55,15 @@ test("legacy item review shows current criteria, exact file and prior decision",
   const docs = await (await custodian.request.get(`/api/documents/?cycle=${cycle.id}&search=Legacy%20review%20evidence%20record`)).json();
   const document = docs.find((entry: { title: string }) => entry.title === "Legacy review evidence record");
   expect(document?.mappings).toHaveLength(1);
+  await custodian.getByRole("button", { name: "Legacy review evidence record", exact: true }).click();
+  await expect(custodian.getByRole("heading", { name: "Legacy review evidence record" })).toBeVisible();
+  await custodian.getByRole("button", { name: "Back to requirement" }).click();
+  await expect(custodian.getByRole("heading", { name: requirementTitle })).toBeVisible();
+  await custodian.getByRole("button", { name: "Legacy review evidence record", exact: true }).click();
+  await custodian.getByRole("button", { name: /Legacy review context fixture/ }).click();
+  await expect(custodian.getByRole("heading", { name: requirementTitle })).toBeVisible();
+  await custodian.getByRole("button", { name: "Back to document" }).click();
+  await expect(custodian.getByRole("heading", { name: "Legacy review evidence record" })).toBeVisible();
   const first = await postSubmission(custodian, document.mappings[0].id, document.versions.find((v: { number: number }) => v.number === 1).id);
   expect(first.status()).toBe(201);
   const firstSubmission = await first.json();

@@ -441,7 +441,17 @@ def version_data(version):
 
 def doc_data(doc, user):
     versions = [version_data(v) for v in doc.versions.all() if can_version(user, v)]
-    mappings = visible_mappings_for(user, doc.mappings.all())
+    mappings = visible_mappings_for(user, doc.mappings.all()).select_related('item__requirement', 'document').annotate(
+        can_open_requirement=Case(When(item__requirement__area__in=areas_for(user), then=Value(True)), default=Value(False))
+    )
+    linked_mappings = []
+    for mapping in mappings:
+        data = mapping_data(mapping, user)
+        if mapping.can_open_requirement:
+            requirement = mapping.item.requirement
+            data.update(requirement=requirement.id, requirement_title=requirement.title,
+                        requirement_code=requirement.code, item_label=mapping.item.label)
+        linked_mappings.append(data)
     return {'id': str(doc.id), 'title': doc.title, 'category': doc.category, 'created_at': doc.created_at, 'area': doc.area_id,
         'area_title': doc.area.title, 'cycle': doc.area.cycle_id, 'versions': versions,
         'custodian': doc.custodian.get_full_name() or doc.custodian.username,
@@ -449,7 +459,7 @@ def doc_data(doc, user):
         'steward_id': doc.steward_id,
         'can_upload': doc.area.cycle.status == 'active' and (doc.steward_id == user.id or is_scoped_coordinator(user, doc.area)),
         'can_delegate_stewardship': doc.area.cycle.status == 'active' and is_scoped_coordinator(user, doc.area),
-        'mappings': [mapping_data(m, user) for m in mappings]}
+        'mappings': linked_mappings}
 
 
 class CyclesView(APIView):

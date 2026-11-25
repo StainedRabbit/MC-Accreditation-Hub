@@ -26,7 +26,6 @@ test("a lost package submit response recovers the saved attempt once", async ({ 
   const setup = coordinator.getByRole("dialog");
   const title = `Submit recovery ${Date.now()}`;
   await setup.getByRole("combobox", { name: "Accreditation area", exact: true }).selectOption({ label: "Faculty" });
-  await setup.getByLabel("Requirement code").fill(`SUBMIT-${Date.now()}`);
   await setup.getByLabel("Requirement title").fill(title);
   await setup.getByLabel("Responsible person").fill("demo.custodian");
   await setup.getByRole("button", { name: /\(demo\.custodian\)/ }).click();

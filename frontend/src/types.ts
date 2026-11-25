@@ -86,6 +86,10 @@ export type Mapping = {
   document: string;
   document_title: string;
   item: number;
+  item_label?: string;
+  requirement?: number;
+  requirement_title?: string;
+  requirement_code?: string;
   submissions: Submission[];
 };
 export type Item = {

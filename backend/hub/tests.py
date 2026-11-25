@@ -455,6 +455,16 @@ class WorkflowTests(WorkflowFixture, TestCase):
 
     def test_mappings_require_access_to_source_and_destination(self):
         doc = self.upload()
+        self.client.force_authenticate(self.custodian)
+        response = self.client.post('/api/evidence-mappings/', {'item': self.item.id, 'document': doc['id']}, format='json')
+        self.assertEqual(response.status_code, 201)
+        detail = self.client.get(f'/api/documents/{doc["id"]}/').data
+        link = detail['mappings'][0]
+        self.assertEqual(link['requirement'], self.requirement.pk)
+        self.assertEqual(link['requirement_code'], self.requirement.code)
+        self.assertEqual(link['requirement_title'], self.requirement.title)
+        self.assertEqual(link['item_label'], self.item.label)
+        self.assertEqual(link['submissions'], [])
         self.client.force_authenticate(self.outsider)
         response = self.client.post('/api/evidence-mappings/', {'item': self.item.id, 'document': doc['id']}, format='json')
         self.assertEqual(response.status_code, 404)
@@ -532,6 +542,10 @@ class WorkflowTests(WorkflowFixture, TestCase):
         submission = Submission.objects.create(mapping=mapping, version=version, submitted_by=self.coordinator)
         ReviewDecision.objects.create(submission=submission, reviewer=self.reviewer, outcome='approved')
         updated = self.upload(doc['id'], filename='future-private-version.pdf')
+        self.client.force_authenticate(self.custodian)
+        owning_document = self.client.get(f'/api/documents/{doc["id"]}/').data
+        legacy_mapping = next(link for link in owning_document['mappings'] if link['id'] == mapping.pk)
+        self.assertNotIn('requirement', legacy_mapping)
         self.client.force_authenticate(self.outsider)
         visible = self.client.get(f'/api/documents/{doc["id"]}/').data
         self.assertEqual(len(visible['versions']), 1)

@@ -11,15 +11,14 @@ async function login(page: Page) {
 }
 
 test("cycle Coordinator can add, edit, and delete an empty accreditation area", async ({ page }) => {
-  const code = `E2E${Date.now()}`;
-  const initialTitle = `Area ${code}`;
+  const initialTitle = `Area E2E${Date.now()}`;
   const updatedTitle = `${initialTitle} Updated`;
   await login(page);
   await page.getByRole("button", { name: "Accreditation Areas", exact: true }).click();
   await page.getByRole("button", { name: "Add Area" }).click();
 
   const form = page.getByRole("dialog");
-  await form.getByLabel("Area code").fill(code);
+  await expect(form.getByLabel("Area code")).toHaveCount(0);
   await form.getByLabel("Area title").fill(initialTitle);
   await form.getByLabel("Icon").fill("📘");
   await form.getByLabel("Display order").fill("50");
@@ -38,8 +37,9 @@ test("cycle Coordinator can add, edit, and delete an empty accreditation area", 
   await expect(card).toBeVisible();
 
   const createdAreas = await (await page.request.get("/api/areas/")).json();
-  const created = createdAreas.find((area: { code: string }) => area.code === code);
+  const created = createdAreas.find((area: { title: string }) => area.title === updatedTitle);
   expect(created).toBeTruthy();
+  expect(created.code).toMatch(/^AREA-\d+$/);
   page.once("dialog", (dialog) => dialog.accept());
   await card.getByRole("button", { name: "Delete" }).click();
   await expect(page.locator(".area-card-shell").filter({ hasText: updatedTitle })).toHaveCount(0);
@@ -67,7 +67,7 @@ test("requirements sort both ways and a new requirement returns to the top", asy
   const title = `A new synthetic requirement ${Date.now()}`;
   await page.getByRole("button", { name: "Add Requirement" }).click();
   const form = page.getByRole("dialog");
-  await form.getByLabel("Requirement code").fill(`SORT${Date.now()}`);
+  await expect(form.getByLabel("Requirement code")).toHaveCount(0);
   await form.getByLabel("Requirement title").fill(title);
   await form.getByLabel("Responsible person").fill("demo.custodian");
   await form.getByRole("button", { name: /\(demo\.custodian\)/ }).click();

@@ -26,7 +26,6 @@ test("uncertain Upload & Map retry reuses the key and maps one saved version", a
   const setup = coordinator.getByRole("dialog");
   const title = `Idempotency retry ${Date.now()}`;
   await setup.getByRole("combobox", { name: "Accreditation area", exact: true }).selectOption({ label: "Faculty" });
-  await setup.getByLabel("Requirement code").fill(`IDEMP-${Date.now()}`);
   await setup.getByLabel("Requirement title").fill(title);
   await setup.getByLabel("Responsible person").fill("demo.custodian");
   await setup.getByRole("button", { name: /\(demo\.custodian\)/ }).click();
