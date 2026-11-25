@@ -1337,12 +1337,12 @@ function App() {
                 ))}
               </div>
               <div className="workflow-stats" aria-label="Additional workflow statuses">
-                <div className="workflow-stat panel">
+                <button type="button" className="workflow-stat panel overdue-drilldown" onClick={() => { navigate("requirements"); setStatusFilter("ready_for_completion_review"); }}>
                   <span className="stat-icon" aria-hidden="true">📋</span>
                   <div><strong className="purple">{summary?.ready_for_completion_review ?? 0}</strong>
                     <span>Ready for Completion Review</span>
-                    <small>Awaiting Coordinator certification</small></div>
-                </div>
+                    <small>View requirements awaiting certification</small></div>
+                </button>
                 <div className="workflow-stat panel">
                   <span className="stat-icon" aria-hidden="true">📝</span>
                   <div><strong className="purple">{summary?.in_progress ?? 0}</strong>
