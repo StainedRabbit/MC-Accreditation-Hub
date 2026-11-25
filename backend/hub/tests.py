@@ -133,6 +133,18 @@ class AreaManagementTests(WorkflowFixture, TestCase):
         return self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': code, 'title': title,
             'icon': '📘', 'order': 3}, format='json')
 
+    def test_codes_are_generated_without_colliding_with_existing_codes(self):
+        Area.objects.create(cycle=self.cycle, code='AREA-001', title='Existing')
+        created = self.client.post('/api/areas/', {'cycle': self.cycle.id, 'title': 'Generated',
+            'icon': '📘', 'order': 3}, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data['code'], 'AREA-002')
+        Requirement.objects.create(area=self.area, code='REQ-001', title='Existing', responsible='Office', created_by=self.coordinator)
+        requirement = self.client.post('/api/requirements/', {'area': self.area.id, 'title': 'Generated',
+            'responsible': 'Office', 'active': True, 'items': [{'label': 'Evidence'}]}, format='json')
+        self.assertEqual(requirement.status_code, 201, requirement.data)
+        self.assertEqual(requirement.data['code'], 'REQ-002')
+
     def test_create_area_with_multiple_users_is_atomic(self):
         response = self.client.post('/api/areas/', {'cycle': self.cycle.id, 'code': 'TEAM', 'title': 'Team',
             'icon': '📘', 'order': 3, 'user_roles': [{'user': self.custodian.id, 'role': 'custodian'},

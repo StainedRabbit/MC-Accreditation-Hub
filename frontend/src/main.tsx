@@ -2346,7 +2346,7 @@ function AreaForm({ cycle, editing, close, saved }: {
     const form = new FormData(event.currentTarget);
     const data = {
       ...(editing ? {} : { cycle }),
-      code: form.get("code"),
+      ...(editing ? { code: form.get("code") } : {}),
       title: form.get("title"),
       icon: form.get("icon"),
       order: Number(form.get("order")),
@@ -2368,7 +2368,7 @@ function AreaForm({ cycle, editing, close, saved }: {
     <form onSubmit={submit}>
       <ErrorBox error={error} />
       <div className="form-grid">
-        <label>Area code<input name="code" required maxLength={20} defaultValue={editing?.code} /></label>
+        <label>Area code<input name="code" required={!!editing} maxLength={20} defaultValue={editing?.code} placeholder="Generated automatically on save" readOnly={!editing} /></label>
         <label>Area title<input name="title" required maxLength={180} defaultValue={editing?.title} /></label>
         <label>Icon<input name="icon" required maxLength={10} defaultValue={editing?.icon || "📁"} /></label>
         <label>Display order<input name="order" type="number" min="0" required defaultValue={editing?.order ?? 0} /></label>
@@ -2408,7 +2408,7 @@ function RequirementForm({
     const f = new FormData(e.currentTarget);
     const data = {
       area: Number(f.get("area")),
-      code: f.get("code"),
+      ...(editing ? { code: f.get("code") } : {}),
       title: f.get("title"),
       description: f.get("description"),
       responsible: f.get("responsible"),
@@ -2463,10 +2463,11 @@ function RequirementForm({
             Requirement code
             <input
               name="code"
-              required
+              required={!!editing}
               maxLength={40}
               defaultValue={editing?.code}
-              placeholder="FAC-001"
+              placeholder="Generated automatically on save"
+              readOnly={!editing}
             />
           </label>
         </div>

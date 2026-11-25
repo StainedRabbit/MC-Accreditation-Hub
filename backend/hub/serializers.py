@@ -25,6 +25,7 @@ class AreaBulkAccessInput(serializers.Serializer):
 
 
 class AreaInput(serializers.ModelSerializer):
+    code = serializers.CharField(max_length=20, required=False)
     assigned_users = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, write_only=True)
     user_roles = AreaUserRoleInput(many=True, required=False, write_only=True)
     assignment_role = serializers.ChoiceField(choices=['custodian', 'reviewer', 'viewer'], required=False, write_only=True)
@@ -33,6 +34,7 @@ class AreaInput(serializers.ModelSerializer):
         model = Area
         fields = ['cycle', 'code', 'title', 'icon', 'order', 'assigned_users', 'user_roles', 'assignment_role', 'assignment_reason']
         extra_kwargs = {'cycle': {'required': False}}
+        validators = []
 
     def validate_code(self, value):
         value = value.strip()
@@ -74,6 +76,7 @@ class ItemInput(serializers.Serializer):
 
 
 class RequirementInput(serializers.ModelSerializer):
+    code = serializers.CharField(max_length=40, required=False)
     items = ItemInput(many=True, required=False)
     description = serializers.CharField(required=False, allow_blank=True, max_length=4000)
     exclusion_reason = serializers.CharField(required=False, allow_blank=True, max_length=4000)

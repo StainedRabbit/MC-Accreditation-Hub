@@ -94,6 +94,15 @@ def query_id(request, name):
     return value
 
 
+def next_code(queryset, prefix):
+    """Generate the first unused code while the owning cycle is locked."""
+    existing = set(queryset.filter(code__startswith=prefix).values_list('code', flat=True))
+    number = 1
+    while f'{prefix}{number:03d}' in existing:
+        number += 1
+    return f'{prefix}{number:03d}'
+
+
 def query_text(request, name='q'):
     value = request.query_params.get(name, '').strip()
     if len(value) > 120:
@@ -571,7 +580,8 @@ class AreasView(APIView):
             raise ValidationError({'assigned_users': 'All selected users must be active.'})
         if users and not reason:
             raise ValidationError({'assignment_reason': 'Enter a reason for assigning users.'})
-        area = serializer.save(cycle=cycle)
+        code = data.get('code') or next_code(Area.objects.filter(cycle=cycle), 'AREA-')
+        area = serializer.save(cycle=cycle, code=code)
         roles_by_user = {entry['user']: entry['role'] for entry in user_roles}
         for user in users:
             role = roles_by_user[user.pk]
@@ -754,7 +764,8 @@ class RequirementsView(APIView):
         lock_active_cycles(area.cycle_id)
         # Revalidate uniqueness after the cycle lock.
         serializer = payload(RequirementInput, request)
-        req = serializer.save(created_by=request.user)
+        code = serializer.validated_data.get('code') or next_code(Requirement.objects.filter(area=area), 'REQ-')
+        req = serializer.save(created_by=request.user, code=code)
         ApplicabilityDecision.objects.create(requirement=req, coordinator=request.user, applicable=req.applicable,
             reason=serializer.validated_data.get('applicability_reason') or req.exclusion_reason or 'Initial applicable requirement.')
         audit(request.user, area, 'requirement_created', req.title, requirement=req.id)
