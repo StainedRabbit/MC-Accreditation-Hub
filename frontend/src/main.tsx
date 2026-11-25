@@ -37,6 +37,7 @@ import type {
   Area,
   Requirement,
   Document,
+  Version,
   Submission,
   Item,
   Audit,
@@ -142,6 +143,15 @@ function ErrorBox({ error }: { error: string }) {
       {error}
     </div>
   ) : null;
+}
+
+const canPreview = (version: Version) => ["application/pdf", "image/jpeg", "image/png"].includes(version.content_type);
+
+function EvidencePreview({ version }: { version: Version }) {
+  const src = apiUrl(`document-versions/${version.id}/preview/`);
+  return version.content_type === "application/pdf"
+    ? <iframe className="evidence-preview-pdf" title={`Preview of ${version.original_name}`} src={src} />
+    : <img className="evidence-preview-image" alt={`Preview of ${version.original_name}`} crossOrigin="use-credentials" src={src} />;
 }
 
 function Modal({
@@ -531,6 +541,8 @@ function App() {
   const [detail, setDetail] = useState<Requirement | null>(null),
     [docDetail, setDocDetail] = useState<Document | null>(null);
   const [detailOrigin, setDetailOrigin] = useState<{ requirement: number } | { document: string } | null>(null);
+  const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
+  useEffect(() => { setPreviewVersion(null); }, [detail?.id]);
   const [requirementForm, setRequirementForm] = useState(false),
     [editing, setEditing] = useState<Requirement | null>(null);
   const [security, setSecurity] = useState(false),
@@ -1779,7 +1791,7 @@ function App() {
                       {documents.find((d) => d.id === m.document)?.versions.map((version) => <div className="submission-line" key={version.id}>
                         <div><strong>{version.original_name}</strong><small>Version {version.number} · {version.uploaded_by} · {date(version.uploaded_at)}</small></div>
                         <div className="actions">
-                          {['application/pdf', 'image/png', 'image/jpeg'].includes(version.content_type) && <a className="link" href={apiUrl(`document-versions/${version.id}/preview/`)} target="_blank" rel="noreferrer">Preview</a>}
+                          {canPreview(version) && <button className="link" onClick={() => setPreviewVersion(version)}>Preview</button>}
                           <a className="link" href={apiUrl(`document-versions/${version.id}/download/`)}>Download</a>
                           {detail.can_upload && !detail.packages?.length && documents.find((d) => d.id === m.document)?.can_upload && !m.submissions.some((s) => s.version === version.id) && <button className="secondary" onClick={() => void submitEvidence(m.id, version.id)}>Submit for review</button>}
                         </div>
@@ -1972,14 +1984,10 @@ function App() {
                   </div>
                 )) : <p className="muted">No linked requirements to display.</p>}
               </section>
-              {docDetail.versions[0] && ["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
+              {docDetail.versions[0] && canPreview(docDetail.versions[0]) && (
                 <section className="panel" aria-label="Document preview">
                   <h2>Document preview · v{docDetail.versions[0].number}</h2>
-                  {docDetail.versions[0].content_type === "application/pdf" ? (
-                    <iframe title={`Preview of ${docDetail.versions[0].original_name}`} src={apiUrl(`document-versions/${docDetail.versions[0].id}/preview/`)} style={{ width: "100%", height: "75vh", border: "1px solid #d1d5db", borderRadius: 8 }} />
-                  ) : (
-                    <img alt={`Preview of ${docDetail.versions[0].original_name}`} crossOrigin="use-credentials" src={apiUrl(`document-versions/${docDetail.versions[0].id}/preview/`)} style={{ display: "block", maxWidth: "100%", maxHeight: "75vh", margin: "0 auto", objectFit: "contain" }} />
-                  )}
+                  <EvidencePreview version={docDetail.versions[0]} />
                 </section>
               )}
               {docDetail.versions[0] && !["application/pdf", "image/jpeg", "image/png"].includes(docDetail.versions[0].content_type) && (
@@ -2237,6 +2245,11 @@ function App() {
           </footer>
         </main>
       </div>
+      {page === "requirements" && detail && previewVersion && (
+        <Modal title={previewVersion.original_name} close={() => setPreviewVersion(null)}>
+          <div className="requirement-file-preview"><EvidencePreview version={previewVersion} /></div>
+        </Modal>
+      )}
       {requirementForm && (
         <RequirementForm
           areas={areas.filter((a) => a.can_manage)}
