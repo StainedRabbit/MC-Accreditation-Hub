@@ -29,6 +29,7 @@ import {
   Bell,
 } from "lucide-react";
 import { ApiError, api, apiHref, apiUrl, post } from "./api";
+import mabiniLogoUrl from "./mabini-colleges-logo.png";
 import "@fontsource-variable/inter";
 import type {
   User,
@@ -87,12 +88,6 @@ const dateTime = (value: string) => `${reportDateTime(value)} (Asia/Manila)`;
 const auditDateTime = dateTime;
 const percent = (value: number | null) =>
   value === null ? "N/A" : `${value}%`;
-const initials = (name: string) =>
-  name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("");
 type SortState = { key: string; direction: "asc" | "desc" };
 const newestSort: SortState = { key: "newest", direction: "desc" };
 function nextSort(current: SortState, key: string): SortState {
@@ -258,7 +253,7 @@ function Login({
     <main className="login-page">
       <section className="login-story">
         <div className="school-brand">
-          <span className="logo">MC</span>
+          <img className="logo mabini-logo" src={mabiniLogoUrl} alt="" aria-hidden="true" />
           <strong>Mabini Colleges, Inc.</strong>
         </div>
         <div className="story-content">
@@ -292,7 +287,7 @@ function Login({
         </footer>
       </section>
       <section className="login-card">
-        <span className="logo large">MC</span>
+        <img className="logo large mabini-logo" src={mabiniLogoUrl} alt="" aria-hidden="true" />
         <h2>MC Accreditation Hub</h2>
         <p>Graduate School Accreditation Management</p>
         <form onSubmit={submit}>
@@ -1084,7 +1079,7 @@ function App() {
         }}
       >
         <div className="sidebar-brand">
-          <span className="logo">MC</span>
+          <img className="logo mabini-logo" src={mabiniLogoUrl} alt="" aria-hidden="true" />
           <div>
             <strong>MC Accreditation Hub</strong>
             <small>Graduate School</small>
@@ -1124,7 +1119,7 @@ function App() {
           </a>
         )}
         <div className="sidebar-user">
-          <span className="avatar">{initials(user.name)}</span>
+          <span className="avatar"><img src={mabiniLogoUrl} alt="" aria-hidden="true" /></span>
           <div>
             <strong>{user.name}</strong>
             <small>{user.assignments[0]?.role || "Administrator"}</small>
@@ -1214,7 +1209,7 @@ function App() {
               ))}
             </select>
             <label className="check"><input type="checkbox" checked={showArchivedCycles} onChange={(event) => { const show = event.target.checked; setShowArchivedCycles(show); if (!show && selectedCycle?.archived_at) setCycle(String(cycles.find((entry) => !entry.archived_at)?.id || "")); }} />Show archived cycles</label>
-            <span className="avatar">{initials(user.name)}</span>
+            <span className="avatar"><img src={mabiniLogoUrl} alt="" aria-hidden="true" /></span>
           </div>
         </header>
         <main className="content">
